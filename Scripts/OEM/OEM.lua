@@ -2,7 +2,7 @@
 -- Load with: dofile("Scripts/OEM/OEM.lua")
 
 OEM = OEM or {}
-OEM.VERSION = "0.1.7"
+OEM.VERSION = "0.1.8"
 
 -- Previous observed state, kept separately for each vessel name.
 OEM._previousByVessel = OEM._previousByVessel or {}
@@ -146,6 +146,28 @@ function OEM.refresh()
         else out("Altitude: unavailable (" .. tostring(altitude_error) .. ")") end
         if type(empty_mass) == "number" then out(string.format("Empty mass: %.2f kg", empty_mass))
         else out("Empty mass: unavailable (" .. tostring(mass_error) .. ")") end
+
+        -- Orbiter LuaScript exposes vessel equatorial position, but does not
+        -- expose the surface-base enumeration/pad-position API.
+        local vessel_handle, vessel_handle_error = safe_method(focused, "get_handle")
+        local equ_pos, equ_pos_error
+        if vessel_handle ~= nil and oapi and type(oapi.get_equpos) == "function" then
+            local ok, value = pcall(oapi.get_equpos, vessel_handle)
+            if ok then equ_pos = value else equ_pos_error = tostring(value) end
+        else
+            equ_pos_error = vessel_handle_error or "oapi.get_equpos unavailable"
+        end
+        if type(equ_pos) == "table" and
+           type(equ_pos.lat) == "number" and
+           type(equ_pos.lng) == "number" and
+           type(equ_pos.rad) == "number" then
+            out(string.format("Surface position: lat %.6f deg, lon %.6f deg, radius %.2f m",
+                math.deg(equ_pos.lat), math.deg(equ_pos.lng), equ_pos.rad))
+        else
+            out("Surface position: unavailable (" .. tostring(equ_pos_error or
+                "equatorial position not returned") .. ")")
+        end
+        out("Base/pad match: not exposed by this LuaMFD API")
 
         -- In this Lua API, is_landed() returns the landed-on body handle,
         -- or nil while the vessel is not landed. It is not a boolean.
