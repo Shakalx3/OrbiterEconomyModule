@@ -106,7 +106,7 @@ namespace {
         }
 
         static int MsgProc(UINT msg, UINT mfd, WPARAM wparam, LPARAM lparam) {
-            if (msg == OAPI_MSG_MFD_OPENED) {
+            if (msg == OAPI_MSG_MFD_OPENEDEX) {
                 MFDMODEOPENSPEC *spec = (MFDMODEOPENSPEC*)wparam;
                 return (int)(new OEMSpaceportMFD(spec->w, spec->h, (VESSEL*)lparam));
             }
