@@ -36,7 +36,7 @@ OEM.help()
 
 to refresh the report or show commands.
 
-## Current scope (0.1.6)
+## Current scope (0.1.7)
 
 - Reads simulation time through `oapi.get_simtime()`.
 - Obtains the focused vessel through `vessel.get_focusinterface()`; it does not dereference the unsafe pseudo-instance `focus` or assume the global `V` exists.
@@ -44,8 +44,12 @@ to refresh the report or show commands.
 - Reads landed state, ground contact, docking-port count and per-port occupancy.
 - Resolves the name of a docked vessel or landed-on body through `oapi.get_objname()`.
 - All calls are read-only and individually protected with `pcall`; a failed optional read is reported as unavailable.
-- Does not create credits, cargo, markets, contracts, docking events, or persistent career data yet.
+- Tracks observed state transitions per focused-vessel name: landed/airborne and dock-port free/occupied/occupant changes.
+- The first complete observation is stored as a baseline and emits no event; unchanged observations do not repeat events.
+- A failed landed/docking read prevents that incomplete snapshot from changing the tracker, avoiding false transitions.
+- State history currently lives only in the Lua interpreter session and is reset when that interpreter/script state is reset.
+- Does not create credits, cargo, markets, contracts, or persistent career data yet.
 
 The LuaScript SDK implementation was checked for the exact semantics: `is_landed()` returns a surface-body handle when landed and nil otherwise; `get_groundcontact()` returns a boolean; `get_dockstatus(dock_handle)` returns the other object's handle or nil. These are state queries, not event callbacks. OEM will need to detect transitions between successive observations before treating a state change as a new event.
 
-This is an integration probe, not a playable economy release.
+Transitions are detected only when OEM.refresh() is called; this prototype does not yet have a periodic update loop or Orbiter event callback. This is an integration milestone, not a playable economy release.
