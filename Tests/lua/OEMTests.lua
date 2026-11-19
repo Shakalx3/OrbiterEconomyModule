@@ -2,7 +2,8 @@ local output = {}
 term = {out=function(s) output[#output+1]=tostring(s) end}
 oapi = {
     get_simtime=function() return 3661.75 end,
-    get_objname=function(handle) return handle.name end
+    get_objname=function(handle) return handle.name end,
+    get_equpos=function(handle) return {lat=math.rad(10), lng=math.rad(20), rad=6371000} end
 }
 V = nil
 focus = {}
@@ -14,6 +15,7 @@ local focused = {
     get_classname=function() return "TestClass" end,
     get_altitude=function() return 12345.5 end,
     get_emptymass=function() return 4200 end,
+    get_handle=function() return {name="Test Vessel"} end,
     is_landed=function() return landed end,
     get_groundcontact=function() return landed ~= nil end,
     get_dockcount=function() return 2 end,
@@ -26,13 +28,15 @@ local focused = {
 vessel = {get_focusinterface=function() return focused end}
 
 dofile("Scripts/OEM/OEM.lua")
-assert(OEM.VERSION == "0.1.7")
+assert(OEM.VERSION == "0.1.8")
 local joined=table.concat(output,"\n")
 assert(string.find(joined,"01:01:01",1,true))
 assert(string.find(joined,"Focused vessel: Test Vessel",1,true))
 assert(string.find(joined,"Vessel class: TestClass",1,true))
 assert(string.find(joined,"Altitude: 12345.50 m",1,true))
 assert(string.find(joined,"Empty mass: 4200.00 kg",1,true))
+assert(string.find(joined,"Surface position: lat 10.000000 deg, lon 20.000000 deg, radius 6371000.00 m",1,true))
+assert(string.find(joined,"Base/pad match: not exposed by this LuaMFD API",1,true))
 assert(string.find(joined,"Landed: no",1,true))
 assert(string.find(joined,"Ground contact: no",1,true))
 assert(string.find(joined,"Docking ports: 2",1,true))
