@@ -3,7 +3,7 @@
 ## Phase 0 — foundation (in progress)
 - [x] Establish repository and development branch.
 - [x] Record system boundaries and safety invariants.
-- [ ] Confirm exact Orbiter build, SDK package, compiler, and architecture.
+- [ ] Confirm exact Orbiter build, SDK package, compiler, and architecture.\n- [x] Add first LuaMFD telemetry probe (runtime validation pending).
 - [ ] Build the portable core and test harness with the user's toolchain.
 
 ## Phase A — career and persistence
