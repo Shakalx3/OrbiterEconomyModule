@@ -10,7 +10,7 @@ oapi = {
         return 3661.75
     end
 }
-V = {
+focus = {
     get_name = function()
         return "DeltaGlider"
     end
@@ -25,7 +25,7 @@ assert(type(OEM.help) == "function", "OEM.help missing")
 
 local joined = table.concat(output, "\n")
 assert(string.find(joined, "01:01:01", 1, true), "simulation time not formatted")
-assert(string.find(joined, "DeltaGlider", 1, true), "vessel name not displayed")
+assert(string.find(joined, "DeltaGlider", 1, true), "focus vessel name not displayed")
 assert(string.find(joined, "Economy: not initialised", 1, true),
     "prototype boundary not displayed")
 
