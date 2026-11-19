@@ -1,0 +1,28 @@
+name: OEM Lua checks
+
+on:
+  push:
+    branches: [development]
+    paths:
+      - "Scripts/OEM/**"
+      - "Tests/lua/**"
+      - ".github/workflows/oem-lua.yml"
+  pull_request:
+    paths:
+      - "Scripts/OEM/**"
+      - "Tests/lua/**"
+      - ".github/workflows/oem-lua.yml"
+
+jobs:
+  lua51:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1
+      - name: Check Lua syntax
+        run: luac5.1 -p Scripts/OEM/OEM.lua Tests/lua/OEMTests.lua
+      - name: Run host-stub tests
+        run: lua5.1 Tests/lua/OEMTests.lua
