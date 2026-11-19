@@ -23,9 +23,9 @@ int main() {
 
     const double earthRadius = 6371000.0;
     const double pi = 3.14159265358979323846;
-    const double fiveKmInDegrees = 5000.0 / (earthRadius * pi / 180.0);
+    const double fiveKmInRadians = 5000.0 / earthRadius;
     assert(std::fabs(oem::surfaceDistanceMetres(0, 0, 0, 0, earthRadius)) < 1e-9);
-    const double boundary = oem::surfaceDistanceMetres(0, 0, 0, fiveKmInDegrees, earthRadius);
+    const double boundary = oem::surfaceDistanceMetres(0, 0, 0, fiveKmInRadians, earthRadius);
     assert(std::fabs(boundary - 5000.0) < 1e-6);
     assert(oem::isWithinSpaceportRadius(boundary, 5000.0));
     assert(!oem::isWithinSpaceportRadius(boundary + 0.01, 5000.0));
