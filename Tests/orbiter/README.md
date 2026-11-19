@@ -19,11 +19,11 @@ It intentionally ignores individual VTOL pads and runways. A match requires Orbi
 
 GitHub Actions workflow: `.github/workflows/oem-native-test.yml`.
 
-The workflow compiles a 32-bit DLL with the Orbiter 2010 SDK headers and import library, then publishes `OEMSpaceportTest.dll` as an Actions artifact named `OEMSpaceportTest-win32`.
+The workflow compiles a 32-bit DLL with the Orbiter 2010 SDK headers and import libraries, then publishes `OEMSpaceportTest.dll` as a prerelease asset on GitHub Releases.
 
 ## Install and run
 
-1. Download `OEMSpaceportTest-win32` from the successful **OEM native spaceport test build** workflow run and extract the DLL.
+1. Download `OEMSpaceportTest.dll` from the [OEM Spaceport Test release](https://github.com/Shakalx3/OrbiterEconomyModule/releases/tag/oem-spaceport-test-01212254a0c5).
 2. Copy `OEMSpaceportTest.dll` into `<Orbiter root>/Modules/`.
 3. Add `OEMSpaceportTest` as a module entry in the `[Modules]` section of `<Orbiter root>/Config/Orbiter.cfg` (do not add the `.dll` suffix).
 4. Start Orbiter and load a scenario with a vessel.
