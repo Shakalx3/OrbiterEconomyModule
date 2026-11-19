@@ -173,6 +173,7 @@ function OEM.refresh()
 
         local dock_count, dock_count_error = safe_method(focused, "get_dockcount")
         local dock_states = {}
+        local snapshot_complete = (landed_error == nil)
         if type(dock_count) == "number" then
             out("Docking ports: " .. tostring(dock_count))
             for i = 0, dock_count - 1 do
@@ -189,7 +190,7 @@ function OEM.refresh()
                                 tostring(other_name_error) .. ")")
                         end
                     elseif status_error then
-                        dock_states[i + 1] = "unknown (read error)"
+                        snapshot_complete = false
                         out("Dock " .. tostring(i) .. ": status unavailable (" ..
                             tostring(status_error) .. ")")
                     else
@@ -197,6 +198,7 @@ function OEM.refresh()
                         out("Dock " .. tostring(i) .. ": free")
                     end
                 else
+                    snapshot_complete = false
                     out("Dock " .. tostring(i) .. ": handle unavailable (" ..
                         tostring(handle_error) .. ")")
                 end
@@ -205,7 +207,7 @@ function OEM.refresh()
             out("Docking ports: unavailable (" .. tostring(dock_count_error) .. ")")
         end
 
-        if type(name) == "string" and landed_error == nil and type(dock_count) == "number" then
+        if type(name) == "string" and snapshot_complete and type(dock_count) == "number" then
             observe_transitions(name, landed_body_name, dock_states)
         else
             out("State tracker: waiting for complete landed/docking snapshot")
