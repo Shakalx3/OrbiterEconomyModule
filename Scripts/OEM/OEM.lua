@@ -1,99 +1,63 @@
--- Orbiter Economy Module: LuaMFD vessel identity probe
--- Target: Orbiter 2010 + the SDK LuaMFD terminal.
--- Load from the LuaMFD terminal with:
---   dofile("Scripts/OEM/OEM.lua")
--- Then use:
---   OEM.refresh()
---   OEM.help()
+-- Orbiter Economy Module: LuaMFD context diagnostics
+-- Load with: dofile("Scripts/OEM/OEM.lua")
+-- Safe probe: reads Lua value types only; does not call vessel methods.
 
 OEM = OEM or {}
-OEM.VERSION = "0.1.2"
+OEM.VERSION = "0.1.3"
 
-local function out(text)
-    if term and term.out then
-        term.out(tostring(text))
+local function out(s)
+    if term and type(term.out) == "function" then
+        term.out(tostring(s))
     elseif print then
-        print(tostring(text))
+        print(tostring(s))
     end
 end
 
-local function format_sim_time(seconds)
-    if type(seconds) ~= "number" then
-        return "unavailable"
-    end
-
-    local whole = math.floor(seconds)
-    local hours = math.floor(whole / 3600)
-    local minutes = math.floor((whole - hours * 3600) / 60)
-    local secs = whole - hours * 3600 - minutes * 60
-
-    return string.format("%02d:%02d:%02d", hours, minutes, secs)
+local function fmt_time(t)
+    if type(t) ~= "number" then return "unavailable" end
+    local n = math.floor(t)
+    return string.format("%02d:%02d:%02d",
+        math.floor(n / 3600),
+        math.floor(n / 60) % 60,
+        n % 60)
 end
 
-local function get_vessel_name()
-    -- LuaMFD's SDK SetSelf() installs the current MFD vessel as global V.
-    -- Do not use focus/vessel.get_focusinterface(): those caused the earlier
-    -- runtime failure in this installation.
-    if V == nil then
-        return nil, "LuaMFD vessel context V is absent"
-    end
-
-    -- Keep both userdata lookup and native method invocation inside pcall.
-    -- This catches Lua/API errors; it cannot guarantee recovery from a native
-    -- access violation, so this probe calls only the SDK's read-only get_name.
-    local ok, name = pcall(function()
-        return V:get_name()
-    end)
-
-    if not ok then
-        return nil, "V:get_name() failed: " .. tostring(name)
-    end
-    if type(name) ~= "string" or name == "" then
-        return nil, "V:get_name() returned no usable name"
-    end
-
-    return name, nil
+local function global_type(name)
+    -- rawget avoids invoking any metatable lookup on the global environment.
+    return type(rawget(_G, name))
 end
 
 function OEM.help()
-    out("OEM commands:")
-    out("  OEM.refresh()  - show simulation time and vessel identity")
-    out("  OEM.help()     - show this help")
-    out("  OEM.version    - module version")
+    out("OEM 0.1.3 commands:")
+    out("  OEM.refresh() - repeat safe context diagnostics")
+    out("  OEM.help()    - show this help")
 end
 
 function OEM.refresh()
     out("--------------------------------")
-    out(" ORBITER ECONOMY MODULE")
-    out(" Lua MFD prototype " .. OEM.VERSION)
-    out("--------------------------------")
-
-    local simt = nil
+    out(" ORBITER ECONOMY MODULE " .. OEM.VERSION)
+    local simt
     if oapi and type(oapi.get_simtime) == "function" then
         local ok, value = pcall(oapi.get_simtime)
-        if ok and type(value) == "number" then
-            simt = value
-        end
+        if ok then simt = value end
     end
+    out("Simulation time: " .. fmt_time(simt))
 
-    if simt then
-        out("Simulation time: " .. format_sim_time(simt) ..
-            " (" .. string.format("%.2f", simt) .. " s)")
+    -- Only report Lua types. No userdata fields or native methods are touched.
+    out("Lua global V: " .. global_type("V"))
+    out("Lua global focus: " .. global_type("focus"))
+    out("Lua global vessel: " .. global_type("vessel"))
+    out("Lua global oapi: " .. global_type("oapi"))
+    out("Lua global term: " .. global_type("term"))
+
+    if global_type("V") == "userdata" then
+        out("V context: present (not dereferenced)")
+    elseif global_type("focus") == "userdata" then
+        out("V context: absent; focus userdata exists (not dereferenced)")
     else
-        out("Simulation time: unavailable")
+        out("Vessel context: no vessel userdata globals detected")
     end
-
-    local vessel_name, vessel_error = get_vessel_name()
-    if vessel_name then
-        out("Vessel: " .. vessel_name)
-        out("Vessel API: name query only")
-    else
-        out("Vessel: unavailable")
-        out("Vessel diagnostic: " .. tostring(vessel_error))
-    end
-
     out("Economy: not initialised")
-    out("Markets/contracts: prototype stage")
     out("--------------------------------")
 end
 
