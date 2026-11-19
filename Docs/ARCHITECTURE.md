@@ -28,6 +28,13 @@ The bridge observes simulation time, vessel identity, docking and location, then
 4. Financial changes are recorded as ledger entries. Balances are derived or reconciled against the ledger; silent balance edits are prohibited.
 5. Large time jumps and time acceleration are processed deterministically in bounded economic ticks.
 6. Saves are versioned and written transactionally. A partially written save must not replace the last valid save.
+7. A spaceport landing is valid only when Orbiter reports the vessel landed and in ground contact, and the vessel's surface position is within 5,000 m of at least one surface base on the same reference body. The nearest VTOL pad/runway is intentionally irrelevant to this rule.
+
+## Spaceport landing detection
+
+The Orbiter 2010 SDK headers in this repository expose the required native calls: VESSEL::GetSurfaceRef(), VESSEL::GetEquPos(), oapiGetBaseCount(), oapiGetBaseByIndex(), and oapiGetBaseEquPos(). The bridge can enumerate bases on the vessel's current surface-reference body and compare their coordinates to the vessel's coordinates. The core uses a great-circle distance on the body's mean-radius sphere; the threshold is inclusive at 5,000 m. Invalid coordinates or a missing surface reference fail closed.
+
+The LuaMFD probe remains telemetry only: the Lua API does not expose base enumeration. Native bridge integration and in-simulator validation remain outstanding.
 
 ## Compatibility strategy
 
@@ -37,4 +44,4 @@ The initial market map covers Earth orbit, the Moon, and Mars in greater depth. 
 
 ## Current implementation boundary
 
-The first code slice is deliberately SDK-independent. No Orbiter SDK header, graphics API, or vessel callback is included until the exact Orbiter build, SDK package, compiler, and target architecture are confirmed.
+The first code slice is deliberately SDK-independent. No Orbiter SDK header, graphics API, or vessel callback is included until the exact local compiler/toolchain and Orbiter target architecture are confirmed.
