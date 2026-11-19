@@ -2,6 +2,7 @@
 #define OEM_CORE_LEDGER_H
 
 #include "Types.h"
+#include <cstddef>
 #include <map>
 #include <string>
 #include <vector>
