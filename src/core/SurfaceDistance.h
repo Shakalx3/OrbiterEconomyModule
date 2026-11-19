@@ -1,7 +1,6 @@
 #ifndef OEM_CORE_SURFACE_DISTANCE_H
 #define OEM_CORE_SURFACE_DISTANCE_H
 
-#include <algorithm>
 #include <cmath>
 
 namespace oem {
@@ -21,7 +20,8 @@ inline double surfaceDistanceMetres(double lat1, double lon1,
     const double sinLat = std::sin(dLat * 0.5);
     const double sinLon = std::sin(dLon * 0.5);
     double a = sinLat * sinLat + std::cos(lat1) * std::cos(lat2) * sinLon * sinLon;
-    a = std::max(0.0, std::min(1.0, a));
+    if (a < 0.0) a = 0.0;
+    if (a > 1.0) a = 1.0;
     return 2.0 * bodyRadiusMetres * std::asin(std::sqrt(a));
 }
 
