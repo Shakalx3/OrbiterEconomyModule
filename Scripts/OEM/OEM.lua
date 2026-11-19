@@ -62,9 +62,18 @@ function OEM.refresh()
             " (" .. string.format("%.2f", simt) .. " s)")
     end
 
-    if V then
+    -- LuaMFD creates a vessel-specific interpreter and exposes its vessel
+    -- as the global pseudo-instance "focus" (see SDK LuaMFD sample).
+    -- Keep the accessor fallback for scripts evaluated in another context.
+    local current_vessel = focus
+    if not current_vessel and vessel and
+       type(vessel.get_focusinterface) == "function" then
+        current_vessel = vessel.get_focusinterface()
+    end
+
+    if current_vessel then
         local name, name_error = call_or_unavailable(function()
-            return V:get_name()
+            return current_vessel:get_name()
         end)
 
         if name_error then
@@ -74,6 +83,7 @@ function OEM.refresh()
         end
     else
         out("Vessel: no vessel context")
+        out("Vessel API: focus and get_focusinterface unavailable")
     end
 
     out("Economy: not initialised")
