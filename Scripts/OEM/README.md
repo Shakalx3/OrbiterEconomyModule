@@ -27,7 +27,7 @@ Start Orbiter, open the **Terminal MFD** (the SDK LuaMFD mode; its default selec
 dofile("Scripts/OEM/OEM.lua")
 ```
 
-The script prints a first telemetry report in the MFD terminal. Use:
+The script prints a telemetry report in the MFD terminal. Use:
 
 ```lua
 OEM.refresh()
@@ -36,12 +36,16 @@ OEM.help()
 
 to refresh the report or show commands.
 
-## Current scope
+## Current scope (0.1.6)
 
-- Confirms that the script executes in the LuaMFD interpreter.
 - Reads simulation time through `oapi.get_simtime()`.
-- Reads the MFD's current vessel context through `V:get_name()`.
+- Obtains the focused vessel through `vessel.get_focusinterface()`; it does not dereference the unsafe pseudo-instance `focus` or assume the global `V` exists.
+- Reads vessel name, class, altitude and empty mass.
+- Reads landed state, ground contact, docking-port count and per-port occupancy.
+- Resolves the name of a docked vessel or landed-on body through `oapi.get_objname()`.
+- All calls are read-only and individually protected with `pcall`; a failed optional read is reported as unavailable.
 - Does not create credits, cargo, markets, contracts, docking events, or persistent career data yet.
-- Missing API values are reported as unavailable; no simulation facts are fabricated.
 
-This is an integration probe, not a playable economy release. The next step is to validate the script against the exact LuaScript runtime installed with the user's Orbiter 2010 copy, then add safe refresh/update behaviour and persistence.
+The LuaScript SDK implementation was checked for the exact semantics: `is_landed()` returns a surface-body handle when landed and nil otherwise; `get_groundcontact()` returns a boolean; `get_dockstatus(dock_handle)` returns the other object's handle or nil. These are state queries, not event callbacks. OEM will need to detect transitions between successive observations before treating a state change as a new event.
+
+This is an integration probe, not a playable economy release.
