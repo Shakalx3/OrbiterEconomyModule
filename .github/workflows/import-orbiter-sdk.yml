@@ -1,0 +1,72 @@
+name: Import Orbiter SDK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - development
+    paths:
+      - 'Orbitersdk.zip'
+      - '.github/workflows/import-orbiter-sdk.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out development
+        uses: actions/checkout@v4
+        with:
+          ref: development
+
+      - name: Validate and extract SDK archive
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import shutil
+
+          archive = Path("Orbitersdk.zip")
+          destination = Path("SDK")
+          if not archive.is_file():
+              raise SystemExit("Orbitersdk.zip was not found")
+
+          if destination.exists():
+              shutil.rmtree(destination)
+          destination.mkdir(parents=True)
+
+          with ZipFile(archive) as zf:
+              bad = zf.testzip()
+              if bad:
+                  raise SystemExit(f"ZIP integrity check failed at: {bad}")
+
+              root = destination.resolve()
+              for item in zf.infolist():
+                  target = (destination / item.filename).resolve()
+                  if target != root and root not in target.parents:
+                      raise SystemExit(f"Unsafe path in ZIP: {item.filename}")
+              zf.extractall(destination)
+
+          files = [p for p in destination.rglob("*") if p.is_file()]
+          if not files:
+              raise SystemExit("Archive extracted, but SDK/ contains no files")
+          print(f"Extracted {len(files)} files into SDK/")
+          for p in files[:80]:
+              print(p.as_posix())
+          if len(files) > 80:
+              print(f"... and {len(files) - 80} more files")
+          PY
+
+      - name: Commit extracted SDK
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add SDK/
+          if git diff --cached --quiet; then
+            echo "No SDK changes to commit."
+          else
+            git commit -m "Import Orbiter SDK into SDK directory"
+            git push origin HEAD:development
+          fi
