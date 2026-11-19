@@ -3,8 +3,11 @@
 ## Phase 0 — foundation (in progress)
 - [x] Establish repository and development branch.
 - [x] Record system boundaries and safety invariants.
-- [ ] Confirm exact Orbiter build, SDK package, compiler, and architecture.\n- [x] Add first LuaMFD telemetry probe (runtime validation pending).
+- [x] Confirm Orbiter 2010 SDK headers are present in the repository.
+- [x] Add first LuaMFD telemetry probe and validate it in Orbiter 2010.
+- [ ] Confirm local compiler/toolchain and target architecture.
 - [ ] Build the portable core and test harness with the user's toolchain.
+- [ ] Implement and validate the native Orbiter bridge.
 
 ## Phase A — career and persistence
 - [ ] New company / career state with configurable starting capital.
@@ -16,7 +19,7 @@
 - [ ] Solar-system location identifiers and station definitions.
 - [ ] Market inventories and buy/sell transactions.
 - [ ] Abstract cargo manifests and mass accounting.
-- [ ] Docking/location observation through the Orbiter bridge.
+- [ ] Docking and spaceport-location observation through the Orbiter bridge.
 
 ## Phase C — contracts
 - [ ] Delivery and transport contracts.
@@ -38,6 +41,7 @@
 - Career can be created, saved, closed, and reloaded.
 - Purchase changes both account ledger and cargo manifest exactly once.
 - Docking is detected from Orbiter state, not a UI button.
+- Spaceport landing requires landed + ground contact + distance <= 5 km from a base on the same body.
 - Delivery is rejected for the wrong vessel, location, or cargo.
 - Valid delivery pays once, including after save/reload.
 - Time acceleration and large simulation-time jumps do not duplicate production or payouts.
