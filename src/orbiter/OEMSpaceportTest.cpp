@@ -1,4 +1,5 @@
 #define STRICT
+#define NOMINMAX
 #define ORBITER_MODULE
 #include <windows.h>
 #include <stdio.h>
