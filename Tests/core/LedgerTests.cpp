@@ -23,6 +23,10 @@ int main() {
     assert(station == 1250);
     assert(ledger.entries().size() == 1);
 
+    // Reusing an operation ID for a different transfer is a conflict, not a success.
+    assert(!ledger.transfer("purchase-001", "company", "station", 2000, 10, "Conflicting replay").ok);
+    assert(ledger.entries().size() == 1);
+
     assert(!ledger.transfer("bad-amount", "company", "station", -1, 11, "Invalid").ok);
     assert(!ledger.transfer("too-expensive", "company", "station", 999999, 12, "Invalid").ok);
     return 0;
