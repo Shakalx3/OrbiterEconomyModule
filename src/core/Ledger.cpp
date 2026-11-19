@@ -25,8 +25,17 @@ Result Ledger::transfer(const std::string& operationId,
     if (operationId.empty())
         return Result::failure("INVALID_OPERATION", "Operation ID is empty.");
 
-    if (operations_.find(operationId) != operations_.end())
-        return Result::success(); // Idempotent replay: do not apply twice.
+    std::map<std::string, std::size_t>::const_iterator prior = operations_.find(operationId);
+    if (prior != operations_.end()) {
+        const LedgerEntry& oldEntry = entries_[prior->second];
+        if (oldEntry.debitAccount == debitAccount &&
+            oldEntry.creditAccount == creditAccount &&
+            oldEntry.amount == amount &&
+            oldEntry.simulationTime == simulationTime)
+            return Result::success(); // Exact replay: do not apply twice.
+        return Result::failure("OPERATION_CONFLICT",
+                               "Operation ID was already used for a different transfer.");
+    }
 
     if (amount <= 0)
         return Result::failure("INVALID_AMOUNT", "Transfer amount must be positive.");
