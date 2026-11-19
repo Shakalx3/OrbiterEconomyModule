@@ -1,9 +1,10 @@
--- Orbiter Economy Module: LuaMFD context diagnostics
+-- Orbiter Economy Module: safe LuaMFD vessel-context probe
 -- Load with: dofile("Scripts/OEM/OEM.lua")
--- Safe probe: reads Lua value types only; does not call vessel methods.
+-- Do not dereference the global "focus" pseudo-object: the SDK represents it
+-- as lightuserdata, while lua_tovessel() expects a VESSEL** userdata wrapper.
 
 OEM = OEM or {}
-OEM.VERSION = "0.1.3"
+OEM.VERSION = "0.1.4"
 
 local function out(s)
     if term and type(term.out) == "function" then
@@ -23,19 +24,19 @@ local function fmt_time(t)
 end
 
 local function global_type(name)
-    -- rawget avoids invoking any metatable lookup on the global environment.
     return type(rawget(_G, name))
 end
 
 function OEM.help()
-    out("OEM 0.1.3 commands:")
-    out("  OEM.refresh() - repeat safe context diagnostics")
+    out("OEM 0.1.4 commands:")
+    out("  OEM.refresh() - repeat context diagnostics")
     out("  OEM.help()    - show this help")
 end
 
 function OEM.refresh()
     out("--------------------------------")
     out(" ORBITER ECONOMY MODULE " .. OEM.VERSION)
+
     local simt
     if oapi and type(oapi.get_simtime) == "function" then
         local ok, value = pcall(oapi.get_simtime)
@@ -43,20 +44,44 @@ function OEM.refresh()
     end
     out("Simulation time: " .. fmt_time(simt))
 
-    -- Only report Lua types. No userdata fields or native methods are touched.
     out("Lua global V: " .. global_type("V"))
     out("Lua global focus: " .. global_type("focus"))
     out("Lua global vessel: " .. global_type("vessel"))
     out("Lua global oapi: " .. global_type("oapi"))
     out("Lua global term: " .. global_type("term"))
 
-    if global_type("V") == "userdata" then
-        out("V context: present (not dereferenced)")
-    elseif global_type("focus") == "userdata" then
-        out("V context: absent; focus userdata exists (not dereferenced)")
+    -- Use the documented vessel API factory. It creates the proper VESSEL**
+    -- full-userdata wrapper. Do not call methods on global focus directly.
+    local focus_vessel
+    if type(vessel) == "table" and type(vessel.get_focusinterface) == "function" then
+        local ok, value = pcall(vessel.get_focusinterface)
+        if ok then
+            focus_vessel = value
+        else
+            out("Focus interface lookup failed: " .. tostring(value))
+        end
     else
-        out("Vessel context: no vessel userdata globals detected")
+        out("Focus interface lookup unavailable")
     end
+
+    if focus_vessel ~= nil and type(focus_vessel) == "userdata" then
+        out("Focus interface: userdata acquired")
+        local ok, name = pcall(function()
+            return focus_vessel:get_name()
+        end)
+        if ok and type(name) == "string" and name ~= "" then
+            out("Focused vessel: " .. name)
+        elseif not ok then
+            out("Focused vessel name query failed: " .. tostring(name))
+        else
+            out("Focused vessel name: unavailable")
+        end
+    elseif focus_vessel ~= nil then
+        out("Focus interface returned unexpected type: " .. type(focus_vessel))
+    else
+        out("Focus interface: unavailable")
+    end
+
     out("Economy: not initialised")
     out("--------------------------------")
 end
