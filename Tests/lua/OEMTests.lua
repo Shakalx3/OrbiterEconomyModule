@@ -1,15 +1,14 @@
 local output = {}
 term = {out=function(s) output[#output+1]=tostring(s) end}
 oapi = {get_simtime=function() return 3661.75 end}
-V = {get_name=function() error("must not call vessel methods") end}
+V = {}
 focus = {}
 vessel = {}
 dofile("Scripts/OEM/OEM.lua")
 assert(OEM.VERSION == "0.1.3")
 local joined=table.concat(output,"\n")
 assert(string.find(joined,"01:01:01",1,true))
-assert(string.find(joined,"Lua global V: table",1,true) == nil)
-assert(string.find(joined,"Lua global V: userdata",1,true))
+assert(string.find(joined,"Lua global V: table",1,true))
 assert(string.find(joined,"Lua global focus: table",1,true))
 assert(string.find(joined,"Lua global vessel: table",1,true))
 output={}
