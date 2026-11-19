@@ -1,4 +1,4 @@
--- Orbiter Economy Module: conservative LuaMFD probe
+-- Orbiter Economy Module: LuaMFD vessel identity probe
 -- Target: Orbiter 2010 + the SDK LuaMFD terminal.
 -- Load from the LuaMFD terminal with:
 --   dofile("Scripts/OEM/OEM.lua")
@@ -7,7 +7,7 @@
 --   OEM.help()
 
 OEM = OEM or {}
-OEM.VERSION = "0.1.1"
+OEM.VERSION = "0.1.2"
 
 local function out(text)
     if term and term.out then
@@ -30,9 +30,34 @@ local function format_sim_time(seconds)
     return string.format("%02d:%02d:%02d", hours, minutes, secs)
 end
 
+local function get_vessel_name()
+    -- LuaMFD's SDK SetSelf() installs the current MFD vessel as global V.
+    -- Do not use focus/vessel.get_focusinterface(): those caused the earlier
+    -- runtime failure in this installation.
+    if V == nil then
+        return nil, "LuaMFD vessel context V is absent"
+    end
+
+    -- Keep both userdata lookup and native method invocation inside pcall.
+    -- This catches Lua/API errors; it cannot guarantee recovery from a native
+    -- access violation, so this probe calls only the SDK's read-only get_name.
+    local ok, name = pcall(function()
+        return V:get_name()
+    end)
+
+    if not ok then
+        return nil, "V:get_name() failed: " .. tostring(name)
+    end
+    if type(name) ~= "string" or name == "" then
+        return nil, "V:get_name() returned no usable name"
+    end
+
+    return name, nil
+end
+
 function OEM.help()
     out("OEM commands:")
-    out("  OEM.refresh()  - show safe simulation telemetry")
+    out("  OEM.refresh()  - show simulation time and vessel identity")
     out("  OEM.help()     - show this help")
     out("  OEM.version    - module version")
 end
@@ -58,9 +83,15 @@ function OEM.refresh()
         out("Simulation time: unavailable")
     end
 
-    -- Vessel userdata access is deliberately disabled until its exact
-    -- LuaMFD binding is verified against Orbiter 2010 at runtime.
-    out("Vessel telemetry: disabled pending API verification")
+    local vessel_name, vessel_error = get_vessel_name()
+    if vessel_name then
+        out("Vessel: " .. vessel_name)
+        out("Vessel API: name query only")
+    else
+        out("Vessel: unavailable")
+        out("Vessel diagnostic: " .. tostring(vessel_error))
+    end
+
     out("Economy: not initialised")
     out("Markets/contracts: prototype stage")
     out("--------------------------------")
