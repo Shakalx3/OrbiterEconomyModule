@@ -10,29 +10,67 @@
 #include "../core/SpaceportLanding.h"
 #include "../core/FlightTransition.h"
 #include "../core/SimulationEvent.h"
+#include "../core/SimulationEventJournal.h"
 #include "../core/SurfaceDistance.h"
 
 namespace {
+
+std::string makeJournalPath(HINSTANCE module) {
+    char modulePath[MAX_PATH] = {};
+    const DWORD length = GetModuleFileNameA(module, modulePath, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) return std::string();
+
+    char *separator = strrchr(modulePath, '\\\\');
+    if (!separator) separator = strrchr(modulePath, '/');
+    if (!separator) return std::string();
+    *separator = '\\0';
+
+    char dataDirectory[MAX_PATH] = {};
+    sprintf(dataDirectory, "%s\\\\OEMData", modulePath);
+    if (!CreateDirectoryA(dataDirectory, 0) &&
+        GetLastError() != ERROR_ALREADY_EXISTS)
+        return std::string();
+
+    char journalPath[MAX_PATH] = {};
+    sprintf(journalPath, "%s\\\\events.journal", dataDirectory);
+    return journalPath;
+}
 
 class OEMLandingBridge : public oapi::Module {
 public:
     explicit OEMLandingBridge(HINSTANCE hDLL)
         : oapi::Module(hDLL), landingMonitors_(), flightMonitors_(),
-          eventQueue_(), sessionId_(), lastFocus_(0) {}
+          eventQueue_(), journalStore_(), journalPath_(makeJournalPath(hDLL)),
+          journalReady_(false), sessionId_(), lastFocus_(0) {}
 
     void clbkSimulationStart(RenderMode mode) override {
         landingMonitors_.clear();
         flightMonitors_.clear();
-        eventQueue_ = oem::SimulationEventQueue();
         sessionId_.clear();
         lastFocus_ = 0;
+        oem::SimulationEventQueue restored;
+        const oem::Result loaded = journalPath_.empty()
+            ? oem::Result::failure("JOURNAL_PATH", "Could not resolve module data directory.")
+            : journalStore_.load(journalPath_, restored);
+        journalReady_ = loaded.ok;
+        if (journalReady_) {
+            eventQueue_ = restored;
+            char message[256];
+            sprintf(message, "OEM Event Journal: loaded %lu records.",
+                    (unsigned long)eventQueue_.events().size());
+            oapiWriteLog(message);
+        } else {
+            char message[512];
+            sprintf(message, "OEM Event Journal: load failed (%s): %s",
+                    loaded.code.c_str(), loaded.message.c_str());
+            oapiWriteLog(message);
+        }
         oapiWriteLog((char*)"OEM Landing Bridge: simulation monitoring started.");
     }
 
     void clbkSimulationEnd() override {
         landingMonitors_.clear();
         flightMonitors_.clear();
-        eventQueue_ = oem::SimulationEventQueue();
         sessionId_.clear();
         lastFocus_ = 0;
         oapiWriteLog((char*)"OEM Landing Bridge: simulation monitoring stopped.");
@@ -46,7 +84,9 @@ public:
         if (sessionId_.empty()) {
             const double startMjd = mjd - simt / 86400.0;
             char session[64];
-            sprintf(session, "%.0f", startMjd * 86400000.0);
+            sprintf(session, "%.0f-%lu-%lu", startMjd * 86400000.0,
+                    (unsigned long)GetCurrentProcessId(),
+                    (unsigned long)GetTickCount());
             sessionId_ = session;
         }
 
@@ -180,9 +220,21 @@ public:
 
 private:
     bool publishEvent(const oem::SimulationEvent& event) {
-        const bool duplicate = eventQueue_.contains(event.eventId);
-        const oem::Result result = eventQueue_.publish(event);
-        if (!result.ok || duplicate) return false;
+        if (!journalReady_ || eventQueue_.contains(event.eventId)) return false;
+
+        oem::SimulationEventQueue candidate = eventQueue_;
+        const oem::Result queued = candidate.publish(event);
+        if (!queued.ok) return false;
+
+        const oem::Result saved = journalStore_.save(journalPath_, candidate);
+        if (!saved.ok) {
+            char error[512];
+            sprintf(error, "OEM Event Journal: save failed (%s): %s",
+                    saved.code.c_str(), saved.message.c_str());
+            oapiWriteLog(error);
+            return false;
+        }
+        eventQueue_ = candidate;
 
         char message[768];
         sprintf(message,
@@ -200,6 +252,9 @@ private:
     std::map<OBJHANDLE, oem::SpaceportLandingMonitor> landingMonitors_;
     std::map<OBJHANDLE, oem::FlightTransitionMonitor> flightMonitors_;
     oem::SimulationEventQueue eventQueue_;
+    oem::SimulationEventJournalStore journalStore_;
+    std::string journalPath_;
+    bool journalReady_;
     std::string sessionId_;
     OBJHANDLE lastFocus_;
 };
