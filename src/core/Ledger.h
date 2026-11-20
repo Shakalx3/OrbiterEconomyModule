@@ -23,6 +23,8 @@ public:
     Ledger();
 
     Result createAccount(const std::string& accountId, Credits openingBalance);
+    Result applyExternal(const std::string& operationId, const std::string& accountId, Credits delta, SimulationSeconds simulationTime, const std::string& reason);
+
     Result transfer(const std::string& operationId,
                     const std::string& debitAccount,
                     const std::string& creditAccount,
