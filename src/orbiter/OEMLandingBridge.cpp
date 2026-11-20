@@ -24,6 +24,7 @@ namespace {
 class OEMLandingBridge;
 OEMLandingBridge *g_bridge = 0;
 int g_flightLogMode = -1;
+int g_cargoManifestMode = -1;
 
 std::string makeJournalPath(HINSTANCE module) {
     char modulePath[MAX_PATH] = {};
@@ -665,6 +666,70 @@ private:
     int page_;
 };
 
+class OEMCargoManifestMFD : public MFD {
+public:
+    OEMCargoManifestMFD(DWORD w, DWORD h, VESSEL *vessel)
+        : MFD(w, h, vessel),
+          vesselId_(vessel && vessel->GetName() ? vessel->GetName() : "") {}
+
+    void Update(HDC hDC) override {
+        Title(hDC, "OEM CARGO MANIFEST");
+        SelectDefaultFont(hDC, 0);
+        int y = (int)ch + 3;
+        char line[256];
+        sprintf(line, "VESSEL: %.32s", vesselId_.c_str());
+        DrawLine(hDC, y, line);
+        if (!g_bridge) {
+            DrawLine(hDC, y, "OEM bridge unavailable.");
+            return;
+        }
+        const oem::CargoManifest *manifest = g_bridge->cargoManifest(vesselId_);
+        if (!manifest) {
+            DrawLine(hDC, y, "Manifest not loaded.");
+            DrawLine(hDC, y, "Focus this vessel to initialize it.");
+            return;
+        }
+        sprintf(line, "ENTRIES: %lu  TRANSFERS: %lu",
+                (unsigned long)manifest->lines().size(),
+                (unsigned long)manifest->history().size());
+        DrawLine(hDC, y, line);
+        sprintf(line, "ACCOUNTED MASS: %.3f kg", manifest->totalMassKg());
+        DrawLine(hDC, y, line);
+        DrawLine(hDC, y, "------------------------------");
+        if (manifest->lines().empty()) {
+            DrawLine(hDC, y, "No OEM cargo entries recorded.");
+            DrawLine(hDC, y, "Physical inventory is not inferred.");
+            return;
+        }
+        const int available = ((int)H - y - (int)ch) / (int)ch;
+        const std::vector<oem::CargoLine>& lines = manifest->lines();
+        for (std::size_t i = 0; i < lines.size() && (int)i < available; ++i) {
+            sprintf(line, "%.18s x %lld", lines[i].cargoId.c_str(), lines[i].quantity);
+            DrawLine(hDC, y, line);
+            sprintf(line, "  %.3f kg/unit from %.14s",
+                    lines[i].unitMassKg, lines[i].originLocationId.c_str());
+            DrawLine(hDC, y, line);
+        }
+    }
+
+    static int MsgProc(UINT msg, UINT mfd, WPARAM wparam, LPARAM lparam) {
+        if (msg == OAPI_MSG_MFD_OPENEDEX && g_bridge) {
+            MFDMODEOPENSPEC *spec = (MFDMODEOPENSPEC*)wparam;
+            return (int)(new OEMCargoManifestMFD(
+                spec->w, spec->h, (VESSEL*)lparam));
+        }
+        return 0;
+    }
+
+private:
+    void DrawLine(HDC hDC, int &y, const char *text) {
+        TextOutA(hDC, 4, y, text, (int)strlen(text));
+        y += (int)ch;
+    }
+
+    std::string vesselId_;
+};
+
 } // namespace
 
 DLLCLBK void InitModule(HINSTANCE hDLL) {
@@ -676,11 +741,18 @@ DLLCLBK void InitModule(HINSTANCE hDLL) {
     spec.context = NULL;
     spec.msgproc = OEMFlightLogMFD::MsgProc;
     g_flightLogMode = oapiRegisterMFDMode(spec);
+
+    spec.name = "OEM Cargo Manifest";
+    spec.key = OAPI_KEY_C;
+    spec.msgproc = OEMCargoManifestMFD::MsgProc;
+    g_cargoManifestMode = oapiRegisterMFDMode(spec);
 }
 
 DLLCLBK void ExitModule(HINSTANCE hDLL) {
     if (g_flightLogMode >= 0) oapiUnregisterMFDMode(g_flightLogMode);
+    if (g_cargoManifestMode >= 0) oapiUnregisterMFDMode(g_cargoManifestMode);
     g_flightLogMode = -1;
+    g_cargoManifestMode = -1;
     g_bridge = 0;
     // Orbiter owns and destroys registered oapi::Module instances.
 }
