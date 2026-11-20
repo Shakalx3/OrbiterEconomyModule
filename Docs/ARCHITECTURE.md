@@ -12,7 +12,7 @@ The bridge observes simulation time, vessel identity, takeoff, landing, docking 
 
 - Core: identifiers, domain types, validation, deterministic rules.
 - Simulation event journal: append-only event collection with deterministic event IDs, duplicate/conflict checks, and a versioned disk snapshot written through a temporary file and atomic replacement.
-- Ledger: integer-credit accounting, immutable transaction records, idempotency keys.
+- Ledger: integer-credit company accounting, immutable transaction records, idempotency keys; stations and spaceports have unlimited funds and are modeled as external counterparties, not finite accounts.
 - Market: station inventories, buy/sell quotes, stock changes.
 - Cargo: manifests and ownership/quantity tracking. The portable `CargoManifest` records item IDs, quantities, unit mass, original loading location, vessel identity and transfer history. Load/unload operations require explicit transfer records with stable IDs and are idempotent. This is an OEM accounting manifest, not a claim that Orbiter's stock vessel model exposes a physical cargo inventory. The `CargoServiceRegistry` maintains a versioned, atomically persisted allowlist of exact vessel names; dock authorization requires both actual docking and membership in this allowlist.
 - Cargo transfer authorization: `CargoTransferGate` accepts a transfer only when the bridge proves the exact named spaceport with landed + ground contact + same-body base proximity <= 5 km, or when the actual docked counterpart is present in the explicit `CargoServiceRegistry`. A docking flag or vessel name alone is not sufficient. Arbitrary docking, taxi contact, landed flag alone, unknown position, a different base, and distances beyond 5 km are rejected.
