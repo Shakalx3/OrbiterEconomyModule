@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.10)
 project(OrbiterEconomyModule LANGUAGES CXX)
 add_library(OEMCore
     src/core/Ledger.cpp
+    src/core/Market.cpp
     src/core/CargoManifest.cpp
     src/core/CargoTransferGate.cpp
     src/core/CargoServiceRegistry.cpp
@@ -17,6 +18,8 @@ add_library(OEMCore
 )
 target_include_directories(OEMCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
 add_executable(OEMCoreTests Tests/core/LedgerTests.cpp)
+add_executable(OEMMarketTests Tests/core/MarketTests.cpp)
+target_link_libraries(OEMMarketTests PRIVATE OEMCore)
 add_executable(OEMCargoManifestTests Tests/core/CargoManifestTests.cpp)
 add_executable(OEMCargoManifestJournalTests Tests/core/CargoManifestJournalTests.cpp)
 add_executable(OEMCargoTransferGateTests Tests/core/CargoTransferGateTests.cpp)
@@ -42,6 +45,7 @@ add_executable(OEMDockingTransitionTests Tests/core/DockingTransitionTests.cpp)
 target_link_libraries(OEMDockingTransitionTests PRIVATE OEMCore)
 enable_testing()
 add_test(NAME OEMCoreTests COMMAND OEMCoreTests)
+add_test(NAME OEMMarketTests COMMAND OEMMarketTests)
 add_test(NAME OEMCargoManifestTests COMMAND OEMCargoManifestTests)
 add_test(NAME OEMCargoManifestJournalTests COMMAND OEMCargoManifestJournalTests)
 add_test(NAME OEMCargoTransferGateTests COMMAND OEMCargoTransferGateTests)
