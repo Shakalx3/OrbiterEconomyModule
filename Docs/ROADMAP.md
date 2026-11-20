@@ -29,6 +29,7 @@
 - [ ] Solar-system location identifiers and station definitions.
 - [ ] Market inventories and buy/sell transactions.
 - [x] Add portable abstract cargo manifests with transfer history, mass accounting and idempotent load/unload operations.
+- [x] Add portable station-side stock accounting with explicit initial stock, load debits, unload credits, quantity bounds and idempotent transfer IDs.
 - [x] Persist cargo manifest transfer history with versioned, atomic, idempotent recovery.
 - [x] Add native per-vessel manifest path isolation and lazy recovery on focus; save hook is ready for authorized transfer operations.
 - [x] Add a portable authorization gate requiring verified landed + ground-contact spaceport state or an explicitly recognized OEM cargo-service dock.
