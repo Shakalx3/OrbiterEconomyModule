@@ -7,3 +7,12 @@ For a LOAD, replay debits the service inventory and credits the vessel manifest.
 The journal header is OEM_CARGO_EXCHANGE|1|<hex service vessel ID>. Complete records are versioned by the header and hex-encode identifiers. Recovery starts from an explicitly configured initial service stock, replays records into candidate copies of the inventory and vessel-manifest map, and publishes both candidates only if the entire complete journal validates. A torn final fragment is discarded; a malformed complete record rejects the replay without partially mutating the supplied projections.
 
 The caller must supply the explicit station-stock seed before recovery. The journal records exchanges, not initial stock configuration. The current implementation is portable core only: the native Orbiter bridge still uses its older per-vessel manifest persistence and does not expose cargo transfer controls. Do not enable transfer UI until native startup/recovery and all transfer commits have been migrated to this coordinator, including a deliberate migration policy for existing per-vessel manifest journals.
+
+
+## Native bridge integration
+
+The native bridge now loads one stock configuration and one exchange journal per registered service vessel. The stock file is OEMData/cargo_stock_<hex service vessel ID>.cfg; the durable exchange journal is OEMData/cargo_exchanges/exchange_<hex service vessel ID>.journal. At scenario startup, registered services are recovered and their transfer histories are merged into vessel-manifest projections.
+
+Before using the recovered projection, the bridge checks any legacy per-vessel manifest journal. If it contains a transfer absent from the exchange history, recovery for that service is refused and logged; legacy data is not silently overwritten or discarded. Existing legacy histories therefore require an explicit migration before further transfers can be accepted.
+
+The bridge currently supports station-side stock only for registered cargo-service vessels. The authorization gate can recognize a landed spaceport, but a separate spaceport stock registry has not been implemented; those transfers are explicitly rejected. The MFD remains read-only and no transfer controls are exposed.
