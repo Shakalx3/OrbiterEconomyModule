@@ -68,7 +68,7 @@ jobs:
         run: |
           cl /nologo /LD /EHsc /O2 /MD /DWIN32 /D_WINDOWS /D_USRDLL /I"SDK\Orbitersdk\include" src\orbiter\OEMSpaceportTest.cpp OEMSpaceportTest.res /link /LIBPATH:"SDK\Orbitersdk\lib" orbiter.lib orbitersdk.lib gdi32.lib user32.lib /OUT:OEMSpaceportTest.dll
           cl /nologo /LD /EHsc /O2 /MD /DWIN32 /D_WINDOWS /D_USRDLL /I"SDK\Orbitersdk\include" src\orbiter\OEMGroundContactTest.cpp OEMGroundContactTest.res /link /LIBPATH:"SDK\Orbitersdk\lib" orbiter.lib orbitersdk.lib gdi32.lib user32.lib /OUT:OEMGroundContactTest.dll
-          cl /nologo /LD /EHsc /O2 /MD /DWIN32 /D_WINDOWS /D_USRDLL /I"SDK\Orbitersdk\include" /I"src\core" src\orbiter\OEMLandingBridge.cpp src\core\SpaceportLanding.cpp src\core\SimulationEvent.cpp src\core\SimulationEventJournal.cpp src\core\FlightTransition.cpp src\core\DockingTransition.cpp src\core\CargoServiceRegistry.cpp OEMLandingBridge.res /link /LIBPATH:"SDK\Orbitersdk\lib" orbiter.lib orbitersdk.lib gdi32.lib user32.lib /OUT:OEMLandingBridge.dll
+          cl /nologo /LD /EHsc /O2 /MD /DWIN32 /D_WINDOWS /D_USRDLL /I"SDK\Orbitersdk\include" /I"src\core" src\orbiter\OEMLandingBridge.cpp src\core\SpaceportLanding.cpp src\core\SimulationEvent.cpp src\core\SimulationEventJournal.cpp src\core\FlightTransition.cpp src\core\DockingTransition.cpp src\core\CargoServiceRegistry.cpp src\core\CargoManifest.cpp src\core\CargoManifestJournal.cpp OEMLandingBridge.res /link /LIBPATH:"SDK\Orbitersdk\lib" orbiter.lib orbitersdk.lib gdi32.lib user32.lib /OUT:OEMLandingBridge.dll
       - name: Replace the rolling release
         if: github.event_name == 'push'
         shell: pwsh
