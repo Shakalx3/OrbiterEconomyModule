@@ -48,6 +48,10 @@ on:
       - "SDK/Orbitersdk/lib/**"
       - ".github/workflows/oem-native-test.yml"
 
+concurrency:
+  group: oem-native-diagnostics-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
@@ -79,18 +83,18 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $tag = "oem-native-diagnostics-current"
+          $title = "OEM Native Diagnostics (current)"
+          $notes = "Latest successful Win32 build for Orbiter 2010. OEMLandingBridge includes background takeoff/landing and docking/undocking monitors, a persistent versioned event journal, trusted cargo-service registry loading from OEMData\\cargo_services.cfg, lazy per-vessel cargo manifest journal recovery from OEMData\\cargo_manifests, and a transactional transfer gate that validates live Orbiter surface/docking state before committing. The release also includes a default cargo_services.cfg with ISS registered. Place it in the OEMData folder beside OEMLandingBridge.dll. The OEM Flight Log MFD is available in the MFD mode list (key L). Cargo transfer UI is not yet connected."
+          git tag -f $tag $env:GITHUB_SHA
+          git push --force origin "refs/tags/$tag"
+          if ($LASTEXITCODE -ne 0) { throw "Could not update rolling release tag" }
 
-          $release = gh release view $tag --repo $env:GITHUB_REPOSITORY --json tagName 2>$null
+          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release delete $tag --repo $env:GITHUB_REPOSITORY --yes
-            if ($LASTEXITCODE -ne 0) { throw "Could not delete previous rolling release" }
+            gh release edit $tag --repo $env:GITHUB_REPOSITORY --title $title --notes $notes --target $env:GITHUB_SHA --prerelease
+            if ($LASTEXITCODE -ne 0) { throw "Could not update rolling release metadata" }
+            gh release upload $tag OEMSpaceportTest.dll OEMGroundContactTest.dll OEMLandingBridge.dll OEMData\\cargo_services.cfg --repo $env:GITHUB_REPOSITORY --clobber
+          } else {
+            gh release create $tag OEMSpaceportTest.dll OEMGroundContactTest.dll OEMLandingBridge.dll OEMData\\cargo_services.cfg --repo $env:GITHUB_REPOSITORY --title $title --notes $notes --prerelease
           }
-
-          git ls-remote --exit-code --tags origin "refs/tags/$tag" *> $null
-          if ($LASTEXITCODE -eq 0) {
-            git push origin ":refs/tags/$tag"
-            if ($LASTEXITCODE -ne 0) { throw "Could not delete previous rolling tag" }
-          }
-
-          gh release create $tag OEMSpaceportTest.dll OEMGroundContactTest.dll OEMLandingBridge.dll OEMData\\cargo_services.cfg --repo $env:GITHUB_REPOSITORY --title "OEM Native Diagnostics (current)" --notes "Latest successful Win32 build for Orbiter 2010. OEMLandingBridge includes background takeoff/landing and docking/undocking monitors, a persistent versioned event journal, trusted cargo-service registry loading from OEMData\\cargo_services.cfg, and lazy per-vessel cargo manifest journal recovery from OEMData\\cargo_manifests, plus a transactional transfer gate that checks live landed/contact/base or registered-service docking state before committing a manifest journal. The release also includes a default cargo_services.cfg with ISS registered for docking tests. Place it in the OEMData folder beside OEMLandingBridge.dll. The OEM Flight Log MFD (MFD mode list; key L). Events are not yet settled financially; cargo transfer UI is not yet connected." --prerelease
-          if ($LASTEXITCODE -ne 0) { throw "Could not publish rolling release" }
+          if ($LASTEXITCODE -ne 0) { throw "Could not publish rolling release assets" }
