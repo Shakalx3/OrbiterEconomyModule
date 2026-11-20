@@ -84,7 +84,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $tag = "oem-native-diagnostics-current"
           $title = "OEM Native Diagnostics (current)"
-          $notes = "Latest successful Win32 build for Orbiter 2010. OEMLandingBridge includes background takeoff/landing and docking/undocking monitors, a persistent versioned event journal, trusted cargo-service registry loading from OEMData\\cargo_services.cfg, lazy per-vessel cargo manifest journal recovery from OEMData\\cargo_manifests, and a transactional transfer gate that validates live Orbiter surface/docking state before committing. The release also includes a default cargo_services.cfg with ISS registered. Place it in the OEMData folder beside OEMLandingBridge.dll. The OEM Flight Log MFD is available in the MFD mode list (key L). Cargo transfer UI is not yet connected."
+          $notes = "Latest successful Win32 build for Orbiter 2010. OEMLandingBridge includes background takeoff/landing and docking/undocking monitors, a persistent versioned event journal, trusted cargo-service registry loading from OEMData\\cargo_services.cfg, lazy per-vessel cargo manifest journal recovery from OEMData\\cargo_manifests, and a transactional transfer gate that validates live Orbiter surface/docking state before committing. The release also includes a default cargo_services.cfg with ISS registered. Place it in the OEMData folder beside OEMLandingBridge.dll. The OEM Flight Log MFD is available in the MFD mode list (key L). The OEM Cargo Manifest MFD (key C) is read-only; cargo transfer commands are not exposed in the UI yet."
           git tag -f $tag $env:GITHUB_SHA
           git push --force origin "refs/tags/$tag"
           if ($LASTEXITCODE -ne 0) { throw "Could not update rolling release tag" }
