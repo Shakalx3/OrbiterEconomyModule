@@ -30,6 +30,7 @@
 - [ ] Market inventories and buy/sell transactions.
 - [x] Add portable abstract cargo manifests with transfer history, mass accounting and idempotent load/unload operations.
 - [x] Persist cargo manifest transfer history with versioned, atomic, idempotent recovery.
+- [x] Add native per-vessel manifest path isolation and lazy recovery on focus; save hook is ready for authorized transfer operations.
 - [x] Add a portable authorization gate requiring verified landed + ground-contact spaceport state or an explicitly recognized OEM cargo-service dock.
 - [x] Require an explicit trusted cargo-service registry; arbitrary docked vessels cannot authorize transfers.
 - [x] Add versioned, atomic persistence and corruption-safe loading for the trusted cargo-service allowlist.
