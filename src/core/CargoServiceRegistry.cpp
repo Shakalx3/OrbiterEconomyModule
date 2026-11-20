@@ -49,6 +49,7 @@ bool CargoServiceRegistry::isRegistered(const std::string& vesselId) const {
     return !vesselId.empty()&&vesselIds_.find(vesselId)!=vesselIds_.end();
 }
 std::size_t CargoServiceRegistry::size() const { return vesselIds_.size(); }
+const std::set<std::string>& CargoServiceRegistry::vesselIds() const { return vesselIds_; }
 void CargoServiceRegistry::clear() { vesselIds_.clear(); }
 
 Result CargoServiceRegistry::load(const std::string& path) {
