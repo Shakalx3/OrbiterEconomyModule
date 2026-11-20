@@ -1,0 +1,12 @@
+**** Orbiter.log
+Build Aug 30 2010 [v.100830]
+Timer precision: 1e-007 sec
+Found 0 joystick(s)
+Module AtlantisConfig.dll .... [Build 100830, API 100830]
+Module AtmConfig.dll ......... [Build 100830, API 100830]
+Module DGConfigurator.dll .... [Build 100830, API 100830]
+Module D3D9Client.dll ........ [Build 160408, API 100830]
+Module LuaConsole.dll ........ [Build 100830, API 100830]
+Module ScriptMFD.dll ......... [Build 100830, API 100830]
+Module LuaMFD.dll ............ [Build 100830, API 100830]
+Module ScnEditor.dll ......... [Build 100830, API 100830]
