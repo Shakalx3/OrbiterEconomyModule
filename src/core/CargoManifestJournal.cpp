@@ -38,11 +38,11 @@ std::vector<std::string> split(const std::string& line) {
 }
 bool parseLong(const std::string& s,long long& value) {
     if(s.empty())return false; char* end=0; const long long n=std::strtoll(s.c_str(),&end,10);
-    if(!end||*end!='\\0')return false; value=n; return true;
+    if(!end||*end!='\0')return false; value=n; return true;
 }
 bool parseDouble(const std::string& s,double& value) {
     if(s.empty())return false; char* end=0; const double n=std::strtod(s.c_str(),&end);
-    if(!end||*end!='\\0')return false; value=n; return true;
+    if(!end||*end!='\0')return false; value=n; return true;
 }
 bool replaceFile(const std::string& temporary,const std::string& target) {
 #ifdef _WIN32
@@ -66,7 +66,7 @@ bool parseTransfer(const std::string& line,CargoTransfer& t) {
 void writeTransfer(std::ostream& out,const CargoTransfer& t) {
     out<<"T|"<<hexEncode(t.transferId)<<'|'<<static_cast<int>(t.direction)<<'|'
        <<hexEncode(t.vesselId)<<'|'<<hexEncode(t.locationId)<<'|'<<hexEncode(t.cargoId)
-       <<'|'<<t.quantity<<'|'<<std::setprecision(17)<<t.unitMassKg<<'|'<<t.simulationTime<<'\\n';
+       <<'|'<<t.quantity<<'|'<<std::setprecision(17)<<t.unitMassKg<<'|'<<t.simulationTime<<'\n';
 }
 } // namespace
 
@@ -98,7 +98,7 @@ Result CargoManifestJournalStore::save(const std::string& path,const CargoManife
     {
         std::ofstream out(temporary.c_str(),std::ios::out|std::ios::binary|std::ios::trunc);
         if(!out.is_open())return Result::failure("CARGO_JOURNAL_OPEN","Could not create temporary cargo journal.");
-        out<<"OEM_CARGO_MANIFEST|1|"<<hexEncode(manifest.vesselId())<<'\\n';
+        out<<"OEM_CARGO_MANIFEST|1|"<<hexEncode(manifest.vesselId())<<'\n';
         const std::vector<CargoTransfer>& history=manifest.history();
         for(std::size_t i=0;i<history.size();++i)writeTransfer(out,history[i]);
         out.flush();
