@@ -605,6 +605,21 @@ public:
             }
         }
 
+        // Register any currently occupied surface base, including scenarios
+        // that start with the vessel already parked (startup is not a landing event).
+        if (landing.landed && landing.groundContact && landing.proximityKnown &&
+            !landing.nearestBaseId.empty() &&
+            landing.nearestBaseDistanceMetres >= 0.0 &&
+            landing.nearestBaseDistanceMetres <= 5000.0) {
+            if (!ensureCargoServiceInventory(landing.nearestBaseId)) {
+                char stockMessage[512];
+                sprintf(stockMessage,
+                    "OEM SPACEPORT STOCK: initialization failed base=%s; market access will remain unavailable.",
+                    landing.nearestBaseId.c_str());
+                oapiWriteLog(stockMessage);
+            }
+        }
+
         // Compare Orbiter's actual per-port state with the previous sample.
         // The first sample is a baseline, not a docking event.
         oem::DockingObservation docking;
@@ -701,15 +716,6 @@ public:
                     landingEvent.distanceMetres,
                     landingEvent.simulationTime);
                 oapiWriteLog(message);
-            }
-            // A confirmed first landing registers this surface base in the
-            // economy with a persistent empty stock file.
-            if (!ensureCargoServiceInventory(landingEvent.baseId)) {
-                char stockMessage[512];
-                sprintf(stockMessage,
-                    "OEM SPACEPORT STOCK: initialization failed base=%s; market access will remain unavailable.",
-                    landingEvent.baseId.c_str());
-                oapiWriteLog(stockMessage);
             }
         }
     }
