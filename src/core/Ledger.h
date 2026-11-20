@@ -33,6 +33,7 @@ public:
     bool hasOperation(const std::string& operationId) const;
     bool getBalance(const std::string& accountId, Credits& balance) const;
     const std::vector<LedgerEntry>& entries() const;
+    const std::map<std::string, Credits>& accounts() const;
 
 private:
     std::map<std::string, Credits> balances_;
