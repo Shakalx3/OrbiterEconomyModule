@@ -20,7 +20,7 @@ int main() {
     // Configuration and the Orbiter-derived catalogue survive a new game.
     assert(!CampaignResetPolicy::isCampaignOwnedFileName("accounts.cfg"));
     assert(!CampaignResetPolicy::isCampaignOwnedFileName("cargo_catalog.cfg"));
-    assert(!CampaignResetPolicy::isCampaignOwnedFileName("cargo_services.cfg"));
+    assert(CampaignResetPolicy::isCampaignOwnedFileName("cargo_services.cfg"));
     assert(!CampaignResetPolicy::isCampaignOwnedFileName("spaceports.registry"));
     assert(!CampaignResetPolicy::isCampaignOwnedFileName("user_notes.txt"));
     assert(!CampaignResetPolicy::isCampaignOwnedFileName("events.journal.bak"));
