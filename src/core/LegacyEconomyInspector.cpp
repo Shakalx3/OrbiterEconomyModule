@@ -11,7 +11,7 @@ std::string hex(const std::string&s){static const char d[]="0123456789ABCDEF";st
 bool unhex(const std::string&s,std::string&o){if(s.empty()||s.size()%2)return false;o.clear();for(std::size_t i=0;i<s.size();i+=2){char a=s[i],b=s[i+1];int x=a>='0'&&a<='9'?a-'0':a>='A'&&a<='F'?a-'A'+10:a>='a'&&a<='f'?a-'a'+10:-1;int y=b>='0'&&b<='9'?b-'0':b>='A'&&b<='F'?b-'A'+10:b>='a'&&b<='f'?b-'a'+10:-1;if(x<0||y<0)return false;o+=(char)((x<<4)|y);}return true;}
 std::vector<std::string> split(const std::string&s){std::vector<std::string>v;std::istringstream in(s);std::string x;while(std::getline(in,x,'|'))v.push_back(x);return v;}
 bool integer(const std::string&s){if(s.empty())return false;char*e=0;std::strtoll(s.c_str(),&e,10);return e&&*e=='\0';}
-bool real(const std::string&s){if(s.empty())return false;char*e=0;std::strtod(s.c_str(),&e);return e&&*e=='\0';}
+bool real(const std::string&s){if(s.empty())return false;char*e=0;double v=std::strtod(s.c_str(),&e);return e&&*e=='\0'&&std::isfinite(v)&&v>0.0;}
 bool record(const std::string&line,LegacyJournalKind kind,std::string&id){
  std::vector<std::string>f=split(line);std::string decoded;
  if(kind==LEGACY_CARGO_EXCHANGE){long long direction=0;if(f.size()!=9||f[0]!="X"||!unhex(f[1],id)||!integer(f[2])||!unhex(f[3],decoded)||!unhex(f[4],decoded)||!unhex(f[5],decoded)||!integer(f[6])||!real(f[7])||!integer(f[8]))return false;direction=std::strtoll(f[2].c_str(),0,10);long long quantity=std::strtoll(f[6].c_str(),0,10),time=std::strtoll(f[8].c_str(),0,10);return !id.empty()&&quantity>0&&time>=0&&(direction==(long long)CARGO_LOAD||direction==(long long)CARGO_UNLOAD);}
