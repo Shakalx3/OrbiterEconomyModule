@@ -9,9 +9,10 @@
 - [x] Verify native landed-state, vessel-position, surface-base enumeration, and 5 km distance path in a diagnostic MFD.
 - [x] Validate `VESSEL::GroundContact()` in a separate diagnostic MFD in the target Orbiter installation.
 - [x] Implement and runtime-validate the background bridge for takeoff/landing timestamps, vessel identity, body/base and distance.
-- [x] Add portable takeoff/landing monitors and an idempotent in-memory simulation event journal with deterministic event IDs.
+- [x] Add portable takeoff/landing monitors and an idempotent simulation event journal with deterministic event IDs.
+- [x] Add versioned journal serialization, atomic replacement, and recovery tests for an incomplete final record.
 - [ ] Build and runtime-validate the bridge-to-event-journal integration.
-- [ ] Persist the simulation event journal across scenario reloads.
+- [ ] Build and runtime-validate journal persistence across scenario reloads.
 - [ ] Add native docking/undocking observation and publish those events.
 - [ ] Connect verified events to contract/cargo eligibility and settlement.
 
