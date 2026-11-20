@@ -1,22 +1,94 @@
 #include "CargoServiceRegistry.h"
+#include <cstdio>
+#include <fstream>
+#include <sstream>
+#include <vector>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
-namespace oem {
+namespace oem { namespace {
+std::string encodeHex(const std::string& value) {
+    static const char digits[]="0123456789ABCDEF";
+    std::string out;
+    for(std::size_t i=0;i<value.size();++i) {
+        const unsigned char c=static_cast<unsigned char>(value[i]);
+        out.push_back(digits[c>>4]);out.push_back(digits[c&15]);
+    }
+    return out;
+}
+bool decodeHex(const std::string& value,std::string& out) {
+    if(value.empty()||value.size()%2)return false;
+    out.clear();
+    for(std::size_t i=0;i<value.size();i+=2) {
+        const char a=value[i],b=value[i+1];
+        const int hi=a>='0'&&a<='9'?a-'0':a>='A'&&a<='F'?a-'A'+10:a>='a'&&a<='f'?a-'a'+10:-1;
+        const int lo=b>='0'&&b<='9'?b-'0':b>='A'&&b<='F'?b-'A'+10:b>='a'&&b<='f'?b-'a'+10:-1;
+        if(hi<0||lo<0)return false;
+        out.push_back(static_cast<char>((hi<<4)|lo));
+    }
+    return !out.empty();
+}
+bool replaceFile(const std::string& temporary,const std::string& target) {
+#ifdef _WIN32
+    return MoveFileExA(temporary.c_str(),target.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)!=0;
+#else
+    return std::rename(temporary.c_str(),target.c_str())==0;
+#endif
+}
+} // namespace
 
 bool CargoServiceRegistry::registerService(const std::string& vesselId) {
-    if (vesselId.empty()) return false;
+    if(vesselId.empty())return false;
     return vesselIds_.insert(vesselId).second;
 }
-
 bool CargoServiceRegistry::unregisterService(const std::string& vesselId) {
-    return vesselIds_.erase(vesselId) != 0;
+    return vesselIds_.erase(vesselId)!=0;
 }
-
 bool CargoServiceRegistry::isRegistered(const std::string& vesselId) const {
-    return !vesselId.empty() && vesselIds_.find(vesselId) != vesselIds_.end();
+    return !vesselId.empty()&&vesselIds_.find(vesselId)!=vesselIds_.end();
+}
+std::size_t CargoServiceRegistry::size() const { return vesselIds_.size(); }
+
+Result CargoServiceRegistry::load(const std::string& path) {
+    std::ifstream in(path.c_str(),std::ios::in|std::ios::binary);
+    if(!in.is_open()) { vesselIds_.clear(); return Result::success(); }
+    std::string header;
+    if(!std::getline(in,header)||header!="OEM_CARGO_SERVICES|1")
+        return Result::failure("CARGO_SERVICES_HEADER","Cargo service registry header or version is invalid.");
+    std::set<std::string> candidate;
+    std::string line;
+    while(std::getline(in,line)) {
+        if(line.empty())continue;
+        if(line.compare(0,2,"S|")!=0)
+            return Result::failure("CARGO_SERVICES_RECORD","Cargo service registry contains an invalid record.");
+        std::string vesselId;
+        if(!decodeHex(line.substr(2),vesselId))
+            return Result::failure("CARGO_SERVICES_RECORD","Cargo service registry contains an invalid vessel ID.");
+        candidate.insert(vesselId);
+    }
+    vesselIds_.swap(candidate);
+    return Result::success();
 }
 
-std::size_t CargoServiceRegistry::size() const {
-    return vesselIds_.size();
+Result CargoServiceRegistry::save(const std::string& path) const {
+    const std::string temporary=path+".tmp";
+    {
+        std::ofstream out(temporary.c_str(),std::ios::out|std::ios::binary|std::ios::trunc);
+        if(!out.is_open())return Result::failure("CARGO_SERVICES_OPEN","Could not create temporary cargo service registry.");
+        out<<"OEM_CARGO_SERVICES|1\n";
+        for(std::set<std::string>::const_iterator it=vesselIds_.begin();it!=vesselIds_.end();++it)
+            out<<"S|"<<encodeHex(*it)<<"\n";
+        out.flush();
+        if(!out.good())return Result::failure("CARGO_SERVICES_WRITE","Could not write cargo service registry.");
+        out.close();
+        if(out.fail())return Result::failure("CARGO_SERVICES_CLOSE","Could not close cargo service registry.");
+    }
+    if(!replaceFile(temporary,path)) {
+        std::remove(temporary.c_str());
+        return Result::failure("CARGO_SERVICES_REPLACE","Could not atomically replace cargo service registry.");
+    }
+    return Result::success();
 }
 
 } // namespace oem
