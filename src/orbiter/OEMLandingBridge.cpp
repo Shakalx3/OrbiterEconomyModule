@@ -17,6 +17,7 @@
 #include "../core/CargoServiceRegistry.h"
 #include "../core/CargoManifest.h"
 #include "../core/CargoManifestJournal.h"
+#include "../core/CargoTransferGate.h"
 
 namespace {
 
@@ -135,6 +136,85 @@ public:
             return false;
         }
         return true;
+    }
+
+    oem::Result applyCargoTransfer(const oem::CargoTransfer& transfer, double simulationTime) {
+        OBJHANDLE focus = oapiGetFocusObject();
+        if (!focus || !oapiIsVessel(focus))
+            return oem::Result::failure("CARGO_NO_FOCUS", "No focused vessel is available for a cargo transfer.");
+        VESSEL *vessel = oapiGetVesselInterface(focus);
+        if (!vessel)
+            return oem::Result::failure("CARGO_NO_VESSEL", "Orbiter could not provide the focused vessel interface.");
+        const std::string vesselId = vessel->GetName() ? vessel->GetName() : "";
+        if (vesselId.empty() || transfer.vesselId != vesselId)
+            return oem::Result::failure("CARGO_VESSEL_MISMATCH", "Transfer vessel is not the currently focused Orbiter vessel.");
+        ensureCargoManifest(vesselId);
+        std::map<std::string, oem::CargoManifest>::const_iterator current = cargoManifests_.find(vesselId);
+        if (current == cargoManifests_.end())
+            return oem::Result::failure("CARGO_MANIFEST_UNAVAILABLE", "The vessel cargo manifest could not be loaded safely.");
+
+        oem::CargoTransferObservation observation;
+        observation.vesselId = vesselId;
+        observation.landed = (vessel->GetFlightStatus() & 1u) != 0;
+        observation.groundContact = vessel->GroundContact();
+        if (observation.groundContact) {
+            OBJHANDLE body = vessel->GetSurfaceRef();
+            if (body) {
+                double vesselLng = 0.0, vesselLat = 0.0, vesselRadius = 0.0;
+                OBJHANDLE positionBody = vessel->GetEquPos(vesselLng, vesselLat, vesselRadius);
+                const double bodyRadius = oapiGetSize(body);
+                if (positionBody == body && bodyRadius > 0.0 && _finite(bodyRadius) &&
+                    _finite(vesselLat) && _finite(vesselLng)) {
+                    observation.surfaceLocationKnown = true;
+                    double nearestDistance = -1.0;
+                    const DWORD baseCount = oapiGetBaseCount(body);
+                    for (DWORD i = 0; i < baseCount; ++i) {
+                        OBJHANDLE base = oapiGetBaseByIndex(body, (int)i);
+                        if (!base) continue;
+                        double baseLng = 0.0, baseLat = 0.0, baseRadius = 0.0;
+                        oapiGetBaseEquPos(base, &baseLng, &baseLat, &baseRadius);
+                        const double distance = oem::surfaceDistanceMetres(
+                            vesselLat, vesselLng, baseLat, baseLng, bodyRadius);
+                        if (distance >= 0.0 && (nearestDistance < 0.0 || distance < nearestDistance)) {
+                            nearestDistance = distance;
+                            char baseName[128] = {};
+                            oapiGetObjectName(base, baseName, sizeof(baseName));
+                            observation.surfaceBaseId = baseName;
+                        }
+                    }
+                    observation.surfaceBaseDistanceMetres = nearestDistance;
+                }
+            }
+        }
+        const UINT dockCount = vessel->DockCount();
+        for (UINT i = 0; i < dockCount; ++i) {
+            DOCKHANDLE dock = vessel->GetDockHandle(i);
+            if (!dock) continue;
+            OBJHANDLE other = vessel->GetDockStatus(dock);
+            if (!other || !oapiIsVessel(other)) continue;
+            char otherName[128] = {};
+            oapiGetObjectName(other, otherName, sizeof(otherName));
+            if (otherName[0] != '\0' && cargoServices_.isRegistered(otherName)) {
+                observation.docked = true;
+                observation.dockedVesselId = otherName;
+                break;
+            }
+        }
+
+        oem::CargoTransfer candidateTransfer = transfer;
+        candidateTransfer.simulationTime = simulationTime >= 0.0
+            ? (oem::SimulationSeconds)simulationTime : 0;
+        oem::CargoManifest candidate(current->second);
+        const oem::Result applied = cargoTransferGate_.apply(
+            candidate, candidateTransfer, observation, cargoServices_);
+        if (!applied.ok) return applied;
+        const std::string path = makeCargoManifestPath(module_, vesselId);
+        if (path.empty())
+            return oem::Result::failure("CARGO_MANIFEST_PATH", "Could not resolve cargo manifest journal path.");
+        const oem::Result saved = cargoManifestStore_.save(path, candidate);
+        if (!saved.ok) return saved;
+        cargoManifests_[vesselId] = candidate;
+        return oem::Result::success();
     }
 
     void clbkSimulationStart(RenderMode mode) override {
@@ -445,6 +525,7 @@ private:
     oem::CargoServiceRegistry cargoServices_;
     std::string cargoServicesPath_;
     oem::CargoManifestJournalStore cargoManifestStore_;
+    oem::CargoTransferGate cargoTransferGate_;
     std::map<std::string, oem::CargoManifest> cargoManifests_;
     std::set<std::string> cargoManifestLoadAttempted_;
     bool journalReady_;
