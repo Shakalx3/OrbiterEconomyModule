@@ -22,6 +22,7 @@ int main() {
     assert(!registry.addSpaceport("Mars", "Bad", 0.0, 2.0).ok);
     assert(!registry.addStation("").ok);
     assert(registry.findStorageId("ISS", oem::ECONOMIC_LOCATION_STATION) == iss);
+    assert(registry.findStorageId("Canaveral", oem::ECONOMIC_LOCATION_SPACEPORT) == 0);
     assert(registry.findStorageId("ISS", oem::ECONOMIC_LOCATION_SPACEPORT) == 0);
     return 0;
 }
