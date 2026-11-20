@@ -255,6 +255,9 @@ public:
         const oem::Result authorized = cargoTransferGate_.authorize(
             candidateTransfer, observation, cargoServices_);
         if (!authorized.ok) return authorized;
+        if (!cargoServices_.isRegistered(candidateTransfer.locationId))
+            return oem::Result::failure("CARGO_SPACEPORT_STOCK_UNAVAILABLE",
+                "Spaceport authorization is verified, but spaceport stock accounting is not configured yet; only registered service-vessel inventories are supported.");
         if (!ensureCargoServiceInventory(candidateTransfer.locationId))
             return oem::Result::failure("CARGO_SERVICE_INVENTORY_UNAVAILABLE",
                 "The registered cargo service stock or exchange history could not be loaded safely.");
