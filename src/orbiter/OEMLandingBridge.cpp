@@ -610,7 +610,9 @@ public:
         if (landing.landed && landing.groundContact && landing.proximityKnown &&
             !landing.nearestBaseId.empty() &&
             landing.nearestBaseDistanceMetres >= 0.0 &&
-            landing.nearestBaseDistanceMetres <= 5000.0) {
+            landing.nearestBaseDistanceMetres <= 5000.0 &&
+            cargoServiceInventoryLoadAttempted_.find(landing.nearestBaseId) ==
+                cargoServiceInventoryLoadAttempted_.end()) {
             if (!ensureCargoServiceInventory(landing.nearestBaseId)) {
                 char stockMessage[512];
                 sprintf(stockMessage,
