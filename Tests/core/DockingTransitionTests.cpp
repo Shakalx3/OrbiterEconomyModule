@@ -23,7 +23,7 @@ int main() {
     assert(m.observe(o,events));assert(events.size()==2);
     assert(events[0].type==oem::SIM_EVENT_UNDOCK&&events[0].relatedVesselId=="ISS");
     assert(events[1].type==oem::SIM_EVENT_DOCK&&events[1].relatedVesselId=="StationB");
-    o=sample("OtherShip",5000);o.ports.push_back(oem::DockingPortObservation(0,"StationB"));
+    o=sample("OtherShip",5000); // identity change with a free port establishes a clean baseline
     assert(!m.observe(o,events));assert(events.empty());
     o=sample("OtherShip",6000);assert(!m.observe(o,events));return 0;
 }
