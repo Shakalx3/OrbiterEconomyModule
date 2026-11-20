@@ -23,6 +23,14 @@
 
 namespace {
 
+
+bool sameCargoTransfer(const oem::CargoTransfer& a, const oem::CargoTransfer& b) {
+    return a.transferId == b.transferId && a.direction == b.direction &&
+        a.vesselId == b.vesselId && a.locationId == b.locationId &&
+        a.cargoId == b.cargoId && a.quantity == b.quantity &&
+        a.unitMassKg == b.unitMassKg && a.simulationTime == b.simulationTime;
+}
+
 class OEMLandingBridge;
 OEMLandingBridge *g_bridge = 0;
 int g_flightLogMode = -1;
@@ -556,6 +564,38 @@ private:
                     serviceId.c_str(), recovered.code.c_str(), recovered.message.c_str());
             oapiWriteLog(message);
             return false;
+        }
+        for (std::map<std::string, oem::CargoManifest>::const_iterator it = recoveredManifests.begin();
+             it != recoveredManifests.end(); ++it) {
+            const std::string legacyPath = makeCargoManifestPath(module_, it->first);
+            if (legacyPath.empty()) return false;
+            oem::CargoManifest legacy(it->first);
+            const oem::Result legacyLoaded = cargoManifestStore_.load(legacyPath, legacy);
+            if (!legacyLoaded.ok) {
+                char message[512];
+                sprintf(message, "OEM Cargo Manifest: legacy migration check failed vessel=%s (%s): %s",
+                        it->first.c_str(), legacyLoaded.code.c_str(), legacyLoaded.message.c_str());
+                oapiWriteLog(message);
+                return false;
+            }
+            const std::vector<oem::CargoTransfer>& legacyHistory = legacy.history();
+            const std::vector<oem::CargoTransfer>& exchangeHistory = it->second.history();
+            for (std::size_t i = 0; i < legacyHistory.size(); ++i) {
+                bool matched = false;
+                for (std::size_t j = 0; j < exchangeHistory.size(); ++j) {
+                    if (sameCargoTransfer(legacyHistory[i], exchangeHistory[j])) {
+                        matched = true;
+                        break;
+                    }
+                }
+                if (!matched) {
+                    char message[512];
+                    sprintf(message, "OEM Cargo Exchange: legacy manifest diverges for vessel=%s; transfer migration required.",
+                            it->first.c_str());
+                    oapiWriteLog(message);
+                    return false;
+                }
+            }
         }
         cargoServiceInventories_.insert(std::make_pair(serviceId, candidate));
         for (std::map<std::string, oem::CargoManifest>::const_iterator it = recoveredManifests.begin();
