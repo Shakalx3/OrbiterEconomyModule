@@ -48,11 +48,18 @@ int main() {
     observation = makeObservation(false, true, true, 60.1);
     assert(!monitor.observe(observation, event));
 
-    // Missing proximity evidence is unknown, not a fabricated rejection or
-    // acceptance. A later complete observation can still be evaluated.
+    // Missing proximity evidence is unknown. It must not be treated as a
+    // completed negative search or as permission to accept a landing.
     observation = makeObservation(true, true, false, -1.0);
     assert(!monitor.observe(observation, event));
 
+    // A completed search with no matching base is known negative evidence.
+    observation = makeObservation(true, true, true, -1.0);
+    observation.nearestBaseId.clear();
+    observation.simulationTime = 115;
+    assert(!monitor.observe(observation, event));
+
+    // Exactly 5,000 m is inside the inclusive radius.
     observation = makeObservation(true, true, true, 5000.0);
     observation.simulationTime = 120;
     assert(monitor.observe(observation, event));
@@ -66,7 +73,7 @@ int main() {
     observation.simulationTime = 121;
     assert(!monitor.observe(observation, event));
 
-    // Moving beyond the inclusive 5 km boundary ends qualification.
+    // Moving beyond the 5 km boundary ends qualification.
     observation = makeObservation(true, true, true, 5000.01);
     assert(!monitor.observe(observation, event));
 
@@ -81,8 +88,7 @@ int main() {
     observation.simulationTime = 200;
     assert(!monitor.observe(observation, event));
 
-    // A known no-base / out-of-range result disqualifies the vessel.
-    observation.vesselId = "TestShip";
+    // A known out-of-range result disqualifies the vessel.
     observation.nearestBaseDistanceMetres = 7000.0;
     assert(!monitor.observe(observation, event));
     observation.nearestBaseDistanceMetres = 10.0;
