@@ -28,7 +28,9 @@
 ## Phase B — stations, markets, and cargo
 - [ ] Solar-system location identifiers and station definitions.
 - [ ] Market inventories and buy/sell transactions.
-- [ ] Abstract cargo manifests and mass accounting.
+- [x] Add portable abstract cargo manifests with transfer history, mass accounting and idempotent load/unload operations.
+- [ ] Persist cargo manifests and connect transfer authorization to verified docking/spaceport state.
+- [ ] Add stock-vessel cargo adapters only where a documented physical cargo interface exists.
 - [ ] Docking and spaceport-location observation through the Orbiter bridge.
 
 ## Phase C — contracts
