@@ -18,8 +18,10 @@
 #include "../core/CargoManifest.h"
 #include "../core/CargoManifestJournal.h"
 #include "../core/CargoTransferGate.h"
-#include "../core/CargoExchangeJournal.h"
 #include "../core/CargoServiceInventoryConfig.h"
+#include "../core/EconomyJournal.h"
+#include "../core/LedgerConfig.h"
+#include "../core/CargoCatalogConfig.h"
 
 namespace {
 
@@ -126,6 +128,25 @@ std::string makeCargoExchangePath(HINSTANCE module, const std::string& serviceId
     std::string path(exchangeDirectory); path += "\\"; path += filename; return path;
 }
 
+std::string makeEconomyDataFilePath(HINSTANCE module, const char *filename) {
+    char modulePath[MAX_PATH] = {};
+    const DWORD length = GetModuleFileNameA(module, modulePath, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) return std::string();
+    char *separator = strrchr(modulePath, '\\\\');
+    if (!separator) separator = strrchr(modulePath, '/');
+    if (!separator) return std::string();
+    *separator = '\\0';
+    char dataDirectory[MAX_PATH] = {};
+    sprintf(dataDirectory, "%s\\\\OEMData", modulePath);
+    if (!CreateDirectoryA(dataDirectory, 0) && GetLastError() != ERROR_ALREADY_EXISTS)
+        return std::string();
+    if (strlen(dataDirectory) + 1 + strlen(filename) >= MAX_PATH) return std::string();
+    std::string result(dataDirectory);
+    result += "\\\\";
+    result += filename;
+    return result;
+}
+
 std::string makeCargoServicesPath(HINSTANCE module) {
     char modulePath[MAX_PATH] = {};
     const DWORD length = GetModuleFileNameA(module, modulePath, MAX_PATH);
@@ -154,8 +175,11 @@ public:
           dockingMonitors_(), eventQueue_(), journalStore_(), journalPath_(makeJournalPath(hDLL)),
           cargoServices_(), cargoServicesPath_(makeCargoServicesPath(hDLL)),
           cargoManifestStore_(), cargoTransferGate_(), cargoManifests_(), cargoManifestLoadAttempted_(),
-          cargoStockConfigStore_(), cargoExchangeStore_(), cargoServiceInventories_(),
-          cargoServiceInventoryLoadAttempted_(), journalReady_(false), sessionId_(),
+          cargoStockConfigStore_(), cargoServiceInventories_(), cargoServiceInventoryLoadAttempted_(),
+          economyJournalStore_(), economyJournalPath_(makeEconomyDataFilePath(hDLL, "economy.journal")),
+          ledgerConfigStore_(), cargoCatalogConfigStore_(), accountsPath_(makeEconomyDataFilePath(hDLL, "accounts.cfg")),
+          cargoCatalogPath_(makeEconomyDataFilePath(hDLL, "cargo_catalog.cfg")),
+          ledger_(), cargoCatalog_(), economyReady_(false), journalReady_(false), sessionId_(),
           currentSimulationTime_(0), cargoTransferSequence_(0), lastFocus_(0) {
         g_bridge = this;
     }
@@ -354,63 +378,12 @@ public:
             return oem::Result::failure("CARGO_SERVICE_INVENTORY_UNAVAILABLE",
                 "The registered cargo service inventory is unavailable.");
 
-        // A legacy per-vessel manifest may predate the unified exchange journal.
-        // Never append a new exchange while that vessel's service-specific history
-        // differs: doing so would make restart recovery silently lose old entries.
-        const std::vector<oem::CargoTransfer>& serviceHistory = station->second.history();
-        const std::vector<oem::CargoTransfer>& manifestHistory = current->second.history();
-        std::size_t serviceTransferCount = 0;
-        std::size_t manifestTransferCount = 0;
-        for (std::size_t i = 0; i < serviceHistory.size(); ++i) {
-            if (serviceHistory[i].vesselId == vesselId)
-                ++serviceTransferCount;
-        }
-        for (std::size_t i = 0; i < manifestHistory.size(); ++i) {
-            if (manifestHistory[i].locationId == candidateTransfer.locationId)
-                ++manifestTransferCount;
-        }
-        if (serviceTransferCount != manifestTransferCount)
-            return oem::Result::failure("CARGO_LEGACY_HISTORY_DIVERGED",
-                "This vessel has legacy cargo history not represented by the service exchange journal; explicit migration is required.");
-        for (std::size_t i = 0; i < manifestHistory.size(); ++i) {
-            if (manifestHistory[i].locationId != candidateTransfer.locationId)
-                continue;
-            bool matched = false;
-            for (std::size_t j = 0; j < serviceHistory.size(); ++j) {
-                if (sameCargoTransfer(manifestHistory[i], serviceHistory[j])) {
-                    matched = true;
-                    break;
-                }
-            }
-            if (!matched)
-                return oem::Result::failure("CARGO_LEGACY_HISTORY_DIVERGED",
-                    "This vessel's legacy cargo history differs from the service exchange journal; explicit migration is required.");
-        }
-        for (std::size_t i = 0; i < serviceHistory.size(); ++i) {
-            if (serviceHistory[i].vesselId != vesselId)
-                continue;
-            bool matched = false;
-            for (std::size_t j = 0; j < manifestHistory.size(); ++j) {
-                if (sameCargoTransfer(serviceHistory[i], manifestHistory[j])) {
-                    matched = true;
-                    break;
-                }
-            }
-            if (!matched)
-                return oem::Result::failure("CARGO_LEGACY_HISTORY_DIVERGED",
-                    "The service exchange journal contains cargo history missing from this vessel manifest; recovery must be repaired before transfer.");
-        }
-
-        const std::string exchangePath = makeCargoExchangePath(module_, candidateTransfer.locationId);
-        if (exchangePath.empty())
-            return oem::Result::failure("CARGO_EXCHANGE_PATH", "Could not resolve cargo exchange journal path.");
-        oem::CargoServiceInventory candidateStation(station->second);
-        oem::CargoManifest candidateManifest(current->second);
-        const oem::Result committed = cargoExchangeStore_.apply(
-            exchangePath, candidateStation, candidateManifest, candidateTransfer);
+        if (!economyReady_ || economyJournalPath_.empty())
+            return oem::Result::failure("ECONOMY_UNAVAILABLE",
+                "The global economy journal or its opening configuration is unavailable.");
+        const oem::Result committed = economyJournalStore_.applyExchange(
+            economyJournalPath_, cargoServiceInventories_, cargoManifests_[vesselId], candidateTransfer);
         if (!committed.ok) return committed;
-        cargoServiceInventories_[candidateTransfer.locationId] = candidateStation;
-        cargoManifests_[vesselId] = candidateManifest;
         return oem::Result::success();
     }
 
@@ -422,6 +395,9 @@ public:
         cargoManifestLoadAttempted_.clear();
         cargoServiceInventories_.clear();
         cargoServiceInventoryLoadAttempted_.clear();
+        ledger_ = oem::Ledger();
+        cargoCatalog_ = oem::CargoCatalog();
+        economyReady_ = false;
         sessionId_.clear();
         currentSimulationTime_ = 0;
         cargoTransferSequence_ = 0;
@@ -462,6 +438,7 @@ public:
             const std::set<std::string>& serviceIds = cargoServices_.vesselIds();
             for (std::set<std::string>::const_iterator it = serviceIds.begin(); it != serviceIds.end(); ++it)
                 ensureCargoServiceInventory(*it);
+            initializeEconomyState();
         }
         oapiWriteLog((char*)"OEM Landing Bridge: simulation monitoring started.");
     }
@@ -691,86 +668,83 @@ private:
             oapiWriteLog(message);
             return false;
         }
-        const std::string exchangePath = makeCargoExchangePath(module_, serviceId);
-        if (exchangePath.empty()) {
-            oapiWriteLog((char*)"OEM Cargo Exchange: could not resolve exchange journal path.");
+        cargoServiceInventories_.insert(std::make_pair(serviceId, candidate));
+        char message[512];
+        sprintf(message, "OEM Cargo Stock: opening state loaded service=%s lines=%lu.",
+                serviceId.c_str(), (unsigned long)candidate.lines().size());
+        oapiWriteLog(message);
+        return true;
+    }
+
+    bool initializeEconomyState() {
+        if (economyJournalPath_.empty() || accountsPath_.empty() || cargoCatalogPath_.empty()) {
+            oapiWriteLog((char*)"OEM Economy: could not resolve economy configuration paths.");
             return false;
         }
-        std::map<std::string, oem::CargoManifest> recoveredManifests(cargoManifests_);
-        const oem::Result recovered = cargoExchangeStore_.load(
-            exchangePath, candidate, recoveredManifests);
-        if (!recovered.ok) {
+
+        oem::Ledger openingLedger;
+        const oem::Result accounts = ledgerConfigStore_.load(accountsPath_, openingLedger);
+        if (!accounts.ok && accounts.code != "LEDGER_CONFIG_MISSING") {
             char message[512];
-            sprintf(message, "OEM Cargo Exchange: recovery failed service=%s (%s): %s",
-                    serviceId.c_str(), recovered.code.c_str(), recovered.message.c_str());
+            sprintf(message, "OEM Economy: account configuration failed (%s): %s",
+                    accounts.code.c_str(), accounts.message.c_str());
             oapiWriteLog(message);
             return false;
         }
-        for (std::map<std::string, oem::CargoManifest>::const_iterator it = recoveredManifests.begin();
-             it != recoveredManifests.end(); ++it) {
-            const std::string legacyPath = makeCargoManifestPath(module_, it->first);
-            if (legacyPath.empty()) return false;
-            oem::CargoManifest legacy(it->first);
-            const oem::Result legacyLoaded = cargoManifestStore_.load(legacyPath, legacy);
-            if (!legacyLoaded.ok) {
-                char message[512];
-                sprintf(message, "OEM Cargo Manifest: legacy migration check failed vessel=%s (%s): %s",
-                        it->first.c_str(), legacyLoaded.code.c_str(), legacyLoaded.message.c_str());
-                oapiWriteLog(message);
-                return false;
-            }
-            const std::vector<oem::CargoTransfer>& legacyHistory = legacy.history();
-            const std::vector<oem::CargoTransfer>& exchangeHistory = it->second.history();
-            for (std::size_t i = 0; i < legacyHistory.size(); ++i) {
-                bool matched = false;
-                for (std::size_t j = 0; j < exchangeHistory.size(); ++j) {
-                    if (sameCargoTransfer(legacyHistory[i], exchangeHistory[j])) {
-                        matched = true;
-                        break;
-                    }
-                }
-                if (!matched) {
-                    char message[512];
-                    sprintf(message, "OEM Cargo Exchange: legacy manifest diverges for vessel=%s; transfer migration required.",
-                            it->first.c_str());
-                    oapiWriteLog(message);
-                    return false;
-                }
-            }
+        if (accounts.ok) {
+            char message[256];
+            sprintf(message, "OEM Economy: loaded %lu company accounts.",
+                    (unsigned long)openingLedger.accounts().size());
+            oapiWriteLog(message);
+        } else {
+            oapiWriteLog((char*)"OEM Economy: accounts.cfg missing; market trading remains unavailable until explicitly configured.");
         }
-        cargoServiceInventories_.insert(std::make_pair(serviceId, candidate));
-        for (std::map<std::string, oem::CargoManifest>::const_iterator it = recoveredManifests.begin();
-             it != recoveredManifests.end(); ++it) {
-            cargoManifests_[it->first] = it->second;
-            if (!it->second.history().empty()) cargoManifestLoadAttempted_.insert(it->first);
+
+        oem::CargoCatalog openingCatalog;
+        const oem::Result catalog = cargoCatalogConfigStore_.load(cargoCatalogPath_, openingCatalog);
+        if (!catalog.ok && catalog.code != "CATALOG_CONFIG_MISSING") {
+            char message[512];
+            sprintf(message, "OEM Economy: cargo catalog failed (%s): %s",
+                    catalog.code.c_str(), catalog.message.c_str());
+            oapiWriteLog(message);
+            return false;
         }
-        char message[512];
-        sprintf(message, "OEM Cargo Stock: service=%s lines=%lu transfers=%lu.",
-                serviceId.c_str(), (unsigned long)candidate.lines().size(),
-                (unsigned long)candidate.history().size());
-        oapiWriteLog(message);
+        if (catalog.ok) {
+            char message[256];
+            sprintf(message, "OEM Economy: loaded %lu cargo definitions.",
+                    (unsigned long)openingCatalog.entries().size());
+            oapiWriteLog(message);
+        } else {
+            oapiWriteLog((char*)"OEM Economy: cargo_catalog.cfg missing; market trading remains unavailable until explicitly configured.");
+        }
+
+        std::map<std::string, oem::CargoManifest> openingManifests;
+        const oem::Result recovered = economyJournalStore_.load(
+            economyJournalPath_, openingCatalog, openingLedger,
+            cargoServiceInventories_, openingManifests);
+        if (!recovered.ok) {
+            char message[512];
+            sprintf(message, "OEM Economy: global journal recovery failed (%s): %s",
+                    recovered.code.c_str(), recovered.message.c_str());
+            oapiWriteLog(message);
+            return false;
+        }
+
+        ledger_ = openingLedger;
+        cargoCatalog_ = openingCatalog;
+        cargoManifests_.swap(openingManifests);
+        for (std::map<std::string, oem::CargoManifest>::const_iterator it = cargoManifests_.begin();
+             it != cargoManifests_.end(); ++it)
+            cargoManifestLoadAttempted_.insert(it->first);
+        economyReady_ = true;
+        oapiWriteLog((char*)"OEM Economy: global journal ready; legacy test journals are ignored.");
         return true;
     }
 
     void ensureCargoManifest(const std::string& vesselId) {
         if (vesselId.empty() || cargoManifestLoadAttempted_.find(vesselId) != cargoManifestLoadAttempted_.end()) return;
-        const std::string path = makeCargoManifestPath(module_, vesselId);
-        if (path.empty()) { cargoManifestLoadAttempted_.insert(vesselId); oapiWriteLog((char*)"OEM Cargo Manifest: could not resolve manifest path."); return; }
         cargoManifestLoadAttempted_.insert(vesselId);
-        oem::CargoManifest candidate(vesselId);
-        const oem::Result loaded = cargoManifestStore_.load(path, candidate);
-        if (!loaded.ok) {
-            char message[512];
-            sprintf(message, "OEM Cargo Manifest: load failed vessel=%s (%s): %s", vesselId.c_str(), loaded.code.c_str(), loaded.message.c_str());
-            oapiWriteLog(message);
-            return;
-        }
-        const std::size_t transfers = candidate.history().size();
-        const double massKg = candidate.totalMassKg();
-        cargoManifests_.insert(std::make_pair(vesselId, candidate));
-        char message[512];
-        sprintf(message, "OEM Cargo Manifest: loaded vessel=%s transfers=%lu mass=%.3f kg.", vesselId.c_str(), (unsigned long)transfers, massKg);
-        oapiWriteLog(message);
+        cargoManifests_.insert(std::make_pair(vesselId, oem::CargoManifest(vesselId)));
     }
 
     bool publishEvent(const oem::SimulationEvent& event) {
@@ -817,9 +791,17 @@ private:
     std::map<std::string, oem::CargoManifest> cargoManifests_;
     std::set<std::string> cargoManifestLoadAttempted_;
     oem::CargoServiceInventoryConfigStore cargoStockConfigStore_;
-    oem::CargoExchangeJournalStore cargoExchangeStore_;
     std::map<std::string, oem::CargoServiceInventory> cargoServiceInventories_;
     std::set<std::string> cargoServiceInventoryLoadAttempted_;
+    oem::EconomyJournalStore economyJournalStore_;
+    std::string economyJournalPath_;
+    oem::LedgerConfigStore ledgerConfigStore_;
+    oem::CargoCatalogConfigStore cargoCatalogConfigStore_;
+    std::string accountsPath_;
+    std::string cargoCatalogPath_;
+    oem::Ledger ledger_;
+    oem::CargoCatalog cargoCatalog_;
+    bool economyReady_;
     bool journalReady_;
     std::string sessionId_;
     oem::SimulationSeconds currentSimulationTime_;
