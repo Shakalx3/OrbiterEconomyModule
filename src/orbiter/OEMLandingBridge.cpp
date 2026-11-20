@@ -14,6 +14,7 @@
 #include "../core/SimulationEvent.h"
 #include "../core/SimulationEventJournal.h"
 #include "../core/SurfaceDistance.h"
+#include "../core/SpaceportRegistry.h"
 #include "../core/CargoServiceRegistry.h"
 #include "../core/CargoManifest.h"
 #include "../core/CargoTransferGate.h"
@@ -131,6 +132,7 @@ public:
           economyJournalStore_(), economyJournalPath_(makeEconomyDataFilePath(hDLL, "economy.journal")),
           ledgerConfigStore_(), cargoCatalogConfigStore_(), accountsPath_(makeEconomyDataFilePath(hDLL, "accounts.cfg")),
           cargoCatalogPath_(makeEconomyDataFilePath(hDLL, "cargo_catalog.cfg")),
+          spaceportRegistryPath_(makeEconomyDataFilePath(hDLL, "spaceports.registry")),
           ledger_(), cargoCatalog_(), economyReady_(false), journalReady_(false), sessionId_(),
           currentSimulationTime_(0), cargoTransferSequence_(0), lastFocus_(0) {
         g_bridge = this;
@@ -504,6 +506,7 @@ public:
                     ensureCargoServiceInventory(priorEvents[i].baseId);
             initializeEconomyState();
         }
+        rebuildSpaceportRegistry();
         oapiWriteLog((char*)"OEM Landing Bridge: simulation monitoring started.");
     }
 
@@ -730,6 +733,87 @@ public:
 
 private:
 
+    void rebuildSpaceportRegistry() {
+        oem::SpaceportRegistry registry;
+        const DWORD bodyCount = oapiGetGbodyCount();
+        unsigned long baseCount = 0;
+        unsigned long padCount = 0;
+        const double gravitationalConstant = 6.67430e-11;
+        for (DWORD bodyIndex = 0; bodyIndex < bodyCount; ++bodyIndex) {
+            OBJHANDLE body = oapiGetGbodyByIndex((int)bodyIndex);
+            if (!body) continue;
+            char bodyName[128] = {};
+            oapiGetObjectName(body, bodyName, sizeof(bodyName));
+            if (bodyName[0] == '\\0') continue;
+            const double bodyRadius = oapiGetSize(body);
+            const double bodyMass = oapiGetMass(body);
+            if (!(bodyRadius > 0.0) || !(bodyMass > 0.0) ||
+                !_finite(bodyRadius) || !_finite(bodyMass)) continue;
+
+            const DWORD count = oapiGetBaseCount(body);
+            for (DWORD baseIndex = 0; baseIndex < count; ++baseIndex) {
+                OBJHANDLE base = oapiGetBaseByIndex(body, (int)baseIndex);
+                if (!base) continue;
+                char baseName[128] = {};
+                oapiGetObjectName(base, baseName, sizeof(baseName));
+                if (baseName[0] == '\\0') continue;
+
+                oem::SpaceportRecord record;
+                record.bodyName = bodyName;
+                record.baseName = baseName;
+                record.id = record.bodyName + "/" + record.baseName;
+                double baseRadius = 0.0;
+                oapiGetBaseEquPos(base, &record.longitudeRad, &record.latitudeRad, &baseRadius);
+                record.bodyRadiusMetres = bodyRadius;
+                record.bodyMassKg = bodyMass;
+                record.surfaceGravityMps2 = gravitationalConstant * bodyMass /
+                    (bodyRadius * bodyRadius);
+                record.escapeVelocityMps = sqrt(2.0 * gravitationalConstant * bodyMass / bodyRadius);
+                if (!(baseRadius > 0.0) || !_finite(record.longitudeRad) ||
+                    !_finite(record.latitudeRad)) continue;
+                const oem::Result added = registry.add(record);
+                if (!added.ok) {
+                    char message[384];
+                    sprintf(message, "OEM Spaceport Registry: skipped %s (%s).",
+                            record.id.c_str(), added.code.c_str());
+                    oapiWriteLog(message);
+                    continue;
+                }
+
+                const DWORD pads = oapiGetBasePadCount(base);
+                for (DWORD padIndex = 0; padIndex < pads; ++padIndex) {
+                    oem::SpaceportPadRecord pad;
+                    pad.index = (unsigned int)padIndex;
+                    if (!oapiGetBasePadEquPos(base, padIndex, &pad.longitudeRad,
+                                              &pad.latitudeRad, &pad.radiusMetres))
+                        continue;
+                    pad.hasIls = oapiGetBasePadNav(base, padIndex) != 0;
+                    const oem::Result padAdded = registry.addPad(record.id, pad);
+                    if (padAdded.ok) ++padCount;
+                }
+                ++baseCount;
+            }
+        }
+
+        if (spaceportRegistryPath_.empty()) {
+            oapiWriteLog((char*)"OEM Spaceport Registry: could not resolve output path.");
+            return;
+        }
+        oem::SpaceportRegistryConfigStore store;
+        const oem::Result saved = store.save(spaceportRegistryPath_, registry);
+        if (!saved.ok) {
+            char message[512];
+            sprintf(message, "OEM Spaceport Registry: save failed (%s): %s",
+                    saved.code.c_str(), saved.message.c_str());
+            oapiWriteLog(message);
+            return;
+        }
+        char message[256];
+        sprintf(message, "OEM Spaceport Registry: saved %lu surface bases across %lu celestial bodies; %lu VTOL pads.",
+                baseCount, (unsigned long)bodyCount, padCount);
+        oapiWriteLog(message);
+    }
+
     bool ensureCargoServiceInventory(const std::string& serviceId) {
         if (serviceId.empty()) return false;
         if (cargoServiceInventories_.find(serviceId) != cargoServiceInventories_.end()) return true;
@@ -902,6 +986,7 @@ private:
     oem::CargoCatalogConfigStore cargoCatalogConfigStore_;
     std::string accountsPath_;
     std::string cargoCatalogPath_;
+    std::string spaceportRegistryPath_;
     oem::Ledger ledger_;
     oem::CargoCatalog cargoCatalog_;
     bool economyReady_;
