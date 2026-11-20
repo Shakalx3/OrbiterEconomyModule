@@ -44,7 +44,8 @@
 - [x] Specify the global economy journal format, ordered replay model, unlimited station funds, and legacy migration safety.
 - [x] Implement and test the portable global economy journal across stations and operation types.
 - [x] Add a read-only legacy journal inspector that detects malformed files and refuses multiple non-empty streams without provable chronology.
-- [ ] Implement explicit legacy migration for a provably ordered single stream, including manifest consistency checks.
+- [x] Adopt clean-start policy: ignore test-era per-station exchange and per-vessel manifest journals; preserve them untouched and seed the global economy from explicit configuration.
+- [x] Connect native cargo exchange commits and recovery to the global economy journal (pending native build/runtime validation).
 - [ ] Add stock-vessel cargo adapters only where a documented physical cargo interface exists.
 - [x] Docking and spaceport-location observation through the Orbiter bridge.
 
