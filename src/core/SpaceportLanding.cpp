@@ -18,7 +18,7 @@ SpaceportLandingEvent::SpaceportLandingEvent()
     : vesselId(), bodyId(), baseId(), distanceMetres(-1.0), simulationTime(0) {}
 
 SpaceportLandingMonitor::SpaceportLandingMonitor()
-    : hasVessel_(false), vesselId_(), stateKnown_(false), qualified_(false) {}
+    : hasVessel_(false), vesselId_(), armedForLanding_(false) {}
 
 bool SpaceportLandingMonitor::observe(const LandingObservation& observation,
                                       SpaceportLandingEvent& event) {
@@ -30,57 +30,47 @@ bool SpaceportLandingMonitor::observe(const LandingObservation& observation,
     if (!hasVessel_ || vesselId_ != observation.vesselId) {
         hasVessel_ = true;
         vesselId_ = observation.vesselId;
-        stateKnown_ = false;
-        qualified_ = false;
+        // Do not invent an arrival when monitoring starts with a vessel
+        // already parked. A vessel first observed airborne is armed.
+        armedForLanding_ = !observation.landed || !observation.groundContact;
     }
 
-    // Either condition is authoritative negative evidence, even if position
-    // or base enumeration is temporarily unavailable.
+    // Only a confirmed airborne / no-contact state arms the next touchdown.
     if (!observation.landed || !observation.groundContact) {
-        stateKnown_ = true;
-        qualified_ = false;
+        armedForLanding_ = true;
         return false;
     }
 
-    // A landed vessel in contact is not enough. The bridge must complete the
-    // surface-body/base search before the core can accept or reject proximity.
+    if (!armedForLanding_)
+        return false;
+
+    // After touchdown, wait for complete location evidence. Unknown telemetry
+    // must neither accept the landing nor disarm the observed touchdown.
     if (!observation.proximityKnown || observation.bodyId.empty())
         return false;
 
-    // A completed search with no base, or a nearest base outside the inclusive
-    // 5 km radius, is known negative evidence.
+    // A completed search with no base, or a base outside the inclusive 5 km
+    // radius, is a real touchdown but not a spaceport landing. Disarm until
+    // the vessel has left the surface again.
     if (observation.nearestBaseId.empty() ||
         !isWithinSpaceportRadius(observation.nearestBaseDistanceMetres, 5000.0)) {
-        stateKnown_ = true;
-        qualified_ = false;
+        armedForLanding_ = false;
         return false;
     }
 
-    if (!stateKnown_) {
-        // Baseline only. Loading a scenario with a vessel already parked at a
-        // spaceport must not fabricate a fresh arrival event.
-        stateKnown_ = true;
-        qualified_ = true;
-        return false;
-    }
-
-    if (qualified_)
-        return false;
-
-    qualified_ = true;
     event.vesselId = observation.vesselId;
     event.bodyId = observation.bodyId;
     event.baseId = observation.nearestBaseId;
     event.distanceMetres = observation.nearestBaseDistanceMetres;
     event.simulationTime = observation.simulationTime;
+    armedForLanding_ = false;
     return true;
 }
 
 void SpaceportLandingMonitor::reset() {
     hasVessel_ = false;
     vesselId_.clear();
-    stateKnown_ = false;
-    qualified_ = false;
+    armedForLanding_ = false;
 }
 
 } // namespace oem
