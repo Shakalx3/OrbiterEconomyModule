@@ -39,7 +39,7 @@ int main() {
     { std::ofstream out(path.c_str(),std::ios::binary|std::ios::trunc);
       const unsigned char bom[]={0xEF,0xBB,0xBF};
       out.write(reinterpret_cast<const char*>(bom),3);
-      out<<"OEM_CARGO_SERVICES|1\\r\\nS|495353\\r\\n"; }
+      out<<"OEM_CARGO_SERVICES|1\r\nS|495353\r\n"; }
     assert(restored.load(path).ok);
     assert(restored.size()==1&&restored.isRegistered("ISS"));
 
@@ -48,7 +48,7 @@ int main() {
       const unsigned char bytes[]={0xFF,0xFE,
         'O',0,'E',0,'M',0,'_',0,'C',0,'A',0,'R',0,'G',0,'O',0,'_',0,
         'S',0,'E',0,'R',0,'V',0,'I',0,'C',0,'E',0,'S',0,'|',0,'1',0,
-        '\\n',0,'S',0,'|',0,'4',0,'9',0,'5',0,'3',0,'5',0,'3',0,'\\n',0};
+        '\n',0,'S',0,'|',0,'4',0,'9',0,'5',0,'3',0,'5',0,'3',0,'\n',0};
       out.write(reinterpret_cast<const char*>(bytes),sizeof(bytes)); }
     assert(restored.load(path).ok);
     assert(restored.size()==1&&restored.isRegistered("ISS"));
