@@ -16,3 +16,17 @@ The native bridge now loads one stock configuration and one exchange journal per
 Before using the recovered projection, the bridge checks legacy per-vessel manifest journals for vessels represented in the exchange history. In addition, immediately before any transfer, it compares the focused vessel's complete history for that service against the service exchange journal in both directions. This second check also catches legacy journals for vessels that have no exchange records yet; a mismatch blocks the transfer with an explicit migration error. Legacy data is not silently overwritten or discarded. Existing legacy histories therefore require an explicit migration before further transfers can be accepted.
 
 The bridge currently supports station-side stock only for registered cargo-service vessels. The authorization gate can recognize a landed spaceport, but a separate spaceport stock registry has not been implemented; those transfers are explicitly rejected. The Cargo Manifest MFD remains read-only. A separate OEM Cargo Exchange Test MFD exposes one-unit LOAD and UNLOAD commands for controlled validation; it changes only OEM's managed accounting and never changes Orbiter vessel mass or physical cargo.
+
+
+## Controlled native exchange test
+
+For a deliberately synthetic, ledger-only test, create `OEMData/cargo_stock_495353.cfg` beside the bridge DLL with:
+
+```
+OEM_CARGO_STOCK|1|495353
+S|54455354|2|1.0
+```
+
+`495353` is the UTF-8 hex ID for the registered service vessel `ISS`; `54455354` is the test cargo ID `TEST`. This explicitly seeds two units at 1 kg per unit. It is not a physical Orbiter payload.
+
+In Orbiter, focus a vessel docked to ISS and open the `OEM Cargo Exchange Test` MFD (key E). Press LOAD once: station stock should decrease to one and the vessel OEM manifest should show one TEST unit. Press UNLD once: station stock should return to two and the vessel manifest should return to empty. Restart the scenario and verify the exchange recovery log reports two transfers for ISS; the MFD should still show stock quantity two and an empty vessel manifest. The journal stores both operations durably. Do not use this test MFD as a physical cargo-loading mechanism.
