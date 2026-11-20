@@ -1,6 +1,6 @@
 # Native spaceport landing diagnostic
 
-This is a temporary Orbiter 2010 Win32 MFD test module. It validates the native SDK path needed by OEM's 5 km spaceport rule; it is not yet the production economy module.
+This is a temporary Orbiter 2010 Win32 MFD test module. It validates the native SDK path needed by OEM's 5 km spaceport rule; it is not the production economy module.
 
 ## What it checks
 
@@ -11,9 +11,11 @@ For the vessel associated with the MFD, it:
 3. Enumerates surface bases on that same body with `oapiGetBaseCount()` and `oapiGetBaseByIndex()`.
 4. Reads each base's coordinates with `oapiGetBaseEquPos()`.
 5. Computes great-circle surface distance using the body's mean radius from `oapiGetSize()`.
-6. Reports the nearest base and whether the vessel is landed and within 5,000 m.
+6. Reports the nearest base, distance, and Orbiter's landed/inactive flag.
 
-It intentionally ignores individual VTOL pads and runways. A match requires Orbiter's native flight-status bit 0 to indicate that the vessel is inactive/landed, plus a nearest-base distance no greater than 5,000 m. The module does not move the vessel or modify simulation state.
+The Orbiter 2010 SDK also exposes `VESSEL::GroundContact() const`. The SDK documents this as true when at least one touchdown reference point is in contact with a planetary surface. This direct query is the required independent contact signal for production landing validation. The existing diagnostic deliberately remains unchanged as a known-good reference and does not yet call that method.
+
+A valid production landing requires both the landed/inactive state and ground contact, plus a nearest-base distance no greater than 5,000 m. Individual VTOL pads and runways are intentionally ignored.
 
 ## Build
 
@@ -43,4 +45,4 @@ The display reports the nearest base, distance in metres, and one of:
 
 ## Limits
 
-This first diagnostic uses Orbiter's native flight-status bit 0 (documented as active/in-flight vs inactive/landed). It does not claim a separate ground-contact measurement: the native VESSEL interface in this SDK exposes the landed/inactive status, while the existing LuaMFD test separately reports its ground-contact query. The result must be checked in Orbiter before this logic is promoted into the production bridge.
+The existing diagnostic uses the landed/inactive flag and base distance only. It intentionally does not claim that a separate ground-contact measurement has been exercised. The new portable core tests require both landed status and ground contact, but the native bridge still needs to call `VESSEL::GroundContact()` and validate the result in Orbiter before production use.
