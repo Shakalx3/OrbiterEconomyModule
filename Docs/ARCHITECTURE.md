@@ -6,11 +6,12 @@ Orbiter owns the simulation. OEM observes and records facts exposed by Orbiter; 
 
 Orbiter -> Orbiter Bridge (SDK-dependent DLL) -> OEM Core (portable C++) -> MFD / station terminal UI.
 
-The bridge observes simulation time, vessel identity, docking and location, then exposes verified events to the core. The core owns accounts, markets, cargo manifests, contracts, company progression and persistence.
+The bridge observes simulation time, vessel identity, takeoff, landing, docking and location, then publishes verified events to the core. The core owns accounts, markets, cargo manifests, contracts, company progression and persistence.
 
 ## Initial module boundaries
 
 - Core: identifiers, domain types, validation, deterministic rules.
+- Simulation event journal: append-only in-memory event collection with deterministic event IDs and duplicate/conflict checks.
 - Ledger: integer-credit accounting, immutable transaction records, idempotency keys.
 - Market: station inventories, buy/sell quotes, stock changes.
 - Cargo: manifests and ownership/quantity tracking. Initial cargo is abstract; physical cargo and third-party vessel adapters are later extensions.
@@ -29,8 +30,9 @@ The bridge observes simulation time, vessel identity, docking and location, then
 5. Large time jumps and time acceleration are processed deterministically in bounded economic ticks.
 6. Saves are versioned and written transactionally. A partially written save must not replace the last valid save.
 7. A spaceport landing is valid only when Orbiter reports the vessel landed, the vessel has actual ground contact, and its surface position is within 5,000 m of at least one surface base on the same reference body. The nearest VTOL pad/runway is intentionally irrelevant.
+8. Event IDs include the simulation-session key, event type, vessel ID and simulation timestamp in milliseconds. Duplicate publication is ignored; reuse of an ID for different facts is rejected.
 
-## Spaceport landing detection
+## Spaceport landing and flight event detection
 
 The Orbiter 2010 SDK provides two independent signals: `GetFlightStatus() & 1` for Orbiter's landed/inactive state, and `VESSEL::GroundContact() const` for actual contact of at least one touchdown reference point with the planetary surface. The user has validated the second signal in the target simulator: it changes between flight, surface movement/contact, and the settled landed state. Production acceptance requires both signals.
 
@@ -38,7 +40,9 @@ The native bridge is a background `oapi::Module`, not an MFD redraw callback. It
 
 The portable `SpaceportLandingMonitor` consumes these observations and emits one arrival event after an observed loss of ground contact followed by a landed + ground-contact state inside the 5 km zone. Ground contact without the landed flag is a transitional surface/taxi state, not an airborne state. This prevents a vessel that was already taxiing when monitoring starts from being treated as a fresh arrival. A vessel already parked also establishes a baseline without an event. A completed touchdown outside the zone disarms the monitor until the next loss of contact.
 
-The bridge currently writes verified events to the Orbiter log. It is an observation/event-generation layer, not yet wired to contract settlement, cargo handover, or the economic UI. The existing `OEMSpaceportTest` and `OEMGroundContactTest` MFDs remain separate diagnostics and are not modified by the bridge.
+The portable `FlightTransitionMonitor` emits a takeoff after a grounded baseline followed by actual loss of `GroundContact()`. It preserves the last known surface body/base/distance as departure context. The first observation is always a baseline, so a vessel already airborne when monitoring starts does not generate a fabricated takeoff.
+
+Both event types are published into the core's append-only in-memory `SimulationEventQueue`. The bridge logs the deterministic event ID and event facts. The queue currently lives only for the active simulation session: it is not yet persisted, exposed to an MFD, or connected to contract settlement. Dock/undock event types are reserved in the domain model but their native observation adapter is a later increment.
 
 ## Compatibility strategy
 
@@ -48,4 +52,4 @@ The initial market map covers Earth orbit, the Moon, and Mars in greater depth. 
 
 ## Current implementation boundary
 
-The portable core includes the ledger, surface-distance calculation, and a tested landing-transition monitor. Native diagnostics have verified Launchpad discovery, vessel state, surface-base enumeration, and the 5 km calculation. A background native module now samples all vessels after simulation steps and logs verified landing events. End-to-end in-simulator validation of that background module and connection to the economic contract system remain outstanding.
+The portable core includes the ledger, surface-distance calculation, tested landing and takeoff transition monitors, and an idempotent in-memory simulation event journal. The background bridge has been validated in the target Orbiter installation for real takeoff/landing timestamps, vessel identity, body/base identification and distance. The new queue integration still requires a fresh native build and runtime check. Persistence, docking integration, contracts, cargo handover, settlement and economic UI remain outstanding.
