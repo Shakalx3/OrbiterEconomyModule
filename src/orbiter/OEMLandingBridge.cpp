@@ -138,7 +138,7 @@ public:
           cargoCatalogPath_(makeEconomyDataFilePath(hDLL, "cargo_catalog.cfg")),
           spaceportRegistryPath_(makeEconomyDataFilePath(hDLL, "spaceports.registry")),
           economicStations_(), economicStationsPath_(makeEconomyDataFilePath(hDLL, "economic_stations.registry")),
-          spaceportRegistry_(), economicLocations_(), ledger_(), cargoCatalog_(), economyReady_(false), journalReady_(false), sessionId_(),
+          spaceportRegistry_(), economicLocations_(), economicStationsReady_(false), cargoServicesReady_(false), ledger_(), cargoCatalog_(), economyReady_(false), journalReady_(false), sessionId_(),
           currentSimulationTime_(0), cargoTransferSequence_(0), lastFocus_(0) {
         g_bridge = this;
     }
@@ -158,6 +158,8 @@ public:
     }
 
     oem::Result setEconomicStationRegistered(const std::string& vesselId, bool enabled) {
+        if (!economicStationsReady_)
+            return oem::Result::failure("ECONOMIC_STATION_UNAVAILABLE", "Station registry did not load safely; existing data was left untouched.");
         if (!isFocusedVessel(vesselId))
             return oem::Result::failure("ECONOMIC_STATION_FOCUS",
                 "Register the currently focused vessel from its OEM Economic Admin MFD.");
@@ -178,6 +180,8 @@ public:
     }
 
     oem::Result setCargoServiceRegistered(const std::string& vesselId, bool enabled) {
+        if (!cargoServicesReady_)
+            return oem::Result::failure("CARGO_SERVICE_UNAVAILABLE", "Cargo-service registry did not load safely; existing data was left untouched.");
         if (!isFocusedVessel(vesselId))
             return oem::Result::failure("CARGO_SERVICE_FOCUS",
                 "Register the currently focused vessel from its OEM Economic Admin MFD.");
@@ -537,9 +541,11 @@ public:
             oapiWriteLog(message);
         }
         cargoServices_.clear();
+        cargoServicesReady_ = false;
         const oem::Result servicesLoaded = cargoServicesPath_.empty()
             ? oem::Result::failure("CARGO_SERVICES_PATH", "Could not resolve cargo service configuration path.")
             : cargoServices_.load(cargoServicesPath_);
+        cargoServicesReady_ = servicesLoaded.ok;
         if (servicesLoaded.ok) {
             char message[256];
             sprintf(message, "OEM Cargo Services: loaded %lu registered vessels.",
@@ -552,9 +558,11 @@ public:
             oapiWriteLog(message);
         }
         economicStations_.clear();
+        economicStationsReady_ = false;
         const oem::Result stationsLoaded = economicStationsPath_.empty()
             ? oem::Result::failure("ECONOMIC_STATIONS_PATH", "Could not resolve station registry path.")
             : economicStations_.load(economicStationsPath_);
+        economicStationsReady_ = stationsLoaded.ok;
         if (!stationsLoaded.ok) {
             char message[512];
             sprintf(message, "OEM Economic Stations: load failed (%s): %s",
@@ -1101,6 +1109,8 @@ private:
     std::string economicStationsPath_;
     oem::SpaceportRegistry spaceportRegistry_;
     oem::EconomicLocationRegistry economicLocations_;
+    bool economicStationsReady_;
+    bool cargoServicesReady_;
     oem::Ledger ledger_;
     oem::CargoCatalog cargoCatalog_;
     bool economyReady_;
