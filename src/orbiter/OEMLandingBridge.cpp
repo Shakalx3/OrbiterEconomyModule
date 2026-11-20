@@ -24,6 +24,7 @@
 #include "../core/LedgerConfig.h"
 #include "../core/CargoCatalogConfig.h"
 #include "../core/EconomicLocationRegistry.h"
+#include "../core/EconomicStationRegistry.h"
 
 namespace {
 
@@ -34,6 +35,7 @@ int g_flightLogMode = -1;
 int g_cargoManifestMode = -1;
 int g_cargoExchangeTestMode = -1;
 int g_marketMode = -1;
+int g_economicAdminMode = -1;
 
 std::string makeJournalPath(HINSTANCE module) {
     char modulePath[MAX_PATH] = {};
@@ -135,7 +137,8 @@ public:
           ledgerConfigStore_(), cargoCatalogConfigStore_(), accountsPath_(makeEconomyDataFilePath(hDLL, "accounts.cfg")),
           cargoCatalogPath_(makeEconomyDataFilePath(hDLL, "cargo_catalog.cfg")),
           spaceportRegistryPath_(makeEconomyDataFilePath(hDLL, "spaceports.registry")),
-          economicLocations_(), ledger_(), cargoCatalog_(), economyReady_(false), journalReady_(false), sessionId_(),
+          economicStations_(), economicStationsPath_(makeEconomyDataFilePath(hDLL, "economic_stations.registry")),
+          spaceportRegistry_(), economicLocations_(), ledger_(), cargoCatalog_(), economyReady_(false), journalReady_(false), sessionId_(),
           currentSimulationTime_(0), cargoTransferSequence_(0), lastFocus_(0) {
         g_bridge = this;
     }
@@ -148,6 +151,58 @@ public:
     const oem::EconomicLocationRegistry& economicLocations() const { return economicLocations_; }
     bool isCargoService(const std::string& vesselId) const {
         return cargoServices_.isRegistered(vesselId);
+    }
+
+    bool isEconomicStation(const std::string& vesselId) const {
+        return economicStations_.isStation(vesselId);
+    }
+
+    oem::Result setEconomicStationRegistered(const std::string& vesselId, bool enabled) {
+        if (!isFocusedVessel(vesselId))
+            return oem::Result::failure("ECONOMIC_STATION_FOCUS",
+                "Register the currently focused vessel from its OEM Economic Admin MFD.");
+        oem::EconomicStationRegistry candidate(economicStations_);
+        const bool changed = enabled ? candidate.registerStation(vesselId)
+                                     : candidate.unregisterStation(vesselId);
+        if (!changed)
+            return oem::Result::failure("ECONOMIC_STATION_UNCHANGED",
+                enabled ? "This vessel is already registered as a station."
+                        : "This vessel is not registered as a station.");
+        if (economicStationsPath_.empty())
+            return oem::Result::failure("ECONOMIC_STATION_PATH", "Could not resolve station registry path.");
+        const oem::Result saved = candidate.save(economicStationsPath_);
+        if (!saved.ok) return saved;
+        economicStations_ = candidate;
+        rebuildEconomicLocationRegistry(spaceportRegistry_);
+        return oem::Result::success();
+    }
+
+    oem::Result setCargoServiceRegistered(const std::string& vesselId, bool enabled) {
+        if (!isFocusedVessel(vesselId))
+            return oem::Result::failure("CARGO_SERVICE_FOCUS",
+                "Register the currently focused vessel from its OEM Economic Admin MFD.");
+        oem::CargoServiceRegistry candidate(cargoServices_);
+        const bool changed = enabled ? candidate.registerService(vesselId)
+                                     : candidate.unregisterService(vesselId);
+        if (!changed)
+            return oem::Result::failure("CARGO_SERVICE_UNCHANGED",
+                enabled ? "This vessel is already a cargo service."
+                        : "This vessel is not a cargo service.");
+        const oem::Result saved = cargoServicesPath_.empty()
+            ? oem::Result::failure("CARGO_SERVICES_PATH", "Could not resolve cargo service registry path.")
+            : candidate.save(cargoServicesPath_);
+        if (!saved.ok) return saved;
+        cargoServices_ = candidate;
+        if (enabled) ensureCargoServiceInventory(vesselId);
+        return oem::Result::success();
+    }
+
+    bool isFocusedVessel(const std::string& vesselId) const {
+        OBJHANDLE focus = oapiGetFocusObject();
+        if (!focus || !oapiIsVessel(focus) || vesselId.empty()) return false;
+        char name[128] = {};
+        oapiGetObjectName(focus, name, sizeof(name));
+        return vesselId == name;
     }
 
     const oem::CargoCatalog* marketCatalog() const {
@@ -496,6 +551,21 @@ public:
                     servicesLoaded.code.c_str(), servicesLoaded.message.c_str());
             oapiWriteLog(message);
         }
+        economicStations_.clear();
+        const oem::Result stationsLoaded = economicStationsPath_.empty()
+            ? oem::Result::failure("ECONOMIC_STATIONS_PATH", "Could not resolve station registry path.")
+            : economicStations_.load(economicStationsPath_);
+        if (!stationsLoaded.ok) {
+            char message[512];
+            sprintf(message, "OEM Economic Stations: load failed (%s): %s",
+                    stationsLoaded.code.c_str(), stationsLoaded.message.c_str());
+            oapiWriteLog(message);
+        } else {
+            char message[256];
+            sprintf(message, "OEM Economic Stations: loaded %lu explicit stations.",
+                    (unsigned long)economicStations_.size());
+            oapiWriteLog(message);
+        }
         if (servicesLoaded.ok) {
             const std::set<std::string>& serviceIds = cargoServices_.vesselIds();
             for (std::set<std::string>::const_iterator it = serviceIds.begin(); it != serviceIds.end(); ++it)
@@ -799,7 +869,8 @@ private:
             }
         }
 
-        rebuildEconomicLocationRegistry(registry);
+        spaceportRegistry_ = registry;
+        rebuildEconomicLocationRegistry(spaceportRegistry_);
 
         if (spaceportRegistryPath_.empty()) {
             oapiWriteLog((char*)"OEM Spaceport Registry: could not resolve output path.");
@@ -836,8 +907,8 @@ private:
                 oapiWriteLog(message);
             }
         }
-        const std::set<std::string>& services = cargoServices_.vesselIds();
-        for (std::set<std::string>::const_iterator it = services.begin(); it != services.end(); ++it) {
+        const std::set<std::string>& stations = economicStations_.vesselIds();
+        for (std::set<std::string>::const_iterator it = stations.begin(); it != stations.end(); ++it) {
             const oem::Result added = economicLocations_.addStation(*it);
             if (added.ok) ++stations;
             else {
@@ -1026,6 +1097,9 @@ private:
     std::string accountsPath_;
     std::string cargoCatalogPath_;
     std::string spaceportRegistryPath_;
+    oem::EconomicStationRegistry economicStations_;
+    std::string economicStationsPath_;
+    oem::SpaceportRegistry spaceportRegistry_;
     oem::EconomicLocationRegistry economicLocations_;
     oem::Ledger ledger_;
     oem::CargoCatalog cargoCatalog_;
