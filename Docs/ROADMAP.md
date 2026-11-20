@@ -54,9 +54,12 @@
 - [x] Docking and spaceport-location observation through the Orbiter bridge.
 
 ## Phase C — contracts
-- [ ] Delivery and transport contracts.
-- [ ] Evidence-based eligibility and completion.
-- [ ] Idempotent settlement and contract history.
+- [x] Portable delivery contract model with vessel, cargo, quantity, origin, destination, reward and deadline.
+- [x] Evidence-based eligibility using post-acceptance origin loads and verified destination landing/docking events.
+- [x] In-memory idempotent payout through the company ledger.
+- [ ] Durable contract acceptance/completion/payout history in the global economy journal.
+- [ ] Native bridge integration and contract MFD.
+- [ ] Runtime-validate delivery and payout recovery after scenario restart.
 
 ## Phase D — production and infrastructure
 - [ ] Production recipes, inputs, outputs, and cycle timing.
