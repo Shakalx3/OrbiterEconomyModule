@@ -142,7 +142,7 @@ public:
         flightMonitors_.clear();
         dockingMonitors_.clear();
         cargoManifests_.clear();
-        loadedCargoManifests_.clear();
+        cargoManifestLoadAttempted_.clear();
         sessionId_.clear();
         lastFocus_ = 0;
         oem::SimulationEventQueue restored;
@@ -385,9 +385,10 @@ public:
 
 private:
     void ensureCargoManifest(const std::string& vesselId) {
-        if (vesselId.empty() || loadedCargoManifests_.find(vesselId) != loadedCargoManifests_.end()) return;
+        if (vesselId.empty() || cargoManifestLoadAttempted_.find(vesselId) != cargoManifestLoadAttempted_.end()) return;
         const std::string path = makeCargoManifestPath(module_, vesselId);
-        if (path.empty()) { oapiWriteLog((char*)"OEM Cargo Manifest: could not resolve manifest path."); return; }
+        if (path.empty()) { cargoManifestLoadAttempted_.insert(vesselId); oapiWriteLog((char*)"OEM Cargo Manifest: could not resolve manifest path."); return; }
+        cargoManifestLoadAttempted_.insert(vesselId);
         oem::CargoManifest candidate(vesselId);
         const oem::Result loaded = cargoManifestStore_.load(path, candidate);
         if (!loaded.ok) {
@@ -399,7 +400,6 @@ private:
         const std::size_t transfers = candidate.history().size();
         const double massKg = candidate.totalMassKg();
         cargoManifests_.insert(std::make_pair(vesselId, candidate));
-        loadedCargoManifests_.insert(vesselId);
         char message[512];
         sprintf(message, "OEM Cargo Manifest: loaded vessel=%s transfers=%lu mass=%.3f kg.", vesselId.c_str(), (unsigned long)transfers, massKg);
         oapiWriteLog(message);
@@ -446,7 +446,7 @@ private:
     std::string cargoServicesPath_;
     oem::CargoManifestJournalStore cargoManifestStore_;
     std::map<std::string, oem::CargoManifest> cargoManifests_;
-    std::set<std::string> loadedCargoManifests_;
+    std::set<std::string> cargoManifestLoadAttempted_;
     bool journalReady_;
     std::string sessionId_;
     OBJHANDLE lastFocus_;
