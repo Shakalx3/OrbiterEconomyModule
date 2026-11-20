@@ -18,13 +18,14 @@ class OEMLandingBridge : public oapi::Module {
 public:
     explicit OEMLandingBridge(HINSTANCE hDLL)
         : oapi::Module(hDLL), landingMonitors_(), flightMonitors_(),
-          eventQueue_(), sessionId_() {}
+          eventQueue_(), sessionId_(), lastFocus_(0) {}
 
     void clbkSimulationStart(RenderMode mode) override {
         landingMonitors_.clear();
         flightMonitors_.clear();
         eventQueue_ = oem::SimulationEventQueue();
         sessionId_.clear();
+        lastFocus_ = 0;
         oapiWriteLog((char*)"OEM Landing Bridge: simulation monitoring started.");
     }
 
@@ -33,6 +34,7 @@ public:
         flightMonitors_.clear();
         eventQueue_ = oem::SimulationEventQueue();
         sessionId_.clear();
+        lastFocus_ = 0;
         oapiWriteLog((char*)"OEM Landing Bridge: simulation monitoring stopped.");
     }
 
@@ -52,17 +54,19 @@ public:
         const oem::SimulationSeconds simSeconds =
             (oem::SimulationSeconds)(simt >= 0.0 ? simt : 0.0);
 
-        const DWORD vesselCount = oapiGetVesselCount();
-        std::vector<OBJHANDLE> seen;
-        seen.reserve(vesselCount);
+        // OEM follows only Orbiter's current focus vessel. A focus change
+        // establishes a fresh baseline so inactive vessels cannot generate events.
+        OBJHANDLE hVessel = oapiGetFocusObject();
+        if (!hVessel || !oapiIsVessel(hVessel)) return;
 
-        for (DWORD i = 0; i < vesselCount; ++i) {
-            OBJHANDLE hVessel = oapiGetVesselByIndex((int)i);
-            if (!hVessel) continue;
+        if (hVessel != lastFocus_) {
+            landingMonitors_.clear();
+            flightMonitors_.clear();
+            lastFocus_ = hVessel;
+        }
 
-            seen.push_back(hVessel);
-            VESSEL *vessel = oapiGetVesselInterface(hVessel);
-            if (!vessel) continue;
+        VESSEL *vessel = oapiGetVesselInterface(hVessel);
+        if (!vessel) return;
 
             oem::LandingObservation landing;
             landing.vesselPresent = true;
@@ -167,19 +171,6 @@ public:
                     oapiWriteLog(message);
                 }
             }
-        }
-
-        // Drop state for vessels removed from the simulation.
-        for (std::map<OBJHANDLE, oem::SpaceportLandingMonitor>::iterator it = landingMonitors_.begin();
-             it != landingMonitors_.end();) {
-            if (!isSeen(seen, it->first)) landingMonitors_.erase(it++);
-            else ++it;
-        }
-        for (std::map<OBJHANDLE, oem::FlightTransitionMonitor>::iterator it = flightMonitors_.begin();
-             it != flightMonitors_.end();) {
-            if (!isSeen(seen, it->first)) flightMonitors_.erase(it++);
-            else ++it;
-        }
     }
 
     void clbkDeleteVessel(OBJHANDLE hVessel) override {
@@ -188,12 +179,6 @@ public:
     }
 
 private:
-    bool isSeen(const std::vector<OBJHANDLE>& seen, OBJHANDLE handle) const {
-        for (size_t i = 0; i < seen.size(); ++i)
-            if (seen[i] == handle) return true;
-        return false;
-    }
-
     bool publishEvent(const oem::SimulationEvent& event) {
         const bool duplicate = eventQueue_.contains(event.eventId);
         const oem::Result result = eventQueue_.publish(event);
@@ -216,6 +201,7 @@ private:
     std::map<OBJHANDLE, oem::FlightTransitionMonitor> flightMonitors_;
     oem::SimulationEventQueue eventQueue_;
     std::string sessionId_;
+    OBJHANDLE lastFocus_;
 };
 
 }
