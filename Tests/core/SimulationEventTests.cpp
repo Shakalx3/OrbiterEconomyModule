@@ -2,6 +2,21 @@
 #include "../../src/core/FlightTransition.h"
 #include <cassert>
 
+static oem::FlightObservation surfaceObservation(const char* vessel,
+                                                  bool landed,
+                                                  bool contact) {
+    oem::FlightObservation o;
+    o.vesselPresent = true;
+    o.vesselId = vessel;
+    o.landed = landed;
+    o.groundContact = contact;
+    o.locationKnown = contact;
+    o.bodyId = contact ? "Earth" : "";
+    o.nearestBaseId = contact ? "Habana" : "";
+    o.nearestBaseDistanceMetres = contact ? 42.0 : -1.0;
+    return o;
+}
+
 int main() {
     oem::SimulationEventQueue queue;
     oem::SimulationEvent event;
@@ -26,33 +41,39 @@ int main() {
     assert(!queue.publish(conflicting).ok);
     assert(queue.events().size() == 1);
 
-    oem::FlightTransitionMonitor monitor;
-    oem::FlightObservation observation;
-    observation.vesselPresent = true;
-    observation.vesselId = "GL-NT";
-    observation.landed = true;
-    observation.groundContact = true;
-    observation.locationKnown = true;
-    observation.bodyId = "Earth";
-    observation.nearestBaseId = "Habana";
-    observation.nearestBaseDistanceMetres = 42.0;
     oem::SimulationEvent takeoff;
-    assert(!monitor.observe(observation, takeoff)); // parked baseline
 
+    // A parked vessel establishes a baseline; taxiing does not count as takeoff.
+    oem::FlightTransitionMonitor parked;
+    oem::FlightObservation observation = surfaceObservation("GL-NT", true, true);
+    assert(!parked.observe(observation, takeoff));
     observation.landed = false;
-    observation.groundContact = true; // surface taxi transition
-    assert(!monitor.observe(observation, takeoff));
-
+    assert(!parked.observe(observation, takeoff));
     observation.groundContact = false;
     observation.simulationTime = 130;
     observation.simulationTimeMilliseconds = 130500;
-    assert(monitor.observe(observation, takeoff));
+    assert(parked.observe(observation, takeoff));
     assert(takeoff.type == oem::SIM_EVENT_TAKEOFF);
     assert(takeoff.vesselId == "GL-NT");
     assert(takeoff.bodyId == "Earth");
     assert(takeoff.baseId == "Habana");
     assert(takeoff.simulationTimeMilliseconds == 130500);
+    assert(!parked.observe(observation, takeoff)); // no duplicate
 
-    assert(!monitor.observe(observation, takeoff)); // no duplicate
+    // A vessel already taxiing when monitoring starts is also a valid
+    // ground-contact baseline even though Orbiter's landed flag is clear.
+    oem::FlightTransitionMonitor taxi;
+    observation = surfaceObservation("TaxiShip", false, true);
+    assert(!taxi.observe(observation, takeoff));
+    observation.groundContact = false;
+    observation.locationKnown = false;
+    observation.bodyId.clear();
+    observation.nearestBaseId.clear();
+    observation.simulationTime = 50;
+    observation.simulationTimeMilliseconds = 50000;
+    assert(taxi.observe(observation, takeoff));
+    assert(takeoff.vesselId == "TaxiShip");
+    assert(takeoff.bodyId == "Earth");
+    assert(takeoff.baseId == "Habana");
     return 0;
 }
