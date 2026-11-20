@@ -32,15 +32,17 @@ jobs:
         shell: cmd
         run: |
           rc /nologo /fo OEMSpaceportTest.res src\\orbiter\\OEMSpaceportTest.rc
-      - name: Build Orbiter 2010 MFD test module
+          rc /nologo /fo OEMGroundContactTest.res src\\orbiter\\OEMGroundContactTest.rc
+      - name: Build Orbiter 2010 diagnostic MFD modules
         shell: cmd
         run: |
           cl /nologo /LD /EHsc /O2 /MD /DWIN32 /D_WINDOWS /D_USRDLL /I"SDK\\Orbitersdk\\include" src\\orbiter\\OEMSpaceportTest.cpp OEMSpaceportTest.res /link /LIBPATH:"SDK\\Orbitersdk\\lib" orbiter.lib orbitersdk.lib gdi32.lib user32.lib /OUT:OEMSpaceportTest.dll
-      - name: Publish Win32 DLL as a GitHub release asset
+          cl /nologo /LD /EHsc /O2 /MD /DWIN32 /D_WINDOWS /D_USRDLL /I"SDK\\Orbitersdk\\include" src\\orbiter\\OEMGroundContactTest.cpp OEMGroundContactTest.res /link /LIBPATH:"SDK\\Orbitersdk\\lib" orbiter.lib orbitersdk.lib gdi32.lib user32.lib /OUT:OEMGroundContactTest.dll
+      - name: Publish Win32 DLLs as GitHub release assets
         if: github.event_name == 'push'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "oem-spaceport-test-$($env:GITHUB_SHA.Substring(0, 12))"
-          gh release create $tag OEMSpaceportTest.dll --repo $env:GITHUB_REPOSITORY --title "OEM Spaceport Test $tag" --notes "Diagnostic Win32 MFD for Orbiter 2010. Includes Launchpad module metadata. Requires manual in-simulator validation." --prerelease
+          $tag = "oem-native-diagnostics-$($env:GITHUB_SHA.Substring(0, 12))"
+          gh release create $tag OEMSpaceportTest.dll OEMGroundContactTest.dll --repo $env:GITHUB_REPOSITORY --title "OEM Native Diagnostics $tag" --notes "Orbiter 2010 Win32 MFD diagnostics. OEMSpaceportTest is the unchanged 5 km base-distance reference. OEMGroundContactTest separately displays GetFlightStatus and VESSEL::GroundContact. Ground-contact runtime behavior still requires in-simulator validation." --prerelease
