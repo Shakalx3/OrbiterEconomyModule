@@ -23,11 +23,13 @@ The workflow compiles a 32-bit DLL with the Orbiter 2010 SDK headers and import 
 
 ## Install and run
 
+> Important: Orbiter's Launchpad discovers plugin DLLs from `Modules\\Plugin`. Placing the DLL directly in `Modules` does not make it appear in the Launchpad module list.
+
 1. Download `OEMSpaceportTest.dll` from the [OEM Spaceport Test release](https://github.com/Shakalx3/OrbiterEconomyModule/releases/tag/oem-spaceport-test-01212254a0c5).
-2. Copy `OEMSpaceportTest.dll` into `<Orbiter root>/Modules/`.
-3. Add `OEMSpaceportTest` as a module entry in the `[Modules]` section of `<Orbiter root>/Config/Orbiter.cfg` (do not add the `.dll` suffix).
-4. Start Orbiter and load a scenario with a vessel.
-5. Open an MFD's mode selection and choose **OEM Spaceport Test**.
+2. Copy `OEMSpaceportTest.dll` into `<Orbiter root>/Modules/Plugin/` (create the `Plugin` subfolder if it does not exist).
+3. Start the Orbiter Launchpad and open its **Modules** tab. Find `OEMSpaceportTest` under the MFD modes/plugin modules list and activate its checkbox. Do not add a manual `[Modules]` entry to `Orbiter.cfg`.
+4. Launch Orbiter and load a scenario with a vessel.
+5. Open an MFD's mode selection (SEL / Shift+F1) and choose **OEM Spaceport Test**.
 
 The display reports the nearest base, distance in metres, and one of:
 - `SPACEPORT LANDING: VALID` — landed and within 5 km.
