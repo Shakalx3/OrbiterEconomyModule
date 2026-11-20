@@ -44,6 +44,8 @@ on:
       - "src/core/EconomyJournal.cpp"
       - "OEMData/cargo_services.cfg"
       - "OEMData/cargo_stock_495353.cfg"
+      - "OEMData/accounts.cfg"
+      - "OEMData/cargo_catalog.cfg"
       - "SDK/Orbitersdk/include/**"
       - "SDK/Orbitersdk/lib/**"
       - ".github/workflows/oem-native-test.yml"
@@ -127,7 +129,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $tag = "oem-native-diagnostics-current"
           $title = "OEM Native Diagnostics (current)"
-          $notes = "Latest successful Win32 build for Orbiter 2010. OEMLandingBridge includes takeoff/landing and docking/undocking monitoring, the persistent flight event journal, trusted cargo-service registry loading, and one global durable OEMData\\economy.journal for cargo exchanges and market trades. Old per-service cargo_exchanges and per-vessel cargo_manifests test journals are ignored and left untouched. Explicit opening stock is loaded from OEMData\\cargo_stock_<hex service vessel ID>.cfg; the release includes cargo_services.cfg with ISS registered and cargo_stock_495353.cfg with two TEST units (1 kg each). The OEM Flight Log MFD (key L), read-only Cargo Manifest MFD (key C), ledger-only Cargo Exchange Test MFD (key E), and Station Market MFD (key M) are available. Market BUY/SELL operations require user-created accounts.cfg with a company account named company and cargo_catalog.cfg with explicit item definitions and prices. The sample setup is documented in Docs/ECONOMY_STARTUP.md. Both cargo exchanges and market trades update OEM accounting only; they do not alter Orbiter physical cargo or vessel mass. Station funds are unlimited; the company account is debited for purchases and credited for sales."
+          $notes = "Latest successful Win32 build for Orbiter 2010. OEMLandingBridge includes takeoff/landing and docking/undocking monitoring, the persistent flight event journal, trusted cargo-service registry loading, and one global durable OEMData\\economy.journal for cargo exchanges and market trades. Old per-service cargo_exchanges and per-vessel cargo_manifests test journals are ignored and left untouched. Explicit opening stock is loaded from OEMData\\cargo_stock_<hex service vessel ID>.cfg; the release includes cargo_services.cfg with ISS registered and cargo_stock_495353.cfg with two TEST units (1 kg each). The release also includes sample accounts.cfg (company opening balance 10000 credits) and cargo_catalog.cfg (TEST cargo, 1 kg, buy 100, sell 60). Edit these examples to set the desired starting balance and market prices. The OEM Flight Log MFD (key L), read-only Cargo Manifest MFD (key C), ledger-only Cargo Exchange Test MFD (key E), and Station Market MFD (key M) are available. Market BUY/SELL operations require user-created accounts.cfg with a company account named company and cargo_catalog.cfg with explicit item definitions and prices. The sample setup is documented in Docs/ECONOMY_STARTUP.md. Both cargo exchanges and market trades update OEM accounting only; they do not alter Orbiter physical cargo or vessel mass. Station funds are unlimited; the company account is debited for purchases and credited for sales."
           git tag -f $tag $env:GITHUB_SHA
           git push --force origin "refs/tags/$tag"
           if ($LASTEXITCODE -ne 0) { throw "Could not update rolling release tag" }
@@ -136,7 +138,7 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             gh release edit $tag --repo $env:GITHUB_REPOSITORY --title $title --notes $notes --target $env:GITHUB_SHA --prerelease
             if ($LASTEXITCODE -ne 0) { throw "Could not update rolling release metadata" }
-            gh release upload $tag OEMSpaceportTest.dll OEMGroundContactTest.dll OEMLandingBridge.dll OEMData\\cargo_services.cfg OEMData\\cargo_stock_495353.cfg --repo $env:GITHUB_REPOSITORY --clobber
+            gh release upload $tag OEMSpaceportTest.dll OEMGroundContactTest.dll OEMLandingBridge.dll OEMData\\cargo_services.cfg OEMData\\cargo_stock_495353.cfg OEMData\\accounts.cfg OEMData\\cargo_catalog.cfg --repo $env:GITHUB_REPOSITORY --clobber
           } else {
             gh release create $tag OEMSpaceportTest.dll OEMGroundContactTest.dll OEMLandingBridge.dll OEMData\\cargo_services.cfg OEMData\\cargo_stock_495353.cfg --repo $env:GITHUB_REPOSITORY --title $title --notes $notes --prerelease
           }
