@@ -30,6 +30,18 @@ on:
       - "src/core/CargoServiceInventoryConfig.cpp"
       - "src/core/CargoExchangeJournal.h"
       - "src/core/CargoExchangeJournal.cpp"
+      - "src/core/Ledger.h"
+      - "src/core/Ledger.cpp"
+      - "src/core/LedgerConfig.h"
+      - "src/core/LedgerConfig.cpp"
+      - "src/core/CargoCatalogConfig.h"
+      - "src/core/CargoCatalogConfig.cpp"
+      - "src/core/Market.h"
+      - "src/core/Market.cpp"
+      - "src/core/MarketTrade.h"
+      - "src/core/MarketTrade.cpp"
+      - "src/core/EconomyJournal.h"
+      - "src/core/EconomyJournal.cpp"
       - "OEMData/cargo_services.cfg"
       - "OEMData/cargo_stock_495353.cfg"
       - "SDK/Orbitersdk/include/**"
@@ -93,7 +105,7 @@ jobs:
         run: |
           cl /nologo /LD /EHsc /O2 /MD /DWIN32 /D_WINDOWS /D_USRDLL /I"SDK\Orbitersdk\include" src\orbiter\OEMSpaceportTest.cpp OEMSpaceportTest.res /link /LIBPATH:"SDK\Orbitersdk\lib" orbiter.lib orbitersdk.lib gdi32.lib user32.lib /OUT:OEMSpaceportTest.dll
           cl /nologo /LD /EHsc /O2 /MD /DWIN32 /D_WINDOWS /D_USRDLL /I"SDK\Orbitersdk\include" src\orbiter\OEMGroundContactTest.cpp OEMGroundContactTest.res /link /LIBPATH:"SDK\Orbitersdk\lib" orbiter.lib orbitersdk.lib gdi32.lib user32.lib /OUT:OEMGroundContactTest.dll
-          cl /nologo /LD /EHsc /O2 /MD /DWIN32 /D_WINDOWS /D_USRDLL /I"SDK\Orbitersdk\include" /I"src\core" src\orbiter\OEMLandingBridge.cpp src\core\SpaceportLanding.cpp src\core\SimulationEvent.cpp src\core\SimulationEventJournal.cpp src\core\FlightTransition.cpp src\core\DockingTransition.cpp src\core\CargoServiceRegistry.cpp src\core\CargoManifest.cpp src\core\CargoManifestJournal.cpp src\core\CargoTransferGate.cpp src\core\CargoServiceInventory.cpp src\core\CargoServiceInventoryConfig.cpp src\core\CargoExchangeJournal.cpp OEMLandingBridge.res /link /LIBPATH:"SDK\Orbitersdk\lib" orbiter.lib orbitersdk.lib gdi32.lib user32.lib /OUT:OEMLandingBridge.dll
+          cl /nologo /LD /EHsc /O2 /MD /DWIN32 /D_WINDOWS /D_USRDLL /I"SDK\Orbitersdk\include" /I"src\core" src\orbiter\OEMLandingBridge.cpp src\core\SpaceportLanding.cpp src\core\SimulationEvent.cpp src\core\SimulationEventJournal.cpp src\core\FlightTransition.cpp src\core\DockingTransition.cpp src\core\CargoServiceRegistry.cpp src\core\CargoManifest.cpp src\core\CargoTransferGate.cpp src\core\CargoServiceInventory.cpp src\core\CargoServiceInventoryConfig.cpp src\core\Ledger.cpp src\core\LedgerConfig.cpp src\core\CargoCatalogConfig.cpp src\core\Market.cpp src\core\MarketTrade.cpp src\core\EconomyJournal.cpp OEMLandingBridge.res /link /LIBPATH:"SDK\Orbitersdk\lib" orbiter.lib orbitersdk.lib gdi32.lib user32.lib /OUT:OEMLandingBridge.dll
       - name: Replace the rolling release
         if: github.event_name == 'push'
         shell: pwsh
@@ -103,7 +115,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $tag = "oem-native-diagnostics-current"
           $title = "OEM Native Diagnostics (current)"
-          $notes = "Latest successful Win32 build for Orbiter 2010. OEMLandingBridge includes background takeoff/landing and docking/undocking monitors, a persistent versioned event journal, trusted cargo-service registry loading from OEMData\\cargo_services.cfg, lazy per-vessel cargo manifest journal recovery from OEMData\\cargo_manifests, and a transactional transfer gate that validates live Orbiter surface/docking state before committing. The release also includes a default cargo_services.cfg with ISS registered and cargo_stock_495353.cfg with two explicit TEST units (1 kg each) for the ISS cargo exchange test. Place both files in the OEMData folder beside OEMLandingBridge.dll. The OEM Flight Log MFD is available in the MFD mode list (key L). The OEM Cargo Manifest MFD (key C) is read-only. The OEM Cargo Exchange Test MFD (key E) provides one-unit LOAD/UNLOAD diagnostics against registered services; it changes OEM ledger entries only and never Orbiter physical cargo or vessel mass. Cargo exchange persistence uses one durable per-service journal for station stock and vessel manifests. Explicit initial stock may be configured in OEMData\\cargo_stock_<hex service vessel ID>.cfg; missing config means empty stock."
+          $notes = "Latest successful Win32 build for Orbiter 2010. OEMLandingBridge includes background takeoff/landing and docking/undocking monitors, the persistent flight event journal, and trusted cargo-service registry loading from OEMData\\cargo_services.cfg. Cargo accounting now starts from explicit per-service opening stock in OEMData\\cargo_stock_<hex service vessel ID>.cfg and commits all future exchanges to one global durable OEMData\\economy.journal. The old per-service cargo_exchanges and per-vessel cargo_manifests test journals are intentionally ignored and are not migrated. The release includes cargo_services.cfg with ISS registered and cargo_stock_495353.cfg with two explicit TEST units (1 kg each) for the existing diagnostic procedure. Place both files in OEMData beside the DLL. The OEM Flight Log MFD (key L), read-only Cargo Manifest MFD (key C), and ledger-only Cargo Exchange Test MFD (key E) remain available. Exchanges update only OEM accounting and never Orbiter physical cargo or vessel mass. Market trading remains disabled until explicit accounts.cfg and cargo_catalog.cfg files are supplied."
           git tag -f $tag $env:GITHUB_SHA
           git push --force origin "refs/tags/$tag"
           if ($LASTEXITCODE -ne 0) { throw "Could not update rolling release tag" }
