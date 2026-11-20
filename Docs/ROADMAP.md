@@ -16,7 +16,7 @@
 - [x] Add a native MFD flight log with paging over persisted events.
 - [x] Runtime-validate the flight log MFD in Orbiter 2010.
 - [x] Add native docking/undocking observation and publish those events from actual dock-port state.
-- [ ] Runtime-validate docking/undocking event detection and journal display in Orbiter 2010.
+- [x] Runtime-validate docking/undocking event detection and journal display in Orbiter 2010.
 - [ ] Connect verified events to contract/cargo eligibility and settlement.
 
 ## Phase A — career and persistence
@@ -34,9 +34,9 @@
 - [x] Require an explicit trusted cargo-service registry; arbitrary docked vessels cannot authorize transfers.
 - [x] Add versioned, atomic persistence and corruption-safe loading for the trusted cargo-service allowlist.
 - [x] Load the cargo-service allowlist in the native bridge and annotate actual dock/undock events for registered counterpart vessels.
-- [ ] Build and runtime-validate cargo-service recognition in Orbiter 2010.
+- [x] Build and runtime-validate cargo-service registry loading and recognized-service dock/undock annotations in Orbiter 2010.
 - [ ] Add stock-vessel cargo adapters only where a documented physical cargo interface exists.
-- [ ] Docking and spaceport-location observation through the Orbiter bridge.
+- [x] Docking and spaceport-location observation through the Orbiter bridge.
 
 ## Phase C — contracts
 - [ ] Delivery and transport contracts.
