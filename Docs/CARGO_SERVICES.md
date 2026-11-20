@@ -23,4 +23,4 @@ A cargo transfer to/from a docked service is authorized only when:
 
 The independent surface-spaceport route remains available when the focused vessel is landed, has ground contact, and is within 5,000 m of the named surface base on the same body.
 
-The portable registry and persistence tests pass in core CI. Native bridge loading of this configuration and transfer UI are separate integration steps; until those are connected, this file alone does not enable cargo transfers in Orbiter.
+The portable registry and persistence tests pass in core CI. The native bridge now loads this configuration at simulation start and logs when an observed dock/undock counterpart is registered. The updated DLL still needs a successful native build and runtime test. Cargo transfer UI and transaction execution are not yet connected, so this file alone does not enable cargo transfers in Orbiter.
