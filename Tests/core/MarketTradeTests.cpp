@@ -19,7 +19,7 @@ int main() {
     assert(quotes.createQuote(catalog, station, "q1", "oxygen",
         oem::MARKET_BUY_FROM_STATION, 4, 200, buy).ok);
 
-    assert(trades.execute(catalog, buy, "trade-1", "company", "ISS-account",
+    assert(trades.execute(catalog, buy, "trade-1", "company",
         ledger, station, ship).ok);
     oem::Credits balance=0;
     assert(ledger.getBalance("company", balance) && balance==500);
@@ -35,7 +35,7 @@ int main() {
     oem::MarketQuote sell;
     assert(quotes.createQuote(catalog, station, "q2", "oxygen",
         oem::MARKET_SELL_TO_STATION, 2, 201, sell).ok);
-    assert(trades.execute(catalog, sell, "trade-2", "company", "ISS-account",
+    assert(trades.execute(catalog, sell, "trade-2", "company",
         ledger, station, ship).ok);
     assert(ledger.getBalance("company", balance) && balance==660);
     assert(!ledger.getBalance("ISS-account", balance));
@@ -52,14 +52,14 @@ int main() {
     assert(quotes.createQuote(second, richStock, "q3", "costly",
         oem::MARKET_BUY_FROM_STATION, 1, 202, expensive).ok);
     const long long beforeStock=richStock.quantity("costly");
-    assert(!trades.execute(second, expensive, "trade-3", "company", "ISS-account",
+    assert(!trades.execute(second, expensive, "trade-3", "company",
         ledger, richStock, emptyShip).ok);
     assert(richStock.quantity("costly")==beforeStock && emptyShip.quantity("costly")==0);
     assert(ledger.getBalance("company", balance) && balance==660);
 
     // A forged/stale price is rejected before any projection is changed.
     expensive.unitPrice=1; expensive.totalPrice=1;
-    assert(!trades.execute(second, expensive, "trade-4", "company", "ISS-account",
+    assert(!trades.execute(second, expensive, "trade-4", "company",
         ledger, richStock, emptyShip).ok);
     assert(richStock.quantity("costly")==1 && emptyShip.quantity("costly")==0);
     return 0;
