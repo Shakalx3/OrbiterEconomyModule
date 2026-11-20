@@ -89,13 +89,27 @@
 - [ ] Expand the existing delivery-contract prototype into a durable mission system, initially offering standalone missions while keeping the data model extensible to future multi-stage chains and campaigns.
 - [ ] Generate mission offers procedurally from a curated pool of objective definitions and compatible templates; validate every generated offer against actual registered locations, cargo catalogue, available stock, and supported Orbiter observations before publishing it.
 - [ ] Assemble mission flavor text procedurally from reusable, context-aware fragments (issuer, reason, task, instructions, deadline, and optional details); generated prose must never contradict the actual objective or reward.
-- [ ] Start with player-executed missions only. Do not require NPC ships, NPC transporters, escorts, rescue targets, or other autonomous agents: Orbiter does not provide sufficiently reliable AI for interplanetary navigation and especially planetary landing.
-- [ ] Initial objective pool: cargo delivery, base/station supply, urgent delivery, verified spaceport visit, verified station docking, and research/route visits where the required position and dwell-time evidence can be measured reliably.
+- [ ] Support two complementary mission classes: player-executed missions verified against actual Orbiter state/events, and abstract missions resolved entirely by the economic simulation without requiring physical NPC vessels.
+- [ ] Do not require physical NPC ships, NPC transporters, escorts, rescue targets, or autonomous NPC piloting. Abstract organizations, carriers, customers, suppliers, and competitors may participate as economic agents without being instantiated as Orbiter vessels.
+- [ ] Initial player-executed objective pool: cargo delivery, base/station supply, urgent delivery, verified spaceport visit, verified station docking, and research/route visits where the required position and dwell-time evidence can be measured reliably.
 - [ ] Keep mission definition, generated mission instance, objective, conditions, reward, penalty, issuer/reputation, and journal/persistence as separate extensible concepts.
 - [ ] Persist generator state and generated offers so a restart does not reroll the mission board; persist accepted mission state and all objective evidence/reward settlement idempotently in the global economy journal.
 - [ ] On mission failure, apply both a monetary penalty and a reputation reduction. Declining an unaccepted offer has no penalty; cancellation/failure rules for accepted contracts must be explicit per mission.
 - [ ] Track reputation independently for each organization/issuer; use it to influence future mission availability and offer quality, without implying the issuer is a physical NPC vessel.
 - [ ] Use Orbiter simulation time for deadlines and mission timing; never use wall-clock time.
+
+### Abstract economic agents and background trade — planned
+
+- [ ] Introduce abstract economic agents (organizations, suppliers, customers, carriers, and competitors) that exist only in the OEM economy model and do not require physical Orbiter vessels or NPC navigation AI.
+- [ ] Simulate background trade between abstract agents and registered orbital stations/planetary spaceports so the player is not the only economic actor in the solar system.
+- [ ] Model each agent's role, home/operating locations, cargo demand/supply, trading preferences, available funds or agreed unlimited-credit policy, and configurable activity cadence.
+- [ ] Execute background purchases and sales as real economic transactions: update the relevant location stock, agent inventory/balance where applicable, and market supply/demand using deterministic, auditable transaction records.
+- [ ] Never create cargo from nowhere or allow stock to become negative. Every abstract trade must have a valid source, destination, quantity, cargo definition, and sufficient source stock; any production or consumption must be a separate explicitly modelled process.
+- [ ] Distinguish abstract economic stock movement from physical vessel cargo and player CargoManifest transfers. Background trade must never imply that a physical ship loaded, flew, docked, or landed.
+- [ ] Use simulation time for trade scheduling and resolve elapsed simulation intervals safely after time acceleration or scenario reload, without duplicate transactions or unbounded catch-up bursts.
+- [ ] Persist agent definitions/state, background trade history, and scheduling progress with versioned, corruption-safe, idempotent recovery; integrate durable economic effects with the global economy journal.
+- [ ] Make background activity configurable, including an option to disable it or tune its intensity, while preserving a coherent economy when disabled.
+- [ ] Add observable market activity/history so the player can see that stations and spaceports trade with other economic participants even when no player transaction occurs.
 
 ### Debt collection and player asset ownership — planned
 
