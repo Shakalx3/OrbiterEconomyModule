@@ -53,11 +53,8 @@ Result MarketTradeEngine::execute(const CargoCatalog& catalog,
 
     const std::string reason = quote.side == MARKET_BUY_FROM_STATION
         ? "MARKET_BUY:" + quote.cargoId : "MARKET_SELL:" + quote.cargoId;
-    Result moneyResult = quote.side == MARKET_BUY_FROM_STATION
-        ? candidateLedger.transfer(operationId, buyerAccountId, stationAccountId,
-                                   quote.totalPrice, quote.simulationTime, reason)
-        : candidateLedger.transfer(operationId, stationAccountId, buyerAccountId,
-                                   quote.totalPrice, quote.simulationTime, reason);
+    const Credits delta = quote.side == MARKET_BUY_FROM_STATION ? -quote.totalPrice : quote.totalPrice;
+    Result moneyResult = candidateLedger.applyExternal(operationId, buyerAccountId, delta, quote.simulationTime, reason);
     if (!moneyResult.ok) return moneyResult;
 
     ledger = candidateLedger;
