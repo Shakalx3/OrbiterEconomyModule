@@ -5,32 +5,52 @@
 #include <string.h>
 #include <map>
 #include <vector>
+#include <string>
 #include "orbitersdk.h"
 #include "../core/SpaceportLanding.h"
+#include "../core/FlightTransition.h"
+#include "../core/SimulationEvent.h"
 #include "../core/SurfaceDistance.h"
 
 namespace {
 
 class OEMLandingBridge : public oapi::Module {
 public:
-    explicit OEMLandingBridge(HINSTANCE hDLL) : oapi::Module(hDLL), monitors_() {}
+    explicit OEMLandingBridge(HINSTANCE hDLL)
+        : oapi::Module(hDLL), landingMonitors_(), flightMonitors_(),
+          eventQueue_(), sessionId_() {}
 
     void clbkSimulationStart(RenderMode mode) override {
-        monitors_.clear();
+        landingMonitors_.clear();
+        flightMonitors_.clear();
+        eventQueue_ = oem::SimulationEventQueue();
+        sessionId_.clear();
         oapiWriteLog((char*)"OEM Landing Bridge: simulation monitoring started.");
     }
 
     void clbkSimulationEnd() override {
-        monitors_.clear();
+        landingMonitors_.clear();
+        flightMonitors_.clear();
+        eventQueue_ = oem::SimulationEventQueue();
+        sessionId_.clear();
         oapiWriteLog((char*)"OEM Landing Bridge: simulation monitoring stopped.");
     }
 
     void clbkPostStep(double simt, double simdt, double mjd) override {
-        // Orbiter can invoke the first post-step callback at simt=0 while
-        // vessel touchdown telemetry is still being initialized. Do not let
-        // that transient sample arm a landing and create false startup events.
-        // The first positive-time sample becomes the monitor's baseline.
+        // The first positive-time sample is the baseline. simt=0 telemetry can
+        // contain transient vessel states during scenario initialization.
         if (simt <= 0.0) return;
+
+        if (sessionId_.empty()) {
+            const double startMjd = mjd - simt / 86400.0;
+            char session[64];
+            sprintf(session, "%.0f", startMjd * 86400000.0);
+            sessionId_ = session;
+        }
+
+        const long long simMilliseconds = (long long)(simt * 1000.0 + 0.5);
+        const oem::SimulationSeconds simSeconds =
+            (oem::SimulationSeconds)(simt >= 0.0 ? simt : 0.0);
 
         const DWORD vesselCount = oapiGetVesselCount();
         std::vector<OBJHANDLE> seen;
@@ -44,19 +64,18 @@ public:
             VESSEL *vessel = oapiGetVesselInterface(hVessel);
             if (!vessel) continue;
 
-            oem::LandingObservation observation;
-            observation.vesselPresent = true;
-            observation.vesselId = vessel->GetName() ? vessel->GetName() : "";
-            observation.simulationTime = (oem::SimulationSeconds)(simt >= 0.0 ? simt : 0.0);
+            oem::LandingObservation landing;
+            landing.vesselPresent = true;
+            landing.vesselId = vessel->GetName() ? vessel->GetName() : "";
+            landing.simulationTime = simSeconds;
 
             const DWORD flightStatus = vessel->GetFlightStatus();
-            observation.landed = (flightStatus & 1u) != 0;
-            observation.groundContact = vessel->GroundContact();
+            landing.landed = (flightStatus & 1u) != 0;
+            landing.groundContact = vessel->GroundContact();
 
-            // Base enumeration is only needed after both independent touchdown
-            // signals are true. Airborne and rolling/taxiing vessels still
-            // update the monitor's transition state without a base scan.
-            if (observation.landed && observation.groundContact) {
+            // Location is sampled while the vessel is on the surface. The
+            // same observation feeds takeoff context and landing validation.
+            if (landing.landed && landing.groundContact) {
                 OBJHANDLE body = vessel->GetSurfaceRef();
                 if (body) {
                     char bodyName[128] = {};
@@ -69,8 +88,8 @@ public:
                     if (positionBody == body && bodyName[0] != '\0' &&
                         bodyRadius > 0.0 && _finite(bodyRadius) &&
                         _finite(vesselLat) && _finite(vesselLng)) {
-                        observation.proximityKnown = true;
-                        observation.bodyId = bodyName;
+                        landing.proximityKnown = true;
+                        landing.bodyId = bodyName;
 
                         const DWORD baseCount = oapiGetBaseCount(body);
                         double nearestDistance = -1.0;
@@ -92,50 +111,110 @@ public:
                             }
                         }
 
-                        observation.nearestBaseDistanceMetres = nearestDistance;
-                        observation.nearestBaseId = nearestBase;
+                        landing.nearestBaseDistanceMetres = nearestDistance;
+                        landing.nearestBaseId = nearestBase;
                     }
                 }
             }
 
-            oem::SpaceportLandingEvent event;
-            if (monitors_[hVessel].observe(observation, event)) {
-                char message[512];
-                sprintf(message,
-                    "OEM SPACEPORT LANDING: vessel=%s body=%s base=%s distance=%.1f m simt=%lld",
-                    event.vesselId.c_str(),
-                    event.bodyId.c_str(),
-                    event.baseId.c_str(),
-                    event.distanceMetres,
-                    event.simulationTime);
-                oapiWriteLog(message);
+            // Publish a takeoff only after a grounded baseline followed by
+            // actual loss of GroundContact. Taxi transitions are not takeoffs.
+            oem::FlightObservation flight;
+            flight.vesselPresent = true;
+            flight.vesselId = landing.vesselId;
+            flight.landed = landing.landed;
+            flight.groundContact = landing.groundContact;
+            flight.simulationTime = simSeconds;
+            flight.simulationTimeMilliseconds = simMilliseconds;
+            flight.locationKnown = landing.proximityKnown;
+            flight.bodyId = landing.bodyId;
+            flight.nearestBaseId = landing.nearestBaseId;
+            flight.nearestBaseDistanceMetres = landing.nearestBaseDistanceMetres;
+
+            oem::SimulationEvent takeoff;
+            if (flightMonitors_[hVessel].observe(flight, takeoff)) {
+                takeoff.eventId = oem::makeSimulationEventId(
+                    sessionId_, takeoff.type, takeoff.vesselId,
+                    takeoff.simulationTimeMilliseconds);
+                publishEvent(takeoff);
+            }
+
+            oem::SpaceportLandingEvent landingEvent;
+            if (landingMonitors_[hVessel].observe(landing, landingEvent)) {
+                oem::SimulationEvent event;
+                event.type = oem::SIM_EVENT_LANDING;
+                event.vesselId = landingEvent.vesselId;
+                event.bodyId = landingEvent.bodyId;
+                event.baseId = landingEvent.baseId;
+                event.distanceMetres = landingEvent.distanceMetres;
+                event.locationKnown = true;
+                event.simulationTime = landingEvent.simulationTime;
+                event.simulationTimeMilliseconds = simMilliseconds;
+                event.eventId = oem::makeSimulationEventId(
+                    sessionId_, event.type, event.vesselId,
+                    event.simulationTimeMilliseconds);
+
+                if (publishEvent(event)) {
+                    char message[512];
+                    sprintf(message,
+                        "OEM SPACEPORT LANDING: vessel=%s body=%s base=%s distance=%.1f m simt=%lld",
+                        landingEvent.vesselId.c_str(),
+                        landingEvent.bodyId.c_str(),
+                        landingEvent.baseId.c_str(),
+                        landingEvent.distanceMetres,
+                        landingEvent.simulationTime);
+                    oapiWriteLog(message);
+                }
             }
         }
 
-        // Handles can disappear without a useful follow-up sample. Remove any
-        // monitor whose vessel is no longer in Orbiter's current object list.
-        for (std::map<OBJHANDLE, oem::SpaceportLandingMonitor>::iterator it = monitors_.begin();
-             it != monitors_.end();) {
-            bool present = false;
-            for (size_t i = 0; i < seen.size(); ++i) {
-                if (seen[i] == it->first) {
-                    present = true;
-                    break;
-                }
-            }
-            if (!present)
-                monitors_.erase(it++);
-            else
-                ++it;
+        // Drop state for vessels removed from the simulation.
+        for (std::map<OBJHANDLE, oem::SpaceportLandingMonitor>::iterator it = landingMonitors_.begin();
+             it != landingMonitors_.end();) {
+            if (!isSeen(seen, it->first)) landingMonitors_.erase(it++);
+            else ++it;
+        }
+        for (std::map<OBJHANDLE, oem::FlightTransitionMonitor>::iterator it = flightMonitors_.begin();
+             it != flightMonitors_.end();) {
+            if (!isSeen(seen, it->first)) flightMonitors_.erase(it++);
+            else ++it;
         }
     }
 
     void clbkDeleteVessel(OBJHANDLE hVessel) override {
-        monitors_.erase(hVessel);
+        landingMonitors_.erase(hVessel);
+        flightMonitors_.erase(hVessel);
     }
 
 private:
-    std::map<OBJHANDLE, oem::SpaceportLandingMonitor> monitors_;
+    bool isSeen(const std::vector<OBJHANDLE>& seen, OBJHANDLE handle) const {
+        for (size_t i = 0; i < seen.size(); ++i)
+            if (seen[i] == handle) return true;
+        return false;
+    }
+
+    bool publishEvent(const oem::SimulationEvent& event) {
+        const bool duplicate = eventQueue_.contains(event.eventId);
+        const oem::Result result = eventQueue_.publish(event);
+        if (!result.ok || duplicate) return false;
+
+        char message[768];
+        sprintf(message,
+            "OEM EVENT QUEUED: id=%s type=%s vessel=%s body=%s base=%s simt=%lld",
+            event.eventId.c_str(),
+            oem::simulationEventTypeName(event.type),
+            event.vesselId.c_str(),
+            event.bodyId.c_str(),
+            event.baseId.c_str(),
+            event.simulationTime);
+        oapiWriteLog(message);
+        return true;
+    }
+
+    std::map<OBJHANDLE, oem::SpaceportLandingMonitor> landingMonitors_;
+    std::map<OBJHANDLE, oem::FlightTransitionMonitor> flightMonitors_;
+    oem::SimulationEventQueue eventQueue_;
+    std::string sessionId_;
 };
 
 }
