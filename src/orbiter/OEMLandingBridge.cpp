@@ -1027,6 +1027,7 @@ private:
     std::string vesselId_;
 };
 
+// Market operations are committed through EconomyJournalStore; the MFD never changes Orbiter physical cargo.
 class OEMMarketMFD : public MFD {
 public:
     OEMMarketMFD(DWORD w, DWORD h, VESSEL *vessel)
