@@ -14,7 +14,6 @@ public:
                    const MarketQuote& quote,
                    const std::string& operationId,
                    const std::string& buyerAccountId,
-                   const std::string& stationAccountId,
                    Ledger& ledger,
                    CargoServiceInventory& inventory,
                    CargoManifest& manifest) const;
