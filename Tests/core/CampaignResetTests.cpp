@@ -12,6 +12,8 @@ int main() {
     assert(CampaignResetPolicy::isCampaignOwnedFileName("cargo_manifest_ISS.journal"));
     assert(CampaignResetPolicy::isCampaignOwnedFileName("cargo_exchange_ISS.journal"));
     assert(CampaignResetPolicy::isCampaignOwnedFileName("contract_state.journal"));
+    assert(CampaignResetPolicy::isCampaignOwnedFileName("contract_x.cfg"));
+    assert(CampaignResetPolicy::isCampaignOwnedFileName("cargo_manifest_x.cfg"));
     assert(CampaignResetPolicy::isCampaignOwnedFileName("missions_history.journal"));
 
     // Configuration and the Orbiter-derived catalogue survive a new game.
