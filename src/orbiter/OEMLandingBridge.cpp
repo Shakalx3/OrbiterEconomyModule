@@ -104,7 +104,7 @@ public:
         : oapi::Module(hDLL), module_(hDLL), landingMonitors_(), flightMonitors_(),
           dockingMonitors_(), eventQueue_(), journalStore_(), journalPath_(makeJournalPath(hDLL)),
           cargoServices_(), cargoServicesPath_(makeCargoServicesPath(hDLL)),
-          cargoManifestStore_(), cargoManifests_(), loadedCargoManifests_(),
+          cargoManifestStore_(), cargoManifests_(), cargoManifestLoadAttempted_(),
           journalReady_(false), sessionId_(), lastFocus_(0) {
         g_bridge = this;
     }
