@@ -52,7 +52,7 @@ int main() {
     observation = surfaceObservation("GL-NT", false, false, 102000);
     assert(!parked.observe(observation, takeoff)); // new candidate
     observation = surfaceObservation("GL-NT", false, false, 103499);
-    assert(!parked.observe(observation)); // just short of confirmation
+    assert(!parked.observe(observation, takeoff)); // just short of confirmation
     observation = surfaceObservation("GL-NT", false, false, 103500);
     assert(parked.observe(observation, takeoff));
     assert(takeoff.type == oem::SIM_EVENT_TAKEOFF);
