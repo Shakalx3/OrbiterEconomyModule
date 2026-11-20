@@ -8,8 +8,8 @@ namespace oem {
 
 class MarketTradeEngine {
 public:
-    // Applies all three in-memory projections transactionally. Durable journal integration
-    // is a separate prerequisite before this operation is exposed by the native UI.
+    // Applies the three projections transactionally. EconomyJournalStore provides the durable commit
+    // point before publishing these candidate projections in the native bridge.
     Result execute(const CargoCatalog& catalog,
                    const MarketQuote& quote,
                    const std::string& operationId,
