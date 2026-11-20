@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <map>
 
 static oem::CargoDefinition oxygen(){oem::CargoDefinition d;d.cargoId="oxygen";d.displayName="Oxygen";d.unitMassKg=10.0;d.buyPrice=125;d.sellPrice=80;return d;}
 int main(){
@@ -31,10 +32,13 @@ int main(){
  // Append a second sale and verify full replay.
  oem::MarketQuote sell;assert(qe.createQuote(cat,stock,"quote-2","oxygen",oem::MARKET_SELL_TO_STATION,1,110,sell).ok);
  assert(store.apply(path,cat,sell,"trade-2","company","ISS",ledger,stock,ship).ok);
+ oem::CargoManifest secondShip("SH-02");oem::MarketQuote buySecond;
+ assert(qe.createQuote(cat,stock,"quote-3","oxygen",oem::MARKET_BUY_FROM_STATION,1,120,buySecond).ok);
+ assert(store.apply(path,cat,buySecond,"trade-3","company","ISS",ledger,stock,secondShip).ok);
  oem::Ledger l2;assert(l2.createAccount("company",1000).ok);assert(l2.createAccount("ISS",0).ok);
- oem::CargoServiceInventory s2("ISS");assert(s2.setInitialStock("oxygen",8,10.0).ok);oem::CargoManifest m2("GL-01");
- assert(store.load(path,cat,l2,s2,m2).ok);
- assert(l2.getBalance("company",balance)&&balance==705);
- assert(s2.quantity("oxygen")==6&&m2.quantity("oxygen")==2);
+ oem::CargoServiceInventory s2("ISS");assert(s2.setInitialStock("oxygen",8,10.0).ok);std::map<std::string,oem::CargoManifest> recoveredManifests;
+ assert(store.load(path,cat,l2,s2,recoveredManifests).ok);
+ assert(l2.getBalance("company",balance)&&balance==580);
+ assert(s2.quantity("oxygen")==5&&recoveredManifests["GL-01"].quantity("oxygen")==2&&recoveredManifests["SH-02"].quantity("oxygen")==1);
  std::remove(path.c_str());return 0;
 }
