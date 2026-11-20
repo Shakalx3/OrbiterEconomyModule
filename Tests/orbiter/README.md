@@ -21,6 +21,10 @@ GitHub Actions workflow: `.github/workflows/oem-native-test.yml`.
 
 The workflow compiles a 32-bit DLL with the Orbiter 2010 SDK headers and import libraries, then publishes `OEMSpaceportTest.dll` as a prerelease asset on GitHub Releases.
 
+## Launchpad discovery metadata
+
+Orbiter 2010's Launchpad reads module metadata from DLL string resources. The module must embed `IDS_INFO` (1000) and `IDS_TYPE` (1001); without these resources, a DLL may load when explicitly listed in `[Modules]` yet fail to appear as a selectable entry in the Launchpad Modules tab. The build compiles `OEMSpaceportTest.rc` and links the resulting resource into the DLL.
+
 ## Install and run
 
 > Important: Orbiter's Launchpad discovers plugin DLLs from `Modules\\Plugin`. Placing the DLL directly in `Modules` does not make it appear in the Launchpad module list.
