@@ -1,0 +1,7 @@
+#include "resource.h"
+
+STRINGTABLE
+BEGIN
+    IDS_INFO "OEM SPACEPORT TEST:\r\n\r\nChecks the nearest surface base and reports whether the vessel is landed within the 5 km spaceport radius."
+    IDS_TYPE "MFD modes"
+END
