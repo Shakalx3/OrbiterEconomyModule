@@ -214,20 +214,6 @@ public:
         std::map<std::string, oem::CargoManifest>::const_iterator it = cargoManifests_.find(vesselId);
         return it == cargoManifests_.end() ? 0 : &it->second;
     }
-    bool saveCargoManifest(const std::string& vesselId) {
-        std::map<std::string, oem::CargoManifest>::iterator it = cargoManifests_.find(vesselId);
-        if (it == cargoManifests_.end()) return false;
-        const std::string path = makeCargoManifestPath(module_, vesselId);
-        if (path.empty()) return false;
-        const oem::Result saved = cargoManifestStore_.save(path, it->second);
-        if (!saved.ok) {
-            char message[512];
-            sprintf(message, "OEM Cargo Manifest: save failed vessel=%s (%s): %s", vesselId.c_str(), saved.code.c_str(), saved.message.c_str());
-            oapiWriteLog(message);
-            return false;
-        }
-        return true;
-    }
 
     oem::Result applyCargoTransfer(const oem::CargoTransfer& transfer, double simulationTime) {
         OBJHANDLE focus = oapiGetFocusObject();
