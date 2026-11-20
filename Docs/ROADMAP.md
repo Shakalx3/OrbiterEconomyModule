@@ -112,6 +112,10 @@
 - [ ] Add observable market activity/history so the player can see that stations and spaceports trade with other economic participants even when no player transaction occurs.
 
 ### Player fleet ownership and ship purchasing — planned
+- [ ] Ownership default rule: every Orbiter vessel not explicitly registered in `EconomicStationRegistry` is presumed to be player-owned; there are no autonomous physical NPC vessels in the current design.
+- [ ] Keep station identity separate from cargo-service permissions: a vessel registered only as a cargo service, but not as an economic station, remains player-owned under the default rule.
+- [ ] On scenario load and vessel creation/deletion, derive and reconcile the player fleet from the live Orbiter vessel list plus the station registry; do not require manual registration of ordinary ships.
+- [ ] Apply sale/repo-session eligibility only to vessels classified as player-owned by this rule; never sell or repossess registered economic stations.
 
 - [ ] Add a persistent player-owned vessel registry, separate from the general list of vessels currently present in Orbiter; registration/ownership must be explicit and survive scenario reloads.
 - [ ] Add an in-game ship catalogue based on vessel classes actually installed in the user's Orbiter configuration (class configuration and required vessel module/assets must exist); do not advertise unavailable vessel classes.
