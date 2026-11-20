@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.10)
 project(OrbiterEconomyModule LANGUAGES CXX)
 add_library(OEMCore
     src/core/Ledger.cpp
+    src/core/LedgerConfig.cpp
+    src/core/CargoCatalogConfig.cpp
     src/core/Market.cpp
     src/core/MarketTrade.cpp
     src/core/MarketTradeJournal.cpp
@@ -20,6 +22,10 @@ add_library(OEMCore
 )
 target_include_directories(OEMCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
 add_executable(OEMCoreTests Tests/core/LedgerTests.cpp)
+add_executable(OEMLedgerConfigTests Tests/core/LedgerConfigTests.cpp)
+target_link_libraries(OEMLedgerConfigTests PRIVATE OEMCore)
+add_executable(OEMCargoCatalogConfigTests Tests/core/CargoCatalogConfigTests.cpp)
+target_link_libraries(OEMCargoCatalogConfigTests PRIVATE OEMCore)
 add_executable(OEMMarketTests Tests/core/MarketTests.cpp)
 target_link_libraries(OEMMarketTests PRIVATE OEMCore)
 add_executable(OEMMarketTradeTests Tests/core/MarketTradeTests.cpp)
@@ -51,6 +57,8 @@ add_executable(OEMDockingTransitionTests Tests/core/DockingTransitionTests.cpp)
 target_link_libraries(OEMDockingTransitionTests PRIVATE OEMCore)
 enable_testing()
 add_test(NAME OEMCoreTests COMMAND OEMCoreTests)
+add_test(NAME OEMLedgerConfigTests COMMAND OEMLedgerConfigTests)
+add_test(NAME OEMCargoCatalogConfigTests COMMAND OEMCargoCatalogConfigTests)
 add_test(NAME OEMMarketTests COMMAND OEMMarketTests)
 add_test(NAME OEMMarketTradeTests COMMAND OEMMarketTradeTests)
 add_test(NAME OEMMarketTradeJournalTests COMMAND OEMMarketTradeJournalTests)
