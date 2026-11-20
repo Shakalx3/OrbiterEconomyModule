@@ -7,7 +7,18 @@
 
 # Roadmap
 
-## Phase 0 — foundation (in progress)
+### Phase 0 — first-run installation bootstrap
+
+- [ ] Make the native module self-initializing so installation can consist of copying the single OEM DLL into the Orbiter module folder.
+- [ ] On first load, resolve the module's own data root and create every required OEM directory automatically (including `OEMData` and any dedicated subdirectories).
+- [ ] Generate a complete, valid starter configuration set for a new installation: account definition, cargo catalogue, empty cargo-service/station registries, and any required versioned state headers. Define safe, documented gameplay defaults rather than requiring the user to author files.
+- [ ] Create only missing files. Never overwrite existing user configuration, campaign journals, stock files, or player progress; validate existing files and report malformed/incompatible data clearly.
+- [ ] Keep generated planetary/station stock empty unless an explicit future starting-stock profile is enabled; first-run bootstrap must not fabricate cargo or physical vessel inventory.
+- [ ] Make all ordinary setup and ongoing administration available in-game. Users must not need to edit configuration files or create folders manually.
+- [ ] Add a first-run/bootstrap status report to the OEM MFD/log and tests for missing files, partial installations, existing custom files, and repeat launches.
+- [ ] Verify a clean installation by copying only the built DLL into a fresh Orbiter installation, launching the simulator, and confirming that OEM creates its complete data tree and becomes ready without manual file preparation.
+
+# Phase 0 — foundation (in progress)
 - [x] Establish repository and development branch.
 - [x] Record system boundaries and safety invariants.
 - [x] Confirm Orbiter 2010 SDK headers are present in the repository.
