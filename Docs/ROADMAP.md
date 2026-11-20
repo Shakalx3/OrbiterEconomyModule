@@ -38,8 +38,9 @@
 - [x] Add versioned, atomic persistence and corruption-safe loading for the trusted cargo-service allowlist.
 - [x] Load the cargo-service allowlist in the native bridge and annotate actual dock/undock events for registered counterpart vessels.
 - [x] Build and runtime-validate cargo-service registry loading and recognized-service dock/undock annotations in Orbiter 2010.
-- [ ] Integrate the unified exchange journal into native bridge startup and transfer commits; define migration for legacy per-vessel manifest journals.
-- [ ] Persist explicit station initial-stock configuration and validate it before exchange replay.
+- [x] Integrate the unified exchange journal into native bridge startup and transfer commits; reject divergent legacy per-vessel manifest histories rather than silently discarding them.
+- [x] Persist explicit per-service initial-stock configuration and validate it before exchange replay; a missing file means zero stock.
+- [ ] Runtime-validate native exchange recovery in Orbiter 2010; transfer controls remain intentionally unexposed.
 - [ ] Add stock-vessel cargo adapters only where a documented physical cargo interface exists.
 - [x] Docking and spaceport-location observation through the Orbiter bridge.
 
