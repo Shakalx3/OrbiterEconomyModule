@@ -30,18 +30,22 @@ bool SpaceportLandingMonitor::observe(const LandingObservation& observation,
     if (!hasVessel_ || vesselId_ != observation.vesselId) {
         hasVessel_ = true;
         vesselId_ = observation.vesselId;
-        // Do not invent an arrival when monitoring starts with a vessel
-        // already parked. A vessel first observed airborne is armed.
-        armedForLanding_ = !observation.landed || !observation.groundContact;
+        // GroundContact, not the landed flag alone, distinguishes an airborne
+        // vessel from one already rolling/taxiing on the surface.
+        armedForLanding_ = !observation.groundContact;
     }
 
-    // Only a confirmed airborne / no-contact state arms the next touchdown.
-    if (!observation.landed || !observation.groundContact) {
+    // Only loss of actual surface contact arms a future touchdown. A vessel
+    // moving on the surface can have landed=false while GroundContact=true;
+    // that state must not be mistaken for an airborne departure.
+    if (!observation.groundContact) {
         armedForLanding_ = true;
         return false;
     }
 
-    if (!armedForLanding_)
+    // Ground contact without Orbiter's landed state is a transitional surface
+    // state. Wait for the landed flag, preserving the airborne arming state.
+    if (!observation.landed || !armedForLanding_)
         return false;
 
     // After touchdown, wait for complete location evidence. Unknown telemetry
