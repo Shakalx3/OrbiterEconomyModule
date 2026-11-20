@@ -14,6 +14,7 @@ public:
     bool unregisterService(const std::string& vesselId);
     bool isRegistered(const std::string& vesselId) const;
     std::size_t size() const;
+    const std::set<std::string>& vesselIds() const;
     void clear();
     Result load(const std::string& path);
     Result save(const std::string& path) const;
