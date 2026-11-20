@@ -13,7 +13,6 @@ int main() {
     oem::CargoManifest ship("GL-01");
     oem::Ledger ledger;
     assert(ledger.createAccount("company", 1000).ok);
-    assert(ledger.createAccount("ISS-account", 0).ok);
     oem::MarketQuoteEngine quotes;
     oem::MarketTradeEngine trades;
     oem::MarketQuote buy;
@@ -24,7 +23,7 @@ int main() {
         ledger, station, ship).ok);
     oem::Credits balance=0;
     assert(ledger.getBalance("company", balance) && balance==500);
-    assert(ledger.getBalance("ISS-account", balance) && balance==500);
+    assert(!ledger.getBalance("ISS-account", balance));
     assert(station.quantity("oxygen")==6 && ship.quantity("oxygen")==4);
 
     // Exact replay does not debit money or move cargo twice.
@@ -39,7 +38,7 @@ int main() {
     assert(trades.execute(catalog, sell, "trade-2", "company", "ISS-account",
         ledger, station, ship).ok);
     assert(ledger.getBalance("company", balance) && balance==660);
-    assert(ledger.getBalance("ISS-account", balance) && balance==340);
+    assert(!ledger.getBalance("ISS-account", balance));
     assert(station.quantity("oxygen")==8 && ship.quantity("oxygen")==2);
 
     // Insufficient funds leaves all three projections unchanged.
