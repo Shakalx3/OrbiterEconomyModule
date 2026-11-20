@@ -4,6 +4,7 @@
 #include <cmath>
 #include <fstream>
 #include <iomanip>
+#include <locale>
 #include <sstream>
 #include <vector>
 #ifdef _WIN32
@@ -18,10 +19,10 @@ std::string hx(const std::string& s){static const char d[]="0123456789ABCDEF";st
 bool unhx(const std::string&s,std::string&o){if(s.empty()||s.size()%2)return false;o.clear();for(std::size_t i=0;i<s.size();i+=2){char a=s[i],b=s[i+1];int x=a>='0'&&a<='9'?a-'0':a>='A'&&a<='F'?a-'A'+10:a>='a'&&a<='f'?a-'a'+10:-1;int y=b>='0'&&b<='9'?b-'0':b>='A'&&b<='F'?b-'A'+10:b>='a'&&b<='f'?b-'a'+10:-1;if(x<0||y<0)return false;o+=(char)((x<<4)|y);}return true;}
 std::vector<std::string> split(const std::string&s){std::vector<std::string>v;std::istringstream i(s);std::string x;while(std::getline(i,x,'|'))v.push_back(x);return v;}
 bool num(const std::string&s,long long&v){if(s.empty())return false;char*e=0;long long n=std::strtoll(s.c_str(),&e,10);if(!e||*e)return false;v=n;return true;}
-bool dbl(const std::string&s,double&v){if(s.empty())return false;char*e=0;double n=std::strtod(s.c_str(),&e);if(!e||*e||!std::isfinite(n))return false;v=n;return true;}
+bool dbl(const std::string&s,double&v){if(s.empty())return false;std::istringstream in(s);in.imbue(std::locale::classic());double n=0.0;in>>n;if(!in||in.peek()!=std::char_traits<char>::eof()||!std::isfinite(n))return false;v=n;return true;}
 const char* kHeader="OEM_ECONOMY_JOURNAL|1";
 struct Entry{char type;std::string op,buyer,station,vessel,cargo;int side;long long qty;Credits unit,total;SimulationSeconds time;CargoTransfer transfer;};
-std::string encodeX(const CargoTransfer&t){std::ostringstream o;o<<"X|"<<hx(t.transferId)<<'|'<<(int)t.direction<<'|'<<hx(t.vesselId)<<'|'<<hx(t.locationId)<<'|'<<hx(t.cargoId)<<'|'<<t.quantity<<'|'<<std::setprecision(17)<<t.unitMassKg<<'|'<<t.simulationTime<<'\n';return o.str();}
+std::string encodeX(const CargoTransfer&t){std::ostringstream o;o.imbue(std::locale::classic());o<<"X|"<<hx(t.transferId)<<'|'<<(int)t.direction<<'|'<<hx(t.vesselId)<<'|'<<hx(t.locationId)<<'|'<<hx(t.cargoId)<<'|'<<t.quantity<<'|'<<std::setprecision(17)<<t.unitMassKg<<'|'<<t.simulationTime<<'\n';return o.str();}
 std::string encodeT(const Entry&r){std::ostringstream o;o<<"T|"<<hx(r.op)<<'|'<<hx(r.buyer)<<'|'<<hx(r.station)<<'|'<<hx(r.vessel)<<'|'<<hx(r.cargo)<<'|'<<r.side<<'|'<<r.qty<<'|'<<r.unit<<'|'<<r.total<<'|'<<r.time<<'\n';return o.str();}
 bool decode(const std::string&s,Entry&r){std::vector<std::string>f=split(s);long long a=0,b=0,c=0,d=0,e=0;
  if(f.size()==9&&f[0]=="X"){r.type='X';if(!unhx(f[1],r.transfer.transferId)||!num(f[2],a)||(a!=CARGO_LOAD&&a!=CARGO_UNLOAD)||!unhx(f[3],r.transfer.vesselId)||!unhx(f[4],r.transfer.locationId)||!unhx(f[5],r.transfer.cargoId)||!num(f[6],b)||!dbl(f[7],r.transfer.unitMassKg)||!num(f[8],c))return false;r.transfer.direction=(CargoTransferDirection)a;r.transfer.quantity=b;r.transfer.simulationTime=c;return true;}
