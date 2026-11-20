@@ -30,7 +30,7 @@
 - [x] Portable market catalog, quote engine, and atomic BUY/SELL transaction engine.
 - [x] Global journal records market trades in the same ordered stream as cargo exchanges.
 - [x] Native Station Market MFD (key M) with one-unit BUY/SELL operations at registered docked services.
-- [ ] Runtime-validate market purchases, sales, and balance/cargo recovery after scenario restart.
+- [x] Runtime-validate market purchases, sales, and correct opening balance in Orbiter 2010. (The user confirmed BUY/SELL and opening balance; restart recovery remains a separate check.)
 - [x] Add portable abstract cargo manifests with transfer history, mass accounting and idempotent load/unload operations.
 - [x] Add portable station-side stock accounting with explicit initial stock, load debits, unload credits, quantity bounds and idempotent transfer IDs.
 - [x] Add a unified durable exchange journal that commits station-stock and vessel-manifest projections from one record and recovers them transactionally.
