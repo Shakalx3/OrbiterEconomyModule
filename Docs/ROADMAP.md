@@ -84,6 +84,30 @@
 - [ ] Native bridge integration and contract MFD.
 - [ ] Runtime-validate delivery and payout recovery after scenario restart.
 
+### Mission generation and contract system — planned
+
+- [ ] Expand the existing delivery-contract prototype into a durable mission system, initially offering standalone missions while keeping the data model extensible to future multi-stage chains and campaigns.
+- [ ] Generate mission offers procedurally from a curated pool of objective definitions and compatible templates; validate every generated offer against actual registered locations, cargo catalogue, available stock, and supported Orbiter observations before publishing it.
+- [ ] Assemble mission flavor text procedurally from reusable, context-aware fragments (issuer, reason, task, instructions, deadline, and optional details); generated prose must never contradict the actual objective or reward.
+- [ ] Start with player-executed missions only. Do not require NPC ships, NPC transporters, escorts, rescue targets, or other autonomous agents: Orbiter does not provide sufficiently reliable AI for interplanetary navigation and especially planetary landing.
+- [ ] Initial objective pool: cargo delivery, base/station supply, urgent delivery, verified spaceport visit, verified station docking, and research/route visits where the required position and dwell-time evidence can be measured reliably.
+- [ ] Keep mission definition, generated mission instance, objective, conditions, reward, penalty, issuer/reputation, and journal/persistence as separate extensible concepts.
+- [ ] Persist generator state and generated offers so a restart does not reroll the mission board; persist accepted mission state and all objective evidence/reward settlement idempotently in the global economy journal.
+- [ ] On mission failure, apply both a monetary penalty and a reputation reduction. Declining an unaccepted offer has no penalty; cancellation/failure rules for accepted contracts must be explicit per mission.
+- [ ] Track reputation independently for each organization/issuer; use it to influence future mission availability and offer quality, without implying the issuer is a physical NPC vessel.
+- [ ] Use Orbiter simulation time for deadlines and mission timing; never use wall-clock time.
+
+### Debt collection and player asset ownership — planned
+
+- [ ] Allow monetary penalties to exceed the player's available balance; debit available funds and record the remainder as an explicit outstanding debt in the durable economy ledger.
+- [ ] Allow the player to repay debt through normal earnings, trading, and further missions; do not automatically prohibit mission acceptance solely because the player is in debt.
+- [ ] Add a persistent player-asset registry before implementing repossession. Orbiter does not inherently identify which vessels are player-owned or provide a universal market valuation, so ownership and valuation must be explicit and evidence-based.
+- [ ] Model repossession as a probability-based collection action whose likelihood can depend on debt size, age/delinquency, and other documented factors; define and balance the exact probability policy later.
+- [ ] Protect the player's sole vessel from repossession. If it is the only registered player-owned vessel, retain the debt and let the player work it off.
+- [ ] If the player owns additional eligible assets, sell the minimum necessary asset(s), beginning with the lowest current market value, at the applicable market valuation; apply proceeds to debt and return any surplus to the player's account.
+- [ ] If proceeds do not cover the debt, retain the unpaid remainder. Record each seizure, sale, debt payment, and surplus refund as durable, idempotent economy transactions.
+- [ ] Define safeguards for valuation, ownership changes, active-vessel protection, and sale integration with actual Orbiter vessel state before enabling automatic repossession.
+
 ## Phase D — production and infrastructure
 - [ ] Production recipes, inputs, outputs, and cycle timing.
 - [ ] Station infrastructure and operating costs.
