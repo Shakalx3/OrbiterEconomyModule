@@ -28,7 +28,7 @@ Result CargoManifest::apply(const CargoTransfer& transfer, CargoTransferDirectio
     if (transfer.direction != expected)
         return Result::failure("TRANSFER_DIRECTION", "Cargo transfer direction does not match the requested operation.");
     if (transfer.quantity <= 0 || !(transfer.unitMassKg > 0.0) ||
-        !_finite(transfer.unitMassKg))
+        !std::isfinite(transfer.unitMassKg))
         return Result::failure("INVALID_CARGO_AMOUNT", "Quantity and unit mass must be positive and finite.");
 
     std::map<std::string, std::size_t>::const_iterator prior =
