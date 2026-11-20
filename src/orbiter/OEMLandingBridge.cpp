@@ -13,6 +13,7 @@
 #include "../core/SimulationEvent.h"
 #include "../core/SimulationEventJournal.h"
 #include "../core/SurfaceDistance.h"
+#include "../core/CargoServiceRegistry.h"
 
 namespace {
 
@@ -41,11 +42,33 @@ std::string makeJournalPath(HINSTANCE module) {
     return journalPath;
 }
 
+std::string makeCargoServicesPath(HINSTANCE module) {
+    char modulePath[MAX_PATH] = {};
+    const DWORD length = GetModuleFileNameA(module, modulePath, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) return std::string();
+
+    char *separator = strrchr(modulePath, '\\');
+    if (!separator) separator = strrchr(modulePath, '/');
+    if (!separator) return std::string();
+    *separator = '\0';
+
+    char dataDirectory[MAX_PATH] = {};
+    sprintf(dataDirectory, "%s\\OEMData", modulePath);
+    if (!CreateDirectoryA(dataDirectory, 0) &&
+        GetLastError() != ERROR_ALREADY_EXISTS)
+        return std::string();
+
+    char configPath[MAX_PATH] = {};
+    sprintf(configPath, "%s\\cargo_services.cfg", dataDirectory);
+    return configPath;
+}
+
 class OEMLandingBridge : public oapi::Module {
 public:
     explicit OEMLandingBridge(HINSTANCE hDLL)
         : oapi::Module(hDLL), landingMonitors_(), flightMonitors_(),
           dockingMonitors_(), eventQueue_(), journalStore_(), journalPath_(makeJournalPath(hDLL)),
+          cargoServices_(), cargoServicesPath_(makeCargoServicesPath(hDLL)),
           journalReady_(false), sessionId_(), lastFocus_(0) {
         g_bridge = this;
     }
@@ -55,6 +78,9 @@ public:
     }
 
     bool journalReady() const { return journalReady_; }
+    bool isCargoService(const std::string& vesselId) const {
+        return cargoServices_.isRegistered(vesselId);
+    }
 
     void clbkSimulationStart(RenderMode mode) override {
         landingMonitors_.clear();
@@ -77,6 +103,20 @@ public:
             char message[512];
             sprintf(message, "OEM Event Journal: load failed (%s): %s",
                     loaded.code.c_str(), loaded.message.c_str());
+            oapiWriteLog(message);
+        }
+        const oem::Result servicesLoaded = cargoServicesPath_.empty()
+            ? oem::Result::failure("CARGO_SERVICES_PATH", "Could not resolve cargo service configuration path.")
+            : cargoServices_.load(cargoServicesPath_);
+        if (servicesLoaded.ok) {
+            char message[256];
+            sprintf(message, "OEM Cargo Services: loaded %lu registered vessels.",
+                    (unsigned long)cargoServices_.size());
+            oapiWriteLog(message);
+        } else {
+            char message[512];
+            sprintf(message, "OEM Cargo Services: load failed (%s): %s",
+                    servicesLoaded.code.c_str(), servicesLoaded.message.c_str());
             oapiWriteLog(message);
         }
         oapiWriteLog((char*)"OEM Landing Bridge: simulation monitoring started.");
@@ -215,6 +255,15 @@ public:
                             dockEvent.dockingPortIndex, dockEvent.simulationTime);
                     oapiWriteLog(message);
                 }
+                if (cargoServices_.isRegistered(dockEvent.relatedVesselId)) {
+                    char serviceMessage[512];
+                    sprintf(serviceMessage,
+                        "OEM CARGO SERVICE %s: vessel=%s service=%s port=%d",
+                        dockEvent.type == oem::SIM_EVENT_DOCK ? "DOCKED" : "UNDOCKED",
+                        dockEvent.vesselId.c_str(), dockEvent.relatedVesselId.c_str(),
+                        dockEvent.dockingPortIndex);
+                    oapiWriteLog(serviceMessage);
+                }
             }
         }
 
@@ -312,6 +361,8 @@ private:
     oem::SimulationEventQueue eventQueue_;
     oem::SimulationEventJournalStore journalStore_;
     std::string journalPath_;
+    oem::CargoServiceRegistry cargoServices_;
+    std::string cargoServicesPath_;
     bool journalReady_;
     std::string sessionId_;
     OBJHANDLE lastFocus_;
