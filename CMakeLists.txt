@@ -22,6 +22,7 @@ add_library(OEMCore
     src/core/FlightTransition.cpp
     src/core/DockingTransition.cpp
     src/core/DeliveryContract.cpp
+    src/core/SpaceportRegistry.cpp
 )
 target_include_directories(OEMCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
 add_executable(OEMCoreTests Tests/core/LedgerTests.cpp)
@@ -64,6 +65,9 @@ add_executable(OEMDockingTransitionTests Tests/core/DockingTransitionTests.cpp)
 target_link_libraries(OEMDockingTransitionTests PRIVATE OEMCore)
 add_executable(OEMDeliveryContractTests Tests/core/DeliveryContractTests.cpp)
 target_link_libraries(OEMDeliveryContractTests PRIVATE OEMCore)
+add_executable(OEMSpaceportRegistryTests Tests/core/SpaceportRegistryTests.cpp)
+target_link_libraries(OEMSpaceportRegistryTests PRIVATE OEMCore)
+target_link_libraries(OEMDeliveryContractTests PRIVATE OEMCore)
 enable_testing()
 add_test(NAME OEMCoreTests COMMAND OEMCoreTests)
 add_test(NAME OEMLedgerConfigTests COMMAND OEMLedgerConfigTests)
@@ -85,3 +89,4 @@ add_test(NAME OEMSimulationEventTests COMMAND OEMSimulationEventTests)
 add_test(NAME OEMSimulationEventJournalTests COMMAND OEMSimulationEventJournalTests)
 add_test(NAME OEMDockingTransitionTests COMMAND OEMDockingTransitionTests)
 add_test(NAME OEMDeliveryContractTests COMMAND OEMDeliveryContractTests)
+add_test(NAME OEMSpaceportRegistryTests COMMAND OEMSpaceportRegistryTests)
