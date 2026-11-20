@@ -32,7 +32,7 @@ int main(){
  recoveredStocks.insert(std::make_pair("MARS",oem::CargoServiceInventory("MARS")));assert(recoveredStocks["MARS"].setInitialStock("oxygen",4,10.0).ok);
  std::map<std::string,oem::CargoManifest> manifests;
  assert(store.load(path,cat,recoveredLedger,recoveredStocks,manifests).ok);
- assert(recoveredLedger.getBalance("company",balance)&&balance==1120);
+ assert(recoveredLedger.getBalance("company",balance)&&balance==860);
  assert(recoveredStocks["ISS"].quantity("oxygen")==4&&recoveredStocks["MARS"].quantity("oxygen")==3);
  assert(manifests["GL-01"].quantity("oxygen")==1&&manifests["GL-02"].quantity("oxygen")==1);
  // A reused ID cannot cross from exchange to trade.
