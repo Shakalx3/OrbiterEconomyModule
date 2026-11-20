@@ -7,6 +7,7 @@
 #include <set>
 #include <vector>
 #include <string>
+#include <math.h>
 #include "orbitersdk.h"
 #include "../core/SpaceportLanding.h"
 #include "../core/FlightTransition.h"
