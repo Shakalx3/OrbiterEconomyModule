@@ -702,6 +702,15 @@ public:
                     landingEvent.simulationTime);
                 oapiWriteLog(message);
             }
+            // A confirmed first landing registers this surface base in the
+            // economy with a persistent empty stock file.
+            if (!ensureCargoServiceInventory(landingEvent.baseId)) {
+                char stockMessage[512];
+                sprintf(stockMessage,
+                    "OEM SPACEPORT STOCK: initialization failed base=%s; market access will remain unavailable.",
+                    landingEvent.baseId.c_str());
+                oapiWriteLog(stockMessage);
+            }
         }
     }
 
@@ -724,13 +733,36 @@ private:
             return false;
         }
         oem::CargoServiceInventory candidate(serviceId);
-        const oem::Result configured = cargoStockConfigStore_.load(configPath, serviceId, candidate);
-        if (!configured.ok) {
+        const DWORD attributes = GetFileAttributesA(configPath.c_str());
+        if (attributes == INVALID_FILE_ATTRIBUTES) {
+            const DWORD fileError = GetLastError();
+            if (fileError != ERROR_FILE_NOT_FOUND && fileError != ERROR_PATH_NOT_FOUND) {
+                oapiWriteLog((char*)"OEM Cargo Stock: could not inspect stock configuration path.");
+                return false;
+            }
+            // First encounter with a location: create a durable, explicitly empty
+            // opening inventory. Never synthesize cargo or overwrite an existing file.
+            const oem::Result created = cargoStockConfigStore_.save(configPath, candidate);
+            if (!created.ok) {
+                char message[512];
+                sprintf(message, "OEM Cargo Stock: could not create empty opening stock service=%s (%s): %s",
+                        serviceId.c_str(), created.code.c_str(), created.message.c_str());
+                oapiWriteLog(message);
+                return false;
+            }
             char message[512];
-            sprintf(message, "OEM Cargo Stock: load failed service=%s (%s): %s",
-                    serviceId.c_str(), configured.code.c_str(), configured.message.c_str());
+            sprintf(message, "OEM Cargo Stock: created empty opening inventory service=%s.",
+                    serviceId.c_str());
             oapiWriteLog(message);
-            return false;
+        } else {
+            const oem::Result configured = cargoStockConfigStore_.load(configPath, serviceId, candidate);
+            if (!configured.ok) {
+                char message[512];
+                sprintf(message, "OEM Cargo Stock: load failed service=%s (%s): %s",
+                        serviceId.c_str(), configured.code.c_str(), configured.message.c_str());
+                oapiWriteLog(message);
+                return false;
+            }
         }
         cargoServiceInventories_.insert(std::make_pair(serviceId, candidate));
         char message[512];
