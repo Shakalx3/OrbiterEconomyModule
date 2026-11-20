@@ -114,6 +114,6 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Could not update rolling release metadata" }
             gh release upload $tag OEMSpaceportTest.dll OEMGroundContactTest.dll OEMLandingBridge.dll OEMData\\cargo_services.cfg OEMData\\cargo_stock_495353.cfg --repo $env:GITHUB_REPOSITORY --clobber
           } else {
-            gh release create $tag OEMSpaceportTest.dll OEMGroundContactTest.dll OEMLandingBridge.dll OEMData\\cargo_services.cfg --repo $env:GITHUB_REPOSITORY --title $title --notes $notes --prerelease
+            gh release create $tag OEMSpaceportTest.dll OEMGroundContactTest.dll OEMLandingBridge.dll OEMData\\cargo_services.cfg OEMData\\cargo_stock_495353.cfg --repo $env:GITHUB_REPOSITORY --title $title --notes $notes --prerelease
           }
           if ($LASTEXITCODE -ne 0) { throw "Could not publish rolling release assets" }
