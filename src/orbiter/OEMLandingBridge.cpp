@@ -16,7 +16,6 @@
 #include "../core/SurfaceDistance.h"
 #include "../core/CargoServiceRegistry.h"
 #include "../core/CargoManifest.h"
-#include "../core/CargoManifestJournal.h"
 #include "../core/CargoTransferGate.h"
 #include "../core/CargoServiceInventoryConfig.h"
 #include "../core/EconomyJournal.h"
@@ -25,13 +24,6 @@
 
 namespace {
 
-
-bool sameCargoTransfer(const oem::CargoTransfer& a, const oem::CargoTransfer& b) {
-    return a.transferId == b.transferId && a.direction == b.direction &&
-        a.vesselId == b.vesselId && a.locationId == b.locationId &&
-        a.cargoId == b.cargoId && a.quantity == b.quantity &&
-        a.unitMassKg == b.unitMassKg && a.simulationTime == b.simulationTime;
-}
 
 class OEMLandingBridge;
 OEMLandingBridge *g_bridge = 0;
@@ -71,28 +63,6 @@ std::string encodePathComponent(const std::string& value) {
     return encoded;
 }
 
-std::string makeCargoManifestPath(HINSTANCE module, const std::string& vesselId) {
-    char modulePath[MAX_PATH] = {};
-    const DWORD length = GetModuleFileNameA(module, modulePath, MAX_PATH);
-    if (length == 0 || length >= MAX_PATH) return std::string();
-    char *separator = strrchr(modulePath, '\\');
-    if (!separator) separator = strrchr(modulePath, '/');
-    if (!separator) return std::string();
-    *separator = '\0';
-    char dataDirectory[MAX_PATH] = {};
-    sprintf(dataDirectory, "%s\\OEMData", modulePath);
-    if (!CreateDirectoryA(dataDirectory, 0) && GetLastError() != ERROR_ALREADY_EXISTS) return std::string();
-    char manifestDirectory[MAX_PATH] = {};
-    sprintf(manifestDirectory, "%s\\cargo_manifests", dataDirectory);
-    if (!CreateDirectoryA(manifestDirectory, 0) && GetLastError() != ERROR_ALREADY_EXISTS) return std::string();
-    const std::string filename = "manifest_" + encodePathComponent(vesselId) + ".journal";
-    if (strlen(manifestDirectory) + 1 + filename.size() >= MAX_PATH) return std::string();
-    std::string path(manifestDirectory);
-    path += "\\";
-    path += filename;
-    return path;
-}
-
 std::string makeCargoStockConfigPath(HINSTANCE module, const std::string& serviceId) {
     char modulePath[MAX_PATH] = {};
     const DWORD length = GetModuleFileNameA(module, modulePath, MAX_PATH);
@@ -107,44 +77,6 @@ std::string makeCargoStockConfigPath(HINSTANCE module, const std::string& servic
     const std::string filename = "cargo_stock_" + encodePathComponent(serviceId) + ".cfg";
     if (strlen(dataDirectory) + 1 + filename.size() >= MAX_PATH) return std::string();
     std::string path(dataDirectory); path += "\\"; path += filename; return path;
-}
-
-std::string makeCargoExchangePath(HINSTANCE module, const std::string& serviceId) {
-    char modulePath[MAX_PATH] = {};
-    const DWORD length = GetModuleFileNameA(module, modulePath, MAX_PATH);
-    if (length == 0 || length >= MAX_PATH) return std::string();
-    char *separator = strrchr(modulePath, '\\');
-    if (!separator) separator = strrchr(modulePath, '/');
-    if (!separator) return std::string();
-    *separator = '\0';
-    char dataDirectory[MAX_PATH] = {};
-    sprintf(dataDirectory, "%s\\OEMData", modulePath);
-    if (!CreateDirectoryA(dataDirectory, 0) && GetLastError() != ERROR_ALREADY_EXISTS) return std::string();
-    char exchangeDirectory[MAX_PATH] = {};
-    sprintf(exchangeDirectory, "%s\\cargo_exchanges", dataDirectory);
-    if (!CreateDirectoryA(exchangeDirectory, 0) && GetLastError() != ERROR_ALREADY_EXISTS) return std::string();
-    const std::string filename = "exchange_" + encodePathComponent(serviceId) + ".journal";
-    if (strlen(exchangeDirectory) + 1 + filename.size() >= MAX_PATH) return std::string();
-    std::string path(exchangeDirectory); path += "\\"; path += filename; return path;
-}
-
-std::string makeEconomyDataFilePath(HINSTANCE module, const char *filename) {
-    char modulePath[MAX_PATH] = {};
-    const DWORD length = GetModuleFileNameA(module, modulePath, MAX_PATH);
-    if (length == 0 || length >= MAX_PATH) return std::string();
-    char *separator = strrchr(modulePath, 92);
-    if (!separator) separator = strrchr(modulePath, '/');
-    if (!separator) return std::string();
-    *separator = 0;
-    char dataDirectory[MAX_PATH] = {};
-    sprintf(dataDirectory, "%s/OEMData", modulePath);
-    if (!CreateDirectoryA(dataDirectory, 0) && GetLastError() != ERROR_ALREADY_EXISTS)
-        return std::string();
-    if (strlen(dataDirectory) + 1 + strlen(filename) >= MAX_PATH) return std::string();
-    std::string result(dataDirectory);
-    result += "/";
-    result += filename;
-    return result;
 }
 
 std::string makeCargoServicesPath(HINSTANCE module) {
@@ -174,7 +106,7 @@ public:
         : oapi::Module(hDLL), module_(hDLL), landingMonitors_(), flightMonitors_(),
           dockingMonitors_(), eventQueue_(), journalStore_(), journalPath_(makeJournalPath(hDLL)),
           cargoServices_(), cargoServicesPath_(makeCargoServicesPath(hDLL)),
-          cargoManifestStore_(), cargoTransferGate_(), cargoManifests_(), cargoManifestLoadAttempted_(),
+          cargoTransferGate_(), cargoManifests_(), cargoManifestLoadAttempted_(),
           cargoStockConfigStore_(), cargoServiceInventories_(), cargoServiceInventoryLoadAttempted_(),
           economyJournalStore_(), economyJournalPath_(makeEconomyDataFilePath(hDLL, "economy.journal")),
           ledgerConfigStore_(), cargoCatalogConfigStore_(), accountsPath_(makeEconomyDataFilePath(hDLL, "accounts.cfg")),
@@ -786,7 +718,6 @@ private:
     std::string journalPath_;
     oem::CargoServiceRegistry cargoServices_;
     std::string cargoServicesPath_;
-    oem::CargoManifestJournalStore cargoManifestStore_;
     oem::CargoTransferGate cargoTransferGate_;
     std::map<std::string, oem::CargoManifest> cargoManifests_;
     std::set<std::string> cargoManifestLoadAttempted_;
