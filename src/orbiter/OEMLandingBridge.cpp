@@ -26,6 +26,12 @@ public:
     }
 
     void clbkPostStep(double simt, double simdt, double mjd) override {
+        // Orbiter can invoke the first post-step callback at simt=0 while
+        // vessel touchdown telemetry is still being initialized. Do not let
+        // that transient sample arm a landing and create false startup events.
+        // The first positive-time sample becomes the monitor's baseline.
+        if (simt <= 0.0) return;
+
         const DWORD vesselCount = oapiGetVesselCount();
         std::vector<OBJHANDLE> seen;
         seen.reserve(vesselCount);
