@@ -37,6 +37,8 @@
 
 ## Phase B — stations, markets, and cargo
 - [ ] Solar-system location identifiers and station definitions, shared by stations and planetary bases.
+- [x] Add a versioned planetary spaceport registry with stable body/base IDs, coordinates, parent-body mass/radius, derived gravity/escape velocity, and VTOL pad/ILS metadata.
+- [ ] Runtime-validate the generated spaceport registry against the active Orbiter installation and compare its entries with the simulator's configured surface bases.
 - [x] Portable market catalog, quote engine, and atomic BUY/SELL transaction engine.
 - [x] Global journal records market trades in the same ordered stream as cargo exchanges.
 - [x] Native Location Market MFD (key M) with one-unit BUY/SELL operations at registered docked stations or verified landed planetary bases.
