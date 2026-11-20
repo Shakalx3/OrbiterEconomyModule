@@ -23,6 +23,7 @@
 #include "../core/EconomyJournal.h"
 #include "../core/LedgerConfig.h"
 #include "../core/CargoCatalogConfig.h"
+#include "../core/EconomicLocationRegistry.h"
 
 namespace {
 
@@ -134,7 +135,7 @@ public:
           ledgerConfigStore_(), cargoCatalogConfigStore_(), accountsPath_(makeEconomyDataFilePath(hDLL, "accounts.cfg")),
           cargoCatalogPath_(makeEconomyDataFilePath(hDLL, "cargo_catalog.cfg")),
           spaceportRegistryPath_(makeEconomyDataFilePath(hDLL, "spaceports.registry")),
-          ledger_(), cargoCatalog_(), economyReady_(false), journalReady_(false), sessionId_(),
+          economicLocations_(), ledger_(), cargoCatalog_(), economyReady_(false), journalReady_(false), sessionId_(),
           currentSimulationTime_(0), cargoTransferSequence_(0), lastFocus_(0) {
         g_bridge = this;
     }
@@ -144,6 +145,7 @@ public:
     }
 
     bool journalReady() const { return journalReady_; }
+    const oem::EconomicLocationRegistry& economicLocations() const { return economicLocations_; }
     bool isCargoService(const std::string& vesselId) const {
         return cargoServices_.isRegistered(vesselId);
     }
@@ -797,6 +799,8 @@ private:
             }
         }
 
+        rebuildEconomicLocationRegistry(registry);
+
         if (spaceportRegistryPath_.empty()) {
             oapiWriteLog((char*)"OEM Spaceport Registry: could not resolve output path.");
             return;
@@ -814,6 +818,39 @@ private:
         sprintf(message, "OEM Spaceport Registry: saved %lu surface bases across %lu celestial bodies; %lu VTOL pads.",
                 baseCount, (unsigned long)bodyCount, padCount);
         oapiWriteLog(message);
+    }
+
+    void rebuildEconomicLocationRegistry(const oem::SpaceportRegistry& spaceports) {
+        economicLocations_.clear();
+        unsigned long surfaces = 0;
+        unsigned long stations = 0;
+        for (std::size_t i = 0; i < spaceports.entries().size(); ++i) {
+            const oem::SpaceportRecord& p = spaceports.entries()[i];
+            const oem::Result added = economicLocations_.addSpaceport(
+                p.bodyName, p.baseName, p.longitudeRad, p.latitudeRad);
+            if (added.ok) ++surfaces;
+            else {
+                char message[384];
+                sprintf(message, "OEM Economic Locations: skipped surface:%s (%s).",
+                        p.id.c_str(), added.code.c_str());
+                oapiWriteLog(message);
+            }
+        }
+        const std::set<std::string>& services = cargoServices_.vesselIds();
+        for (std::set<std::string>::const_iterator it = services.begin(); it != services.end(); ++it) {
+            const oem::Result added = economicLocations_.addStation(*it);
+            if (added.ok) ++stations;
+            else {
+                char message[384];
+                sprintf(message, "OEM Economic Locations: skipped station:%s (%s).",
+                        it->c_str(), added.code.c_str());
+                oapiWriteLog(message);
+            }
+        }
+        char summary[256];
+        sprintf(summary, "OEM Economic Locations: indexed %lu surface ports and %lu registered stations.",
+                surfaces, stations);
+        oapiWriteLog(summary);
     }
 
     bool ensureCargoServiceInventory(const std::string& serviceId) {
@@ -989,6 +1026,7 @@ private:
     std::string accountsPath_;
     std::string cargoCatalogPath_;
     std::string spaceportRegistryPath_;
+    oem::EconomicLocationRegistry economicLocations_;
     oem::Ledger ledger_;
     oem::CargoCatalog cargoCatalog_;
     bool economyReady_;
