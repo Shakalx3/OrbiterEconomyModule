@@ -28,10 +28,10 @@ synthesize cargo.
 - module and interface settings;
 - all files outside OEM's explicit campaign-file allowlist.
 
-The existing `cargo_services.cfg` is currently a trusted-service compatibility
-configuration. It is not yet the final player-facing station registry. Once
-in-game station registration replaces it, the player registration store must be
-included in the campaign reset boundary.
+`economic_stations.registry` stores the player's explicit station identities, and
+`cargo_services.cfg` stores the independent cargo-service permissions. Both are
+maintained by the OEM Economic Admin MFD and both are campaign state; a New Game
+must clear both.
 
 ## Safety requirements for native implementation
 
