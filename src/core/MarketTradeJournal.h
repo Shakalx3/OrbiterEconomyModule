@@ -14,7 +14,7 @@ public:
     // Durable append is the commit point for account, station-stock and one vessel manifest.
     Result apply(const std::string& path, const CargoCatalog& catalog,
                  const MarketQuote& quote, const std::string& operationId,
-                 const std::string& buyerAccountId, const std::string& stationAccountId,
+                 const std::string& buyerAccountId,
                  Ledger& ledger, CargoServiceInventory& inventory,
                  CargoManifest& manifest) const;
 };
