@@ -73,9 +73,10 @@ public:
             landing.landed = (flightStatus & 1u) != 0;
             landing.groundContact = vessel->GroundContact();
 
-            // Location is sampled while the vessel is on the surface. The
-            // same observation feeds takeoff context and landing validation.
-            if (landing.landed && landing.groundContact) {
+            // Location is sampled whenever there is actual surface contact. This
+            // also captures taxiing vessels whose landed flag is already clear.
+            // The landing monitor still requires both landed and contact.
+            if (landing.groundContact) {
                 OBJHANDLE body = vessel->GetSurfaceRef();
                 if (body) {
                     char bodyName[128] = {};
