@@ -7,13 +7,11 @@ Result MarketTradeEngine::execute(const CargoCatalog& catalog,
                                   const MarketQuote& quote,
                                   const std::string& operationId,
                                   const std::string& buyerAccountId,
-                                  const std::string& stationAccountId,
                                   Ledger& ledger,
                                   CargoServiceInventory& inventory,
                                   CargoManifest& manifest) const {
-    if (operationId.empty() || quote.quoteId.empty() || buyerAccountId.empty() ||
-        stationAccountId.empty() || buyerAccountId == stationAccountId)
-        return Result::failure("INVALID_MARKET_TRADE", "Operation, quote and distinct account IDs are required.");
+    if (operationId.empty() || quote.quoteId.empty() || buyerAccountId.empty())
+        return Result::failure("INVALID_MARKET_TRADE", "Operation, quote and buyer account IDs are required.");
     if (quote.stationId != inventory.serviceVesselId() ||
         manifest.vesselId().empty() || quote.cargoId.empty() || quote.quantity <= 0)
         return Result::failure("MARKET_TRADE_CONTEXT", "Quote station, cargo, quantity or vessel context is invalid.");
