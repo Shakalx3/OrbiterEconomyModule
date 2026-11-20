@@ -8,9 +8,12 @@
 - [x] Build the portable core and test harness in GitHub CI.
 - [x] Verify native landed-state, vessel-position, surface-base enumeration, and 5 km distance path in a diagnostic MFD.
 - [x] Validate `VESSEL::GroundContact()` in a separate diagnostic MFD in the target Orbiter installation.
-- [x] Implement a background native module that samples vessels after each simulation step and emits verified landing events to Orbiter.log.
-- [ ] Validate the background bridge end-to-end in the target Orbiter installation.
-- [ ] Connect landing events to the economic event queue and contract/cargo systems.
+- [x] Implement and runtime-validate the background bridge for takeoff/landing timestamps, vessel identity, body/base and distance.
+- [x] Add portable takeoff/landing monitors and an idempotent in-memory simulation event journal with deterministic event IDs.
+- [ ] Build and runtime-validate the bridge-to-event-journal integration.
+- [ ] Persist the simulation event journal across scenario reloads.
+- [ ] Add native docking/undocking observation and publish those events.
+- [ ] Connect verified events to contract/cargo eligibility and settlement.
 
 ## Phase A — career and persistence
 - [ ] New company / career state with configurable starting capital.
