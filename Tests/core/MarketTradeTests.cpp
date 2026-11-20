@@ -27,7 +27,7 @@ int main() {
     assert(station.quantity("oxygen")==6 && ship.quantity("oxygen")==4);
 
     // Exact replay does not debit money or move cargo twice.
-    assert(trades.execute(catalog, buy, "trade-1", "company", "ISS-account",
+    assert(trades.execute(catalog, buy, "trade-1", "company",
         ledger, station, ship).ok);
     assert(ledger.getBalance("company", balance) && balance==500);
     assert(station.quantity("oxygen")==6 && ship.quantity("oxygen")==4);
