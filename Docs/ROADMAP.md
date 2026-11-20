@@ -42,7 +42,9 @@
 - [x] Persist explicit per-service initial-stock configuration and validate it before exchange replay; a missing file means zero stock.
 - [ ] Runtime-validate native exchange recovery in Orbiter 2010; transfer controls remain intentionally unexposed.
 - [x] Specify the global economy journal format, ordered replay model, unlimited station funds, and legacy migration safety.
-- [ ] Implement and test the global economy journal across stations and operation types.
+- [x] Implement and test the portable global economy journal across stations and operation types.
+- [x] Add a read-only legacy journal inspector that detects malformed files and refuses multiple non-empty streams without provable chronology.
+- [ ] Implement explicit legacy migration for a provably ordered single stream, including manifest consistency checks.
 - [ ] Add stock-vessel cargo adapters only where a documented physical cargo interface exists.
 - [x] Docking and spaceport-location observation through the Orbiter bridge.
 
