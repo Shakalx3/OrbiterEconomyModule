@@ -30,6 +30,7 @@
 - [ ] Market inventories and buy/sell transactions.
 - [x] Add portable abstract cargo manifests with transfer history, mass accounting and idempotent load/unload operations.
 - [x] Add portable station-side stock accounting with explicit initial stock, load debits, unload credits, quantity bounds and idempotent transfer IDs.
+- [x] Add a unified durable exchange journal that commits station-stock and vessel-manifest projections from one record and recovers them transactionally.
 - [x] Persist cargo manifest transfer history with versioned, atomic, idempotent recovery.
 - [x] Add native per-vessel manifest path isolation and lazy recovery on focus; save hook is ready for authorized transfer operations.
 - [x] Add a portable authorization gate requiring verified landed + ground-contact spaceport state or an explicitly recognized OEM cargo-service dock.
@@ -37,6 +38,8 @@
 - [x] Add versioned, atomic persistence and corruption-safe loading for the trusted cargo-service allowlist.
 - [x] Load the cargo-service allowlist in the native bridge and annotate actual dock/undock events for registered counterpart vessels.
 - [x] Build and runtime-validate cargo-service registry loading and recognized-service dock/undock annotations in Orbiter 2010.
+- [ ] Integrate the unified exchange journal into native bridge startup and transfer commits; define migration for legacy per-vessel manifest journals.
+- [ ] Persist explicit station initial-stock configuration and validate it before exchange replay.
 - [ ] Add stock-vessel cargo adapters only where a documented physical cargo interface exists.
 - [x] Docking and spaceport-location observation through the Orbiter bridge.
 
