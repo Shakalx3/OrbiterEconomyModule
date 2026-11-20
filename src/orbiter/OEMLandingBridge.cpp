@@ -20,19 +20,19 @@ std::string makeJournalPath(HINSTANCE module) {
     const DWORD length = GetModuleFileNameA(module, modulePath, MAX_PATH);
     if (length == 0 || length >= MAX_PATH) return std::string();
 
-    char *separator = strrchr(modulePath, '\\\\');
+    char *separator = strrchr(modulePath, '\\');
     if (!separator) separator = strrchr(modulePath, '/');
     if (!separator) return std::string();
-    *separator = '\\0';
+    *separator = '\0';
 
     char dataDirectory[MAX_PATH] = {};
-    sprintf(dataDirectory, "%s\\\\OEMData", modulePath);
+    sprintf(dataDirectory, "%s\\OEMData", modulePath);
     if (!CreateDirectoryA(dataDirectory, 0) &&
         GetLastError() != ERROR_ALREADY_EXISTS)
         return std::string();
 
     char journalPath[MAX_PATH] = {};
-    sprintf(journalPath, "%s\\\\events.journal", dataDirectory);
+    sprintf(journalPath, "%s\\events.journal", dataDirectory);
     return journalPath;
 }
 
