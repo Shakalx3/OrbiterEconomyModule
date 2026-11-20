@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <map>
+#include <set>
 #include <vector>
 #include <string>
 #include "orbitersdk.h"
@@ -14,6 +15,8 @@
 #include "../core/SimulationEventJournal.h"
 #include "../core/SurfaceDistance.h"
 #include "../core/CargoServiceRegistry.h"
+#include "../core/CargoManifest.h"
+#include "../core/CargoManifestJournal.h"
 
 namespace {
 
@@ -42,6 +45,38 @@ std::string makeJournalPath(HINSTANCE module) {
     return journalPath;
 }
 
+std::string encodePathComponent(const std::string& value) {
+    static const char digits[] = "0123456789ABCDEF";
+    std::string encoded;
+    for (std::size_t i = 0; i < value.size(); ++i) {
+        const unsigned char c = static_cast<unsigned char>(value[i]);
+        encoded.push_back(digits[c >> 4]);
+        encoded.push_back(digits[c & 15]);
+    }
+    return encoded;
+}
+
+std::string makeCargoManifestPath(HINSTANCE module, const std::string& vesselId) {
+    char modulePath[MAX_PATH] = {};
+    const DWORD length = GetModuleFileNameA(module, modulePath, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) return std::string();
+    char *separator = strrchr(modulePath, '\\');
+    if (!separator) separator = strrchr(modulePath, '/');
+    if (!separator) return std::string();
+    *separator = '\0';
+    char dataDirectory[MAX_PATH] = {};
+    sprintf(dataDirectory, "%s\\OEMData", modulePath);
+    if (!CreateDirectoryA(dataDirectory, 0) && GetLastError() != ERROR_ALREADY_EXISTS) return std::string();
+    char manifestDirectory[MAX_PATH] = {};
+    sprintf(manifestDirectory, "%s\\cargo_manifests", dataDirectory);
+    if (!CreateDirectoryA(manifestDirectory, 0) && GetLastError() != ERROR_ALREADY_EXISTS) return std::string();
+    const std::string filename = "manifest_" + encodePathComponent(vesselId) + ".journal";
+    if (strlen(manifestDirectory) + 1 + filename.size() >= MAX_PATH) return std::string();
+    std::string path(manifestDirectory);
+    path += "\\";
+    path += filename;
+    return path;
+}
 std::string makeCargoServicesPath(HINSTANCE module) {
     char modulePath[MAX_PATH] = {};
     const DWORD length = GetModuleFileNameA(module, modulePath, MAX_PATH);
@@ -66,9 +101,10 @@ std::string makeCargoServicesPath(HINSTANCE module) {
 class OEMLandingBridge : public oapi::Module {
 public:
     explicit OEMLandingBridge(HINSTANCE hDLL)
-        : oapi::Module(hDLL), landingMonitors_(), flightMonitors_(),
+        : oapi::Module(hDLL), module_(hDLL), landingMonitors_(), flightMonitors_(),
           dockingMonitors_(), eventQueue_(), journalStore_(), journalPath_(makeJournalPath(hDLL)),
           cargoServices_(), cargoServicesPath_(makeCargoServicesPath(hDLL)),
+          cargoManifestStore_(), cargoManifests_(), loadedCargoManifests_(),
           journalReady_(false), sessionId_(), lastFocus_(0) {
         g_bridge = this;
     }
@@ -82,10 +118,31 @@ public:
         return cargoServices_.isRegistered(vesselId);
     }
 
+    const oem::CargoManifest* cargoManifest(const std::string& vesselId) const {
+        std::map<std::string, oem::CargoManifest>::const_iterator it = cargoManifests_.find(vesselId);
+        return it == cargoManifests_.end() ? 0 : &it->second;
+    }
+    bool saveCargoManifest(const std::string& vesselId) {
+        std::map<std::string, oem::CargoManifest>::iterator it = cargoManifests_.find(vesselId);
+        if (it == cargoManifests_.end()) return false;
+        const std::string path = makeCargoManifestPath(module_, vesselId);
+        if (path.empty()) return false;
+        const oem::Result saved = cargoManifestStore_.save(path, it->second);
+        if (!saved.ok) {
+            char message[512];
+            sprintf(message, "OEM Cargo Manifest: save failed vessel=%s (%s): %s", vesselId.c_str(), saved.code.c_str(), saved.message.c_str());
+            oapiWriteLog(message);
+            return false;
+        }
+        return true;
+    }
+
     void clbkSimulationStart(RenderMode mode) override {
         landingMonitors_.clear();
         flightMonitors_.clear();
         dockingMonitors_.clear();
+        cargoManifests_.clear();
+        loadedCargoManifests_.clear();
         sessionId_.clear();
         lastFocus_ = 0;
         oem::SimulationEventQueue restored;
@@ -169,6 +226,7 @@ public:
         landing.vesselPresent = true;
         landing.vesselId = vessel->GetName() ? vessel->GetName() : "";
         landing.simulationTime = simSeconds;
+        ensureCargoManifest(landing.vesselId);
 
         const DWORD flightStatus = vessel->GetFlightStatus();
         landing.landed = (flightStatus & 1u) != 0;
@@ -326,6 +384,27 @@ public:
     }
 
 private:
+    void ensureCargoManifest(const std::string& vesselId) {
+        if (vesselId.empty() || loadedCargoManifests_.find(vesselId) != loadedCargoManifests_.end()) return;
+        const std::string path = makeCargoManifestPath(module_, vesselId);
+        if (path.empty()) { oapiWriteLog((char*)"OEM Cargo Manifest: could not resolve manifest path."); return; }
+        oem::CargoManifest candidate(vesselId);
+        const oem::Result loaded = cargoManifestStore_.load(path, candidate);
+        if (!loaded.ok) {
+            char message[512];
+            sprintf(message, "OEM Cargo Manifest: load failed vessel=%s (%s): %s", vesselId.c_str(), loaded.code.c_str(), loaded.message.c_str());
+            oapiWriteLog(message);
+            return;
+        }
+        const std::size_t transfers = candidate.history().size();
+        const double massKg = candidate.totalMassKg();
+        cargoManifests_.insert(std::make_pair(vesselId, candidate));
+        loadedCargoManifests_.insert(vesselId);
+        char message[512];
+        sprintf(message, "OEM Cargo Manifest: loaded vessel=%s transfers=%lu mass=%.3f kg.", vesselId.c_str(), (unsigned long)transfers, massKg);
+        oapiWriteLog(message);
+    }
+
     bool publishEvent(const oem::SimulationEvent& event) {
         if (!journalReady_ || eventQueue_.contains(event.eventId)) return false;
 
@@ -358,12 +437,16 @@ private:
 
     std::map<OBJHANDLE, oem::SpaceportLandingMonitor> landingMonitors_;
     std::map<OBJHANDLE, oem::FlightTransitionMonitor> flightMonitors_;
+    HINSTANCE module_;
     std::map<OBJHANDLE, oem::DockingTransitionMonitor> dockingMonitors_;
     oem::SimulationEventQueue eventQueue_;
     oem::SimulationEventJournalStore journalStore_;
     std::string journalPath_;
     oem::CargoServiceRegistry cargoServices_;
     std::string cargoServicesPath_;
+    oem::CargoManifestJournalStore cargoManifestStore_;
+    std::map<std::string, oem::CargoManifest> cargoManifests_;
+    std::set<std::string> loadedCargoManifests_;
     bool journalReady_;
     std::string sessionId_;
     OBJHANDLE lastFocus_;
