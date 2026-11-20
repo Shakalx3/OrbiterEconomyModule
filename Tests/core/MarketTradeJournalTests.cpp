@@ -19,7 +19,7 @@ int main(){
  oem::Credits balance=0;assert(ledger.getBalance("company",balance)&&balance==625);
  assert(stock.quantity("oxygen")==5&&ship.quantity("oxygen")==3);
  // Replay same operation in the live process is idempotent.
- assert(store.apply(path,cat,q,"trade-1","company","ISS",ledger,stock,ship).ok);
+ assert(store.apply(path,cat,q,"trade-1","company",ledger,stock,ship).ok);
  assert(ledger.getBalance("company",balance)&&balance==625&&stock.quantity("oxygen")==5&&ship.quantity("oxygen")==3);
  // Rebuild projections from explicit opening balances and stock.
  oem::Ledger recoveredLedger;assert(recoveredLedger.createAccount("company",1000).ok);
