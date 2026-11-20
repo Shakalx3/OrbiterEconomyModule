@@ -31,6 +31,7 @@ on:
       - "src/core/CargoExchangeJournal.h"
       - "src/core/CargoExchangeJournal.cpp"
       - "OEMData/cargo_services.cfg"
+      - "OEMData/cargo_stock_495353.cfg"
       - "SDK/Orbitersdk/include/**"
       - "SDK/Orbitersdk/lib/**"
       - ".github/workflows/oem-native-test.yml"
@@ -102,7 +103,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $tag = "oem-native-diagnostics-current"
           $title = "OEM Native Diagnostics (current)"
-          $notes = "Latest successful Win32 build for Orbiter 2010. OEMLandingBridge includes background takeoff/landing and docking/undocking monitors, a persistent versioned event journal, trusted cargo-service registry loading from OEMData\\cargo_services.cfg, lazy per-vessel cargo manifest journal recovery from OEMData\\cargo_manifests, and a transactional transfer gate that validates live Orbiter surface/docking state before committing. The release also includes a default cargo_services.cfg with ISS registered. Place it in the OEMData folder beside OEMLandingBridge.dll. The OEM Flight Log MFD is available in the MFD mode list (key L). The OEM Cargo Manifest MFD (key C) is read-only. The OEM Cargo Exchange Test MFD (key E) provides one-unit LOAD/UNLOAD diagnostics against registered services; it changes OEM ledger entries only and never Orbiter physical cargo or vessel mass. Cargo exchange persistence uses one durable per-service journal for station stock and vessel manifests. Explicit initial stock may be configured in OEMData\\cargo_stock_<hex service vessel ID>.cfg; missing config means empty stock."
+          $notes = "Latest successful Win32 build for Orbiter 2010. OEMLandingBridge includes background takeoff/landing and docking/undocking monitors, a persistent versioned event journal, trusted cargo-service registry loading from OEMData\\cargo_services.cfg, lazy per-vessel cargo manifest journal recovery from OEMData\\cargo_manifests, and a transactional transfer gate that validates live Orbiter surface/docking state before committing. The release also includes a default cargo_services.cfg with ISS registered and cargo_stock_495353.cfg with two explicit TEST units (1 kg each) for the ISS cargo exchange test. Place both files in the OEMData folder beside OEMLandingBridge.dll. The OEM Flight Log MFD is available in the MFD mode list (key L). The OEM Cargo Manifest MFD (key C) is read-only. The OEM Cargo Exchange Test MFD (key E) provides one-unit LOAD/UNLOAD diagnostics against registered services; it changes OEM ledger entries only and never Orbiter physical cargo or vessel mass. Cargo exchange persistence uses one durable per-service journal for station stock and vessel manifests. Explicit initial stock may be configured in OEMData\\cargo_stock_<hex service vessel ID>.cfg; missing config means empty stock."
           git tag -f $tag $env:GITHUB_SHA
           git push --force origin "refs/tags/$tag"
           if ($LASTEXITCODE -ne 0) { throw "Could not update rolling release tag" }
@@ -111,7 +112,7 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             gh release edit $tag --repo $env:GITHUB_REPOSITORY --title $title --notes $notes --target $env:GITHUB_SHA --prerelease
             if ($LASTEXITCODE -ne 0) { throw "Could not update rolling release metadata" }
-            gh release upload $tag OEMSpaceportTest.dll OEMGroundContactTest.dll OEMLandingBridge.dll OEMData\\cargo_services.cfg --repo $env:GITHUB_REPOSITORY --clobber
+            gh release upload $tag OEMSpaceportTest.dll OEMGroundContactTest.dll OEMLandingBridge.dll OEMData\\cargo_services.cfg OEMData\\cargo_stock_495353.cfg --repo $env:GITHUB_REPOSITORY --clobber
           } else {
             gh release create $tag OEMSpaceportTest.dll OEMGroundContactTest.dll OEMLandingBridge.dll OEMData\\cargo_services.cfg --repo $env:GITHUB_REPOSITORY --title $title --notes $notes --prerelease
           }
