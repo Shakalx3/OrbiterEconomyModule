@@ -6,8 +6,6 @@
 
 namespace oem {
 
-// Snapshot collected by the Orbiter bridge. The bridge must only set
-// proximityKnown after a complete search on bodyId has finished.
 struct LandingObservation {
     bool vesselPresent;
     std::string vesselId;
@@ -34,10 +32,11 @@ struct SpaceportLandingEvent {
     SpaceportLandingEvent();
 };
 
-// Emits one event for an actual touchdown after a previously observed airborne
-// or no-contact state. Initial parked vessels establish a baseline and do not
-// emit an arrival. Unknown proximity evidence waits; a completed negative
-// search disarms until the next takeoff/touchdown cycle.
+// Emits one event after an observed loss of ground contact followed by a
+// landed + ground-contact state within 5 km of a same-body surface base.
+// Ground contact without the landed flag is treated as a transitional
+// surface/taxi state, not as an airborne state. Initially parked or taxiing
+// vessels establish a baseline and do not emit a false arrival.
 class SpaceportLandingMonitor {
 public:
     SpaceportLandingMonitor();
