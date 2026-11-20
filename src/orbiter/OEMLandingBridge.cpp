@@ -266,6 +266,54 @@ public:
         if (station == cargoServiceInventories_.end())
             return oem::Result::failure("CARGO_SERVICE_INVENTORY_UNAVAILABLE",
                 "The registered cargo service inventory is unavailable.");
+
+        // A legacy per-vessel manifest may predate the unified exchange journal.
+        // Never append a new exchange while that vessel's service-specific history
+        // differs: doing so would make restart recovery silently lose old entries.
+        const std::vector<oem::CargoTransfer>& serviceHistory = station->second.history();
+        const std::vector<oem::CargoTransfer>& manifestHistory = current->second.history();
+        std::size_t serviceTransferCount = 0;
+        std::size_t manifestTransferCount = 0;
+        for (std::size_t i = 0; i < serviceHistory.size(); ++i) {
+            if (serviceHistory[i].vesselId == vesselId)
+                ++serviceTransferCount;
+        }
+        for (std::size_t i = 0; i < manifestHistory.size(); ++i) {
+            if (manifestHistory[i].locationId == candidateTransfer.locationId)
+                ++manifestTransferCount;
+        }
+        if (serviceTransferCount != manifestTransferCount)
+            return oem::Result::failure("CARGO_LEGACY_HISTORY_DIVERGED",
+                "This vessel has legacy cargo history not represented by the service exchange journal; explicit migration is required.");
+        for (std::size_t i = 0; i < manifestHistory.size(); ++i) {
+            if (manifestHistory[i].locationId != candidateTransfer.locationId)
+                continue;
+            bool matched = false;
+            for (std::size_t j = 0; j < serviceHistory.size(); ++j) {
+                if (sameCargoTransfer(manifestHistory[i], serviceHistory[j])) {
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched)
+                return oem::Result::failure("CARGO_LEGACY_HISTORY_DIVERGED",
+                    "This vessel's legacy cargo history differs from the service exchange journal; explicit migration is required.");
+        }
+        for (std::size_t i = 0; i < serviceHistory.size(); ++i) {
+            if (serviceHistory[i].vesselId != vesselId)
+                continue;
+            bool matched = false;
+            for (std::size_t j = 0; j < manifestHistory.size(); ++j) {
+                if (sameCargoTransfer(serviceHistory[i], manifestHistory[j])) {
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched)
+                return oem::Result::failure("CARGO_LEGACY_HISTORY_DIVERGED",
+                    "The service exchange journal contains cargo history missing from this vessel manifest; recovery must be repaired before transfer.");
+        }
+
         const std::string exchangePath = makeCargoExchangePath(module_, candidateTransfer.locationId);
         if (exchangePath.empty())
             return oem::Result::failure("CARGO_EXCHANGE_PATH", "Could not resolve cargo exchange journal path.");
