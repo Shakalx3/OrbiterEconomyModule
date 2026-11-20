@@ -14,7 +14,8 @@ The bridge observes simulation time, vessel identity, takeoff, landing, docking 
 - Simulation event journal: append-only event collection with deterministic event IDs, duplicate/conflict checks, and a versioned disk snapshot written through a temporary file and atomic replacement.
 - Ledger: integer-credit accounting, immutable transaction records, idempotency keys.
 - Market: station inventories, buy/sell quotes, stock changes.
-- Cargo: manifests and ownership/quantity tracking. Initial cargo is abstract; physical cargo and third-party vessel adapters are later extensions.
+- Cargo: manifests and ownership/quantity tracking. The portable `CargoManifest` records item IDs, quantities, unit mass, original loading location, vessel identity and transfer history. Load/unload operations require explicit transfer records with stable IDs and are idempotent. This is an OEM accounting manifest, not a claim that Orbiter's stock vessel model exposes a physical cargo inventory.
+- Physical cargo integration: Orbiter stock vessels do not provide one universal cargo-hold inventory API. Vessel mass changes and docking alone are not cargo evidence. Physical cargo systems require documented adapters; otherwise OEM-managed abstract cargo remains authoritative.
 - Contracts: acceptance, eligibility checks, evidence-based completion, settlement.
 - Company/Fleet: progression, owned vessels, operating costs.
 - Persistence: versioned save format, atomic writes, recovery from interrupted writes.
@@ -52,4 +53,4 @@ The initial market map covers Earth orbit, the Moon, and Mars in greater depth. 
 
 ## Current implementation boundary
 
-The portable core includes the ledger, surface-distance calculation, tested landing and takeoff transition monitors, an idempotent event queue, and a versioned event-journal store with atomic replacement and torn-tail recovery tests. The background bridge has been validated in the target Orbiter installation for real takeoff/landing timestamps, vessel identity, body/base identification and distance. Disk persistence is implemented but still requires a fresh native build and runtime reload test. Docking integration, contracts, cargo handover, settlement and economic UI remain outstanding.
+The portable core includes the ledger, surface-distance calculation, tested landing and takeoff transition monitors, an idempotent event queue, and a versioned event-journal store with atomic replacement and torn-tail recovery tests. The background bridge has been validated in the target Orbiter installation for real takeoff/landing timestamps, vessel identity, body/base identification and distance. Disk persistence is implemented but still requires a fresh native build and runtime reload test. Native docking observation is implemented and has been runtime-validated by the user. The portable abstract cargo manifest is implemented; manifest persistence, verified transfer authorization, contracts, settlement and economic UI remain outstanding.
