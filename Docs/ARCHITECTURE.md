@@ -32,15 +32,13 @@ The bridge observes simulation time, vessel identity, docking and location, then
 
 ## Spaceport landing detection
 
-The Orbiter 2010 SDK provides a direct ground-contact query: `VESSEL::GroundContact() const`. Its documented result is true when at least one of the vessel's touchdown reference points is in contact with a planetary surface. This is distinct from `GetFlightStatus() & 1`, which reports the vessel's inactive/landed state. Production acceptance requires both signals; neither is substituted for the other.
+The Orbiter 2010 SDK provides two independent signals: `GetFlightStatus() & 1` for Orbiter's landed/inactive state, and `VESSEL::GroundContact() const` for actual contact of at least one touchdown reference point with the planetary surface. The user has validated the second signal in the target simulator: it changes between flight, surface movement/contact, and the settled landed state. Production acceptance requires both signals.
 
-The native bridge obtains the surface reference with `VESSEL::GetSurfaceRef()`, vessel coordinates with `VESSEL::GetEquPos()`, and enumerates bases on that same body with `oapiGetBaseCount()`, `oapiGetBaseByIndex()`, and `oapiGetBaseEquPos()`. It compares coordinates using the body's mean radius and the core's great-circle distance helper. The 5,000 m threshold is inclusive.
+The native bridge is a background `oapi::Module`, not an MFD redraw callback. Its `clbkPostStep()` runs after each physical simulation step, enumerates vessels, and samples both signals. It only enumerates surface bases once both landed and ground-contact are true. It obtains the surface reference with `VESSEL::GetSurfaceRef()`, vessel coordinates with `VESSEL::GetEquPos()`, and bases on that same body with `oapiGetBaseCount()`, `oapiGetBaseByIndex()`, and `oapiGetBaseEquPos()`. Distances use the body's mean radius and the core's great-circle helper; the 5,000 m threshold is inclusive.
 
-The portable `SpaceportLandingMonitor` consumes bridge observations and emits one arrival event only after it has observed an airborne/no-contact state followed by a touchdown that satisfies all spaceport conditions. A vessel already parked when monitoring starts establishes a baseline and does not generate a false arrival. An actual touchdown outside the 5 km zone disarms the monitor; taxiing or drifting into range while still on the ground cannot masquerade as a new landing. Incomplete location evidence waits; a completed search with no matching base or a base outside the radius rejects that touchdown.
+The portable `SpaceportLandingMonitor` consumes these observations and emits one arrival event after an observed loss of ground contact followed by a landed + ground-contact state inside the 5 km zone. Ground contact without the landed flag is a transitional surface/taxi state, not an airborne state. This prevents a vessel that was already taxiing when monitoring starts from being treated as a fresh arrival. A vessel already parked also establishes a baseline without an event. A completed touchdown outside the zone disarms the monitor until the next loss of contact.
 
-The existing `OEMSpaceportTest` MFD remains unchanged as the known-good 5 km base-distance reference. A separate `OEMGroundContactTest` MFD directly displays the landed flag and `GroundContact()` result so the native method can be validated in the target simulator without altering the original diagnostic.
-
-The LuaMFD probe remains telemetry only: its API does not expose base enumeration. The SDK method is identified and the portable event monitor is implemented; native ground-contact runtime validation and end-to-end event delivery remain outstanding.
+The bridge currently writes verified events to the Orbiter log. It is an observation/event-generation layer, not yet wired to contract settlement, cargo handover, or the economic UI. The existing `OEMSpaceportTest` and `OEMGroundContactTest` MFDs remain separate diagnostics and are not modified by the bridge.
 
 ## Compatibility strategy
 
@@ -50,4 +48,4 @@ The initial market map covers Earth orbit, the Moon, and Mars in greater depth. 
 
 ## Current implementation boundary
 
-The portable core includes the ledger, surface-distance calculation, and a tested landing-transition monitor. A separate native diagnostic has already verified Launchpad discovery, native vessel access, surface-base enumeration, and the 5 km calculation. A second native MFD now isolates the `GroundContact()` API for direct simulator testing. Neither diagnostic is the production economy bridge.
+The portable core includes the ledger, surface-distance calculation, and a tested landing-transition monitor. Native diagnostics have verified Launchpad discovery, vessel state, surface-base enumeration, and the 5 km calculation. A background native module now samples all vessels after simulation steps and logs verified landing events. End-to-end in-simulator validation of that background module and connection to the economic contract system remain outstanding.
