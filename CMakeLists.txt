@@ -7,6 +7,7 @@ add_library(OEMCore
     src/core/Market.cpp
     src/core/MarketTrade.cpp
     src/core/MarketTradeJournal.cpp
+    src/core/EconomyJournal.cpp
     src/core/CargoManifest.cpp
     src/core/CargoTransferGate.cpp
     src/core/CargoServiceRegistry.cpp
@@ -31,6 +32,8 @@ target_link_libraries(OEMMarketTests PRIVATE OEMCore)
 add_executable(OEMMarketTradeTests Tests/core/MarketTradeTests.cpp)
 target_link_libraries(OEMMarketTradeTests PRIVATE OEMCore)
 add_executable(OEMMarketTradeJournalTests Tests/core/MarketTradeJournalTests.cpp)
+add_executable(OEMEconomyJournalTests Tests/core/EconomyJournalTests.cpp)
+target_link_libraries(OEMEconomyJournalTests PRIVATE OEMCore)
 target_link_libraries(OEMMarketTradeJournalTests PRIVATE OEMCore)
 add_executable(OEMCargoManifestTests Tests/core/CargoManifestTests.cpp)
 add_executable(OEMCargoManifestJournalTests Tests/core/CargoManifestJournalTests.cpp)
@@ -62,6 +65,7 @@ add_test(NAME OEMCargoCatalogConfigTests COMMAND OEMCargoCatalogConfigTests)
 add_test(NAME OEMMarketTests COMMAND OEMMarketTests)
 add_test(NAME OEMMarketTradeTests COMMAND OEMMarketTradeTests)
 add_test(NAME OEMMarketTradeJournalTests COMMAND OEMMarketTradeJournalTests)
+add_test(NAME OEMEconomyJournalTests COMMAND OEMEconomyJournalTests)
 add_test(NAME OEMCargoManifestTests COMMAND OEMCargoManifestTests)
 add_test(NAME OEMCargoManifestJournalTests COMMAND OEMCargoManifestJournalTests)
 add_test(NAME OEMCargoTransferGateTests COMMAND OEMCargoTransferGateTests)
