@@ -26,40 +26,37 @@ int main() {
     // A vessel already parked when monitoring begins establishes a baseline.
     oem::LandingObservation observation = makeObservation(true, true, true, 60.1);
     assert(!monitor.observe(observation, event));
-
-    // Repeated samples do not duplicate the landing event.
     observation.simulationTime = 101;
     assert(!monitor.observe(observation, event));
 
-    // Leaving the ground is authoritative negative evidence.
+    // A takeoff arms one future touchdown.
     observation = makeObservation(false, false, true, 60.1);
     observation.simulationTime = 110;
     assert(!monitor.observe(observation, event));
 
-    // A fly-over within 5 km is not a landing.
+    // A fly-over, landed flag alone, or contact flag alone is insufficient.
     observation = makeObservation(false, false, true, 60.1);
     assert(!monitor.observe(observation, event));
-
-    // Landed status without actual touchdown contact is not a landing.
     observation = makeObservation(true, false, true, 60.1);
     assert(!monitor.observe(observation, event));
-
-    // Ground contact without Orbiter's landed state is not a landing.
     observation = makeObservation(false, true, true, 60.1);
     assert(!monitor.observe(observation, event));
 
-    // Missing proximity evidence is unknown. It must not be treated as a
-    // completed negative search or as permission to accept a landing.
+    // After a real touchdown, incomplete location telemetry waits for evidence.
     observation = makeObservation(true, true, false, -1.0);
     assert(!monitor.observe(observation, event));
 
-    // A completed search with no matching base is known negative evidence.
+    // A completed search with no matching base rejects and disarms this
+    // touchdown; merely moving into range while still landed is not arrival.
     observation = makeObservation(true, true, true, -1.0);
     observation.nearestBaseId.clear();
-    observation.simulationTime = 115;
+    assert(!monitor.observe(observation, event));
+    observation = makeObservation(true, true, true, 60.1);
     assert(!monitor.observe(observation, event));
 
-    // Exactly 5,000 m is inside the inclusive radius.
+    // A new takeoff followed by a touchdown exactly 5,000 m away is accepted.
+    observation = makeObservation(false, false, true, 60.1);
+    assert(!monitor.observe(observation, event));
     observation = makeObservation(true, true, true, 5000.0);
     observation.simulationTime = 120;
     assert(monitor.observe(observation, event));
@@ -69,29 +66,41 @@ int main() {
     assert(std::fabs(event.distanceMetres - 5000.0) < 1e-9);
     assert(event.simulationTime == 120);
 
-    // Exactly one event for a continuous landing.
+    // Repeated frames and movement across the geofence cannot duplicate it.
     observation.simulationTime = 121;
     assert(!monitor.observe(observation, event));
-
-    // Moving beyond the 5 km boundary ends qualification.
-    observation = makeObservation(true, true, true, 5000.01);
+    observation = makeObservation(true, true, true, 7000.0);
+    assert(!monitor.observe(observation, event));
+    observation = makeObservation(true, true, true, 20.0);
     assert(!monitor.observe(observation, event));
 
-    // Returning inside range is a new verified landing transition.
+    // A second takeoff and landing is a new event.
+    observation = makeObservation(false, false, true, 20.0);
+    assert(!monitor.observe(observation, event));
     observation = makeObservation(true, true, true, 4999.0);
     observation.simulationTime = 130;
     assert(monitor.observe(observation, event));
     assert(std::fabs(event.distanceMetres - 4999.0) < 1e-9);
 
-    // A new vessel gets its own baseline and cannot inherit the old state.
+    // A different vessel starts with its own baseline and state.
     observation.vesselId = "TestShip";
     observation.simulationTime = 200;
     assert(!monitor.observe(observation, event));
-
-    // A known out-of-range result disqualifies the vessel.
-    observation.nearestBaseDistanceMetres = 7000.0;
+    observation = makeObservation(false, false, true, 7000.0);
+    observation.vesselId = "TestShip";
+    assert(!monitor.observe(observation, event));
+    observation = makeObservation(true, true, true, 7000.0);
+    observation.vesselId = "TestShip";
     assert(!monitor.observe(observation, event));
     observation.nearestBaseDistanceMetres = 10.0;
+    assert(!monitor.observe(observation, event));
+
+    // Only another airborne -> touchdown cycle can produce its event.
+    observation = makeObservation(false, false, true, 10.0);
+    observation.vesselId = "TestShip";
+    assert(!monitor.observe(observation, event));
+    observation = makeObservation(true, true, true, 10.0);
+    observation.vesselId = "TestShip";
     observation.simulationTime = 210;
     assert(monitor.observe(observation, event));
     assert(event.vesselId == "TestShip");
