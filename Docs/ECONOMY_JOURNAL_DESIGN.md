@@ -42,13 +42,13 @@ An incomplete final fragment may be truncated and discarded. A malformed complet
 
 Exact replay of an operation ID and identical facts is idempotent. Reuse of an ID with different facts is a conflict. IDs are global across exchange and trade records.
 
-## Legacy safety
+## Clean-start policy
 
-The existing CargoExchangeJournal and MarketTradeJournal are legacy formats. They must not both be independently replayed into the same projections. Nor may either be silently ignored when a global journal is introduced.
+The earlier CargoExchangeJournal and per-vessel CargoManifestJournal files were test artifacts. They are intentionally ignored by the global economy bridge and are not migrated. The old files are left untouched for manual inspection or deletion; they do not contribute stock, cargo, or money to the new economy.
 
-Native integration remains disabled until the migration path can discover every legacy journal, establish a deterministic chronology, preserve operation IDs, write and verify a complete global journal before switching recovery authority, and retain original files unchanged.
+A new session starts from explicit `accounts.cfg`, `cargo_catalog.cfg`, and per-service `cargo_stock_<HEX vessel ID>.cfg` opening configuration. The global `economy.journal` is the only subsequent authority. On first transaction it is created with the v1 header. On later scenario starts, the configured opening projections are loaded first and the global journal is replayed over them.
 
-Separate legacy files do not encode a total order across stations and between exchange and trade files. Chronology cannot in general be inferred. An automatic merge must refuse ambiguous histories rather than invent an ordering.
+The stock configuration is an opening seed, not a live balance. After the global journal exists, changing that seed changes the baseline against which the complete journal is replayed and may make recovery invalid. Do not edit opening stock after starting a persistent economy unless intentionally resetting that economy and its global journal.
 
 ## Required acceptance tests
 
@@ -66,6 +66,5 @@ Separate legacy files do not encode a total order across stations and between ex
 
 1. Add a portable global journal codec, append and transactional replay layer.
 2. Add cross-station and interleaving tests, including idempotency across record types.
-3. Add a read-only legacy-history inspection report; refuse histories whose global chronology cannot be proven. (Inspector implemented; migration itself remains pending.)
-4. Verify legacy manifests against exchange/trade histories and implement an explicit migration only when one ordered source stream is provable.
-5. Only then integrate global recovery and commits into the native bridge and build a native DLL.
+3. Start a clean global economy from explicit opening configuration; leave old test journals untouched and ignored.
+4. Integrate global recovery and durable exchange commits into the native bridge, then build and runtime-validate the native DLL.
