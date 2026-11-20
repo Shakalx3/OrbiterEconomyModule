@@ -37,7 +37,7 @@ int main() {
     oem::CargoTransfer last=make("tx-4",oem::CARGO_LOAD,"GL-01",1);
     assert(store.apply(path,afterTear,afterTearShips["GL-01"],last).ok);
     // A complete malformed record must reject the whole replay without partial mutation.
-    {std::ofstream out(path.c_str(),std::ios::app|std::ios::binary);out<<"BAD|record\\n";}
+    {std::ofstream out(path.c_str(),std::ios::app|std::ios::binary);out<<"BAD|record\n";}
     oem::CargoServiceInventory rejected("ISS");assert(rejected.setInitialStock("oxygen",12,10.0).ok);
     std::map<std::string,oem::CargoManifest> rejectedShips;
     assert(!store.load(path,rejected,rejectedShips).ok);
