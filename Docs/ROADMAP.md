@@ -45,7 +45,9 @@
 - [x] Implement and test the portable global economy journal across stations and operation types.
 - [x] Add a read-only legacy journal inspector that detects malformed files and refuses multiple non-empty streams without provable chronology.
 - [x] Adopt clean-start policy: ignore test-era per-station exchange and per-vessel manifest journals; preserve them untouched and seed the global economy from explicit configuration.
-- [x] Connect native cargo exchange commits and recovery to the global economy journal (pending native build/runtime validation).
+- [x] Connect native cargo exchange commits and recovery to the global economy journal.
+- [x] Build the updated Win32 Orbiter 2010 bridge and publish the rolling native release.
+- [ ] Runtime-validate clean global-journal startup, first exchange commit, and recovery after scenario restart in Orbiter 2010.
 - [ ] Add stock-vessel cargo adapters only where a documented physical cargo interface exists.
 - [x] Docking and spaceport-location observation through the Orbiter bridge.
 
