@@ -36,7 +36,7 @@ int main() {
 
     // A torn final line is ignored; all preceding complete records survive.
     { std::ofstream out((path+".torn").c_str(),std::ios::binary);
-      out<<"OEM_CARGO_MANIFEST|1|474C2D4E54\\nT|broken"; }
+      out<<"OEM_CARGO_MANIFEST|1|474C2D4E54\nT|broken"; }
     oem::CargoManifest recovered("GL-NT");
     assert(store.load(path+".torn",recovered).ok);
     assert(recovered.quantity("fuel_cell")==0); // torn fixture contains no complete transfer
