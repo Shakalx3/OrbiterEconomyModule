@@ -82,13 +82,13 @@ Result CargoServiceRegistry::load(const std::string& path) {
     std::string header;
     if(!std::getline(text,header))
         return Result::failure("CARGO_SERVICES_HEADER","Cargo service registry header or version is invalid.");
-    if(!header.empty() && header[header.size()-1]=='\\r') header.erase(header.size()-1);
+    if(!header.empty() && header[header.size()-1]=='\r') header.erase(header.size()-1);
     if(header!="OEM_CARGO_SERVICES|1")
         return Result::failure("CARGO_SERVICES_HEADER","Cargo service registry header or version is invalid (expected OEM_CARGO_SERVICES|1).");
     std::set<std::string> candidate;
     std::string line;
     while(std::getline(text,line)) {
-        if(!line.empty() && line[line.size()-1]=='\\r') line.erase(line.size()-1);
+        if(!line.empty() && line[line.size()-1]=='\r') line.erase(line.size()-1);
         if(line.empty())continue;
         if(line.compare(0,2,"S|")!=0)
             return Result::failure("CARGO_SERVICES_RECORD","Cargo service registry contains an invalid record.");
