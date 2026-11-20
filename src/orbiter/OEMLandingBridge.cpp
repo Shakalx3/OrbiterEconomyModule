@@ -79,6 +79,25 @@ std::string makeCargoStockConfigPath(HINSTANCE module, const std::string& servic
     std::string path(dataDirectory); path += "\\"; path += filename; return path;
 }
 
+std::string makeEconomyDataFilePath(HINSTANCE module, const char *filename) {
+    char modulePath[MAX_PATH] = {};
+    const DWORD length = GetModuleFileNameA(module, modulePath, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) return std::string();
+    char *separator = strrchr(modulePath, 92);
+    if (!separator) separator = strrchr(modulePath, '/');
+    if (!separator) return std::string();
+    *separator = 0;
+    char dataDirectory[MAX_PATH] = {};
+    sprintf(dataDirectory, "%s/OEMData", modulePath);
+    if (!CreateDirectoryA(dataDirectory, 0) && GetLastError() != ERROR_ALREADY_EXISTS)
+        return std::string();
+    if (strlen(dataDirectory) + 1 + strlen(filename) >= MAX_PATH) return std::string();
+    std::string result(dataDirectory);
+    result += "/";
+    result += filename;
+    return result;
+}
+
 std::string makeCargoServicesPath(HINSTANCE module) {
     char modulePath[MAX_PATH] = {};
     const DWORD length = GetModuleFileNameA(module, modulePath, MAX_PATH);
