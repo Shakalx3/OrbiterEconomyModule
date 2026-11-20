@@ -1,4 +1,7 @@
 #include "LegacyEconomyInspector.h"
+#include "CargoManifest.h"
+#include "Market.h"
+#include <cmath>
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
@@ -11,9 +14,9 @@ bool integer(const std::string&s){if(s.empty())return false;char*e=0;std::strtol
 bool real(const std::string&s){if(s.empty())return false;char*e=0;std::strtod(s.c_str(),&e);return e&&*e=='\0';}
 bool record(const std::string&line,LegacyJournalKind kind,std::string&id){
  std::vector<std::string>f=split(line);std::string decoded;
- if(kind==LEGACY_CARGO_EXCHANGE){long long direction=0;if(f.size()!=9||f[0]!="X"||!unhex(f[1],id)||!integer(f[2])||!unhex(f[3],decoded)||!unhex(f[4],decoded)||!unhex(f[5],decoded)||!integer(f[6])||!real(f[7])||!integer(f[8]))return false;direction=std::strtoll(f[2].c_str(),0,10);return direction==CARGO_LOAD||direction==CARGO_UNLOAD;}
+ if(kind==LEGACY_CARGO_EXCHANGE){long long direction=0;if(f.size()!=9||f[0]!="X"||!unhex(f[1],id)||!integer(f[2])||!unhex(f[3],decoded)||!unhex(f[4],decoded)||!unhex(f[5],decoded)||!integer(f[6])||!real(f[7])||!integer(f[8]))return false;direction=std::strtoll(f[2].c_str(),0,10);long long quantity=std::strtoll(f[6].c_str(),0,10),time=std::strtoll(f[8].c_str(),0,10);return !id.empty()&&quantity>0&&time>=0&&(direction==(long long)CARGO_LOAD||direction==(long long)CARGO_UNLOAD);}
  if(f.size()!=11||f[0]!="T"||!unhex(f[1],id)||!unhex(f[2],decoded)||!unhex(f[3],decoded)||!unhex(f[4],decoded)||!unhex(f[5],decoded)||!integer(f[6])||!integer(f[7])||!integer(f[8])||!integer(f[9])||!integer(f[10]))return false;
- const long long side=std::strtoll(f[6].c_str(),0,10);return side==MARKET_BUY_FROM_STATION||side==MARKET_SELL_TO_STATION;
+ const long long side=std::strtoll(f[6].c_str(),0,10),qty=std::strtoll(f[7].c_str(),0,10),unit=std::strtoll(f[8].c_str(),0,10),total=std::strtoll(f[9].c_str(),0,10),time=std::strtoll(f[10].c_str(),0,10);return !id.empty()&&qty>0&&unit>=0&&total>=0&&time>=0&&(side==MARKET_BUY_FROM_STATION||side==MARKET_SELL_TO_STATION);
 }
 }
 Result LegacyEconomyJournalInspector::inspect(const std::vector<LegacyJournalInput>&inputs,LegacyEconomyMigrationReport&report)const{
