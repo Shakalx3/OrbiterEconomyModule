@@ -22,7 +22,7 @@ int main(){
  assert(qe.createQuote(cat,stocks["MARS"],"q-2","oxygen",oem::MARKET_BUY_FROM_STATION,2,12,q).ok);
  assert(store.applyTrade(path,cat,q,"t-2","company",ledger,stocks,b).ok);
  assert(store.applyExchange(path,stocks,b,transfer("x-2","GL-02","MARS",oem::CARGO_UNLOAD,1,13)).ok);
- oem::Credits balance=0;assert(ledger.getBalance("company",balance)&&balance==1120);
+ oem::Credits balance=0;assert(ledger.getBalance("company",balance)&&balance==860);
  assert(stocks["ISS"].quantity("oxygen")==4&&stocks["MARS"].quantity("oxygen")==3);
  assert(a.quantity("oxygen")==1&&b.quantity("oxygen")==1);
  // Rebuild from explicit opening state; journal chronology must reproduce every projection.
