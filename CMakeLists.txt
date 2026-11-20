@@ -4,6 +4,7 @@ add_library(OEMCore
     src/core/Ledger.cpp
     src/core/CargoManifest.cpp
     src/core/CargoTransferGate.cpp
+    src/core/CargoServiceRegistry.cpp
     src/core/CargoManifestJournal.cpp
     src/core/SpaceportLanding.cpp
     src/core/SimulationEvent.cpp
