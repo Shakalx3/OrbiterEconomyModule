@@ -77,6 +77,7 @@ Result CargoManifestJournalStore::load(const std::string& path,CargoManifest& ma
     if(!std::getline(in,header))return Result::failure("CARGO_JOURNAL_EMPTY","Cargo journal is empty.");
     const std::string expected="OEM_CARGO_MANIFEST|1|"+hexEncode(manifest.vesselId());
     if(header!=expected)return Result::failure("CARGO_JOURNAL_HEADER","Cargo journal version or vessel ID does not match.");
+    CargoManifest candidate(manifest);
     std::string line;
     while(std::getline(in,line)) {
         if(line.empty())continue;
@@ -85,9 +86,10 @@ Result CargoManifestJournalStore::load(const std::string& path,CargoManifest& ma
             if(in.eof())break; // tolerate only a torn final record
             return Result::failure("CARGO_JOURNAL_CORRUPT","A complete cargo journal record is invalid.");
         }
-        Result applied=transfer.direction==CARGO_LOAD?manifest.load(transfer):manifest.unload(transfer);
+        Result applied=transfer.direction==CARGO_LOAD?candidate.load(transfer):candidate.unload(transfer);
         if(!applied.ok)return Result::failure(applied.code,applied.message);
     }
+    manifest=candidate;
     return Result::success();
 }
 
