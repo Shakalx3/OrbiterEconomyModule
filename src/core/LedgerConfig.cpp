@@ -31,7 +31,7 @@ Result LedgerConfigStore::save(const std::string&p,const Ledger&ledger)const{
  const std::string tmp=p+".tmp";std::ofstream out(tmp.c_str(),std::ios::binary|std::ios::trunc);if(!out)return Result::failure("LEDGER_CONFIG_OPEN","Could not create temporary account configuration.");
  out<<"OEM_ACCOUNTS|1\n";
  const std::map<std::string, Credits>& accounts=ledger.accounts();
- for(std::map<std::string, Credits>::const_iterator it=accounts.begin();it!=accounts.end();++it)out<<"A|"<<hex(it->first)<<'|'<<it->second<<"\\n";
+ for(std::map<std::string, Credits>::const_iterator it=accounts.begin();it!=accounts.end();++it)out<<"A|"<<hex(it->first)<<'|'<<it->second<<"\n";
  out.flush();if(!out.good()){out.close();std::remove(tmp.c_str());return Result::failure("LEDGER_CONFIG_WRITE","Could not write account configuration.");}
  out.close();if(out.fail()){std::remove(tmp.c_str());return Result::failure("LEDGER_CONFIG_CLOSE","Could not close account configuration.");}
  if(!replaceFile(tmp,p)){std::remove(tmp.c_str());return Result::failure("LEDGER_CONFIG_REPLACE","Could not atomically replace account configuration.");}
