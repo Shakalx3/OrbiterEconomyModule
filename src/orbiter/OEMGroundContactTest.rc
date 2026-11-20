@@ -1,0 +1,7 @@
+#include "resource.h"
+
+STRINGTABLE
+BEGIN
+    IDS_INFO "OEM GROUND CONTACT TEST:\r\n\r\nDisplays Orbiter's landed flag separately from VESSEL::GroundContact(), which reports actual touchdown-point contact with a planetary surface."
+    IDS_TYPE "MFD modes"
+END
