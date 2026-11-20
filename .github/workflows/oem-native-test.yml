@@ -18,6 +18,10 @@ on:
       - "src/core/DockingTransition.cpp"
       - "src/core/CargoServiceRegistry.h"
       - "src/core/CargoServiceRegistry.cpp"
+      - "src/core/CargoManifest.h"
+      - "src/core/CargoManifest.cpp"
+      - "src/core/CargoManifestJournal.h"
+      - "src/core/CargoManifestJournal.cpp"
       - "OEMData/cargo_services.cfg"
       - "SDK/Orbitersdk/include/**"
       - "SDK/Orbitersdk/lib/**"
@@ -86,5 +90,5 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Could not delete previous rolling tag" }
           }
 
-          gh release create $tag OEMSpaceportTest.dll OEMGroundContactTest.dll OEMLandingBridge.dll OEMData\\cargo_services.cfg --repo $env:GITHUB_REPOSITORY --title "OEM Native Diagnostics (current)" --notes "Latest successful Win32 build for Orbiter 2010. OEMLandingBridge includes background takeoff/landing and docking/undocking monitors, a persistent versioned event journal, trusted cargo-service registry loading from OEMData\\cargo_services.cfg. The release also includes a default cargo_services.cfg with ISS registered for docking tests. Place it in the OEMData folder beside OEMLandingBridge.dll. The OEM Flight Log MFD (MFD mode list; key L). Events are not yet settled financially; cargo transfer UI is not yet connected." --prerelease
+          gh release create $tag OEMSpaceportTest.dll OEMGroundContactTest.dll OEMLandingBridge.dll OEMData\\cargo_services.cfg --repo $env:GITHUB_REPOSITORY --title "OEM Native Diagnostics (current)" --notes "Latest successful Win32 build for Orbiter 2010. OEMLandingBridge includes background takeoff/landing and docking/undocking monitors, a persistent versioned event journal, trusted cargo-service registry loading from OEMData\\cargo_services.cfg, and lazy per-vessel cargo manifest journal recovery from OEMData\\cargo_manifests. The release also includes a default cargo_services.cfg with ISS registered for docking tests. Place it in the OEMData folder beside OEMLandingBridge.dll. The OEM Flight Log MFD (MFD mode list; key L). Events are not yet settled financially; cargo transfer UI is not yet connected." --prerelease
           if ($LASTEXITCODE -ne 0) { throw "Could not publish rolling release" }
