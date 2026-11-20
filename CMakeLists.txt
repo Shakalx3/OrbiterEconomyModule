@@ -23,6 +23,7 @@ add_library(OEMCore
     src/core/DockingTransition.cpp
     src/core/DeliveryContract.cpp
     src/core/SpaceportRegistry.cpp
+    src/core/EconomicLocationRegistry.cpp
 )
 target_include_directories(OEMCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
 add_executable(OEMCoreTests Tests/core/LedgerTests.cpp)
