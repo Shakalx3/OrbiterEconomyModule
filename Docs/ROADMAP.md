@@ -111,6 +111,19 @@
 - [ ] Make background activity configurable, including an option to disable it or tune its intensity, while preserving a coherent economy when disabled.
 - [ ] Add observable market activity/history so the player can see that stations and spaceports trade with other economic participants even when no player transaction occurs.
 
+### Player fleet ownership and ship purchasing — planned
+
+- [ ] Add a persistent player-owned vessel registry, separate from the general list of vessels currently present in Orbiter; registration/ownership must be explicit and survive scenario reloads.
+- [ ] Add an in-game ship catalogue based on vessel classes actually installed in the user's Orbiter configuration (class configuration and required vessel module/assets must exist); do not advertise unavailable vessel classes.
+- [ ] Support purchasing an available ship from an eligible station/spaceport, with price, delivery/creation location, and any prerequisites shown before confirmation.
+- [ ] Use the Orbiter SDK live vessel-creation API (oapiCreateVessel / oapiCreateVesselEx) to instantiate a real vessel during the running simulation. The SDK documents VESSELSTATUS2 for specifying initial reference body, position/velocity, orientation, landed/free-flight state, and related status.
+- [ ] Validate the requested class configuration and spawn state before charging the player; handle creation or durable-transaction failure without charging or leaving an unowned/duplicate vessel. Make purchase IDs idempotent.
+- [ ] Choose a safe spawn location and initial state appropriate to the selling location; avoid spawning inside another vessel, inside terrain, or in an invalid orbital state. Planetary surface delivery requires valid base coordinates and a compatible vessel class.
+- [ ] Persist ownership independently of vessel handles (which are runtime-only); reconcile registered ownership against vessel names/identities after scenario load and report missing or renamed vessels without silently transferring ownership.
+- [ ] Integrate purchases with the company ledger and global economy journal; the vessel must become player property only after the purchase is durably committed.
+- [ ] Expose owned fleet, current location/state, acquisition price, and sale eligibility in an in-game fleet management interface.
+- [ ] Treat SDK vessel creation as creation of an instance of an already installed vessel class, not arbitrary generation of a new spacecraft design. A genuinely new ship design still requires a vessel class implementation/configuration and its assets.
+- [ ] Verify live creation, scenario save/reload persistence, ownership recovery, duplicate prevention, and rollback/failure handling in the target Orbiter runtime before release.
 ### Debt collection and player asset ownership — planned
 
 - [ ] Allow monetary penalties to exceed the player's available balance; debit available funds and record the remainder as an explicit outstanding debt in the durable economy ledger.
