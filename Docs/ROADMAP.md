@@ -5,11 +5,12 @@
 - [x] Record system boundaries and safety invariants.
 - [x] Confirm Orbiter 2010 SDK headers are present in the repository.
 - [x] Add first LuaMFD telemetry probe and validate it in Orbiter 2010.
-- [ ] Confirm local compiler/toolchain and target architecture.
 - [x] Build the portable core and test harness in GitHub CI.
-- [ ] Implement and validate the production native Orbiter bridge.
 - [x] Verify native landed-state, vessel-position, surface-base enumeration, and 5 km distance path in a diagnostic MFD.
-- [ ] Validate `VESSEL::GroundContact()` in a separate diagnostic MFD in the target Orbiter installation.
+- [x] Validate `VESSEL::GroundContact()` in a separate diagnostic MFD in the target Orbiter installation.
+- [x] Implement a background native module that samples vessels after each simulation step and emits verified landing events to Orbiter.log.
+- [ ] Validate the background bridge end-to-end in the target Orbiter installation.
+- [ ] Connect landing events to the economic event queue and contract/cargo systems.
 
 ## Phase A — career and persistence
 - [ ] New company / career state with configurable starting capital.
