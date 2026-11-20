@@ -20,34 +20,36 @@
 - [ ] Connect verified events to contract/cargo eligibility and settlement.
 
 ## Phase A — career and persistence
-- [ ] New company / career state with configurable starting capital.
-- [ ] Account ledger with idempotent transactions.
-- [ ] Versioned save/load and crash-safe replacement.
-- [ ] Deterministic simulation-time advancement.
+- [ ] New company / career state beyond the explicitly configured opening account.
+- [x] Company account ledger with idempotent transactions.
+- [x] Versioned global economy journal with durable append and transactional recovery.
+- [x] Use Orbiter simulation time for cargo and market operation timestamps.
 
 ## Phase B — stations, markets, and cargo
 - [ ] Solar-system location identifiers and station definitions.
-- [ ] Market inventories and buy/sell transactions.
+- [x] Portable market catalog, quote engine, and atomic BUY/SELL transaction engine.
+- [x] Global journal records market trades in the same ordered stream as cargo exchanges.
+- [x] Native Station Market MFD (key M) with one-unit BUY/SELL operations at registered docked services.
+- [ ] Runtime-validate market purchases, sales, and balance/cargo recovery after scenario restart.
 - [x] Add portable abstract cargo manifests with transfer history, mass accounting and idempotent load/unload operations.
 - [x] Add portable station-side stock accounting with explicit initial stock, load debits, unload credits, quantity bounds and idempotent transfer IDs.
 - [x] Add a unified durable exchange journal that commits station-stock and vessel-manifest projections from one record and recovers them transactionally.
-- [x] Persist cargo manifest transfer history with versioned, atomic, idempotent recovery.
-- [x] Add native per-vessel manifest path isolation and lazy recovery on focus; save hook is ready for authorized transfer operations.
+- [x] Persist cargo manifest transfer history through the global versioned, durable, idempotent economy journal.
 - [x] Add a portable authorization gate requiring verified landed + ground-contact spaceport state or an explicitly recognized OEM cargo-service dock.
 - [x] Require an explicit trusted cargo-service registry; arbitrary docked vessels cannot authorize transfers.
 - [x] Add versioned, atomic persistence and corruption-safe loading for the trusted cargo-service allowlist.
 - [x] Load the cargo-service allowlist in the native bridge and annotate actual dock/undock events for registered counterpart vessels.
 - [x] Build and runtime-validate cargo-service registry loading and recognized-service dock/undock annotations in Orbiter 2010.
-- [x] Integrate the unified exchange journal into native bridge startup and transfer commits; reject divergent legacy per-vessel manifest histories rather than silently discarding them.
+- [x] Integrate the global economy journal into native bridge startup and transfer commits; old test journals are ignored without being modified.
 - [x] Persist explicit per-service initial-stock configuration and validate it before exchange replay; a missing file means zero stock.
-- [ ] Runtime-validate native exchange recovery in Orbiter 2010; transfer controls remain intentionally unexposed.
+- [x] Runtime-validate native global-journal exchange commit and recovery across scenario restart in Orbiter 2010.
 - [x] Specify the global economy journal format, ordered replay model, unlimited station funds, and legacy migration safety.
 - [x] Implement and test the portable global economy journal across stations and operation types.
 - [x] Add a read-only legacy journal inspector that detects malformed files and refuses multiple non-empty streams without provable chronology.
 - [x] Adopt clean-start policy: ignore test-era per-station exchange and per-vessel manifest journals; preserve them untouched and seed the global economy from explicit configuration.
 - [x] Connect native cargo exchange commits and recovery to the global economy journal.
 - [x] Build the updated Win32 Orbiter 2010 bridge and publish the rolling native release.
-- [ ] Runtime-validate clean global-journal startup, first exchange commit, and recovery after scenario restart in Orbiter 2010.
+- [x] Runtime-validate clean global-journal startup, first exchange commit, and recovery after scenario restart in Orbiter 2010.
 - [ ] Add stock-vessel cargo adapters only where a documented physical cargo interface exists.
 - [x] Docking and spaceport-location observation through the Orbiter bridge.
 
