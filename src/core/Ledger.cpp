@@ -85,4 +85,8 @@ const std::vector<LedgerEntry>& Ledger::entries() const {
     return entries_;
 }
 
+const std::map<std::string, Credits>& Ledger::accounts() const {
+    return balances_;
+}
+
 } // namespace oem
