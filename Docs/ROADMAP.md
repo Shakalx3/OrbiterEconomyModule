@@ -11,8 +11,10 @@
 - [x] Implement and runtime-validate the background bridge for takeoff/landing timestamps, vessel identity, body/base and distance.
 - [x] Add portable takeoff/landing monitors and an idempotent simulation event journal with deterministic event IDs.
 - [x] Add versioned journal serialization, atomic replacement, and recovery tests for an incomplete final record.
-- [ ] Build and runtime-validate the bridge-to-event-journal integration.
-- [ ] Build and runtime-validate journal persistence across scenario reloads.
+- [x] Build and runtime-validate the bridge-to-event-journal integration.
+- [x] Build and runtime-validate journal persistence across scenario reloads.
+- [ ] Add a native MFD flight log with paging over persisted events.
+- [ ] Runtime-validate the flight log MFD in Orbiter 2010.
 - [ ] Add native docking/undocking observation and publish those events.
 - [ ] Connect verified events to contract/cargo eligibility and settlement.
 
