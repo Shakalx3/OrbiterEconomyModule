@@ -6,9 +6,8 @@
 
 namespace oem {
 
-// Snapshot collected by the Orbiter bridge. Coordinates and distance are in
-// radians/metres at the bridge boundary; the core only consumes the verified
-// nearest-base distance and its identity.
+// Snapshot collected by the Orbiter bridge. The bridge must only set
+// proximityKnown after a complete search on bodyId has finished.
 struct LandingObservation {
     bool vesselPresent;
     std::string vesselId;
@@ -35,15 +34,14 @@ struct SpaceportLandingEvent {
     SpaceportLandingEvent();
 };
 
-// Emits one event when a vessel transitions from a known non-qualifying state
-// into a fully verified spaceport landing. The first sample for each vessel
-// establishes a baseline and never emits an event.
+// Emits one event for an actual touchdown after a previously observed airborne
+// or no-contact state. Initial parked vessels establish a baseline and do not
+// emit an arrival. Unknown proximity evidence waits; a completed negative
+// search disarms until the next takeoff/touchdown cycle.
 class SpaceportLandingMonitor {
 public:
     SpaceportLandingMonitor();
 
-    // Returns true only when a new landing event is emitted. Unknown proximity
-    // evidence does not change the previous known state.
     bool observe(const LandingObservation& observation,
                  SpaceportLandingEvent& event);
 
@@ -52,8 +50,7 @@ public:
 private:
     bool hasVessel_;
     std::string vesselId_;
-    bool stateKnown_;
-    bool qualified_;
+    bool armedForLanding_;
 };
 
 } // namespace oem
