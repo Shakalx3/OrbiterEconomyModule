@@ -6,6 +6,7 @@ add_library(OEMCore
     src/core/CargoTransferGate.cpp
     src/core/CargoServiceRegistry.cpp
     src/core/CargoServiceInventory.cpp
+    src/core/CargoExchangeJournal.cpp
     src/core/CargoManifestJournal.cpp
     src/core/SpaceportLanding.cpp
     src/core/SimulationEvent.cpp
@@ -20,9 +21,11 @@ add_executable(OEMCargoManifestJournalTests Tests/core/CargoManifestJournalTests
 add_executable(OEMCargoTransferGateTests Tests/core/CargoTransferGateTests.cpp)
 add_executable(OEMCargoServiceRegistryTests Tests/core/CargoServiceRegistryTests.cpp)
 add_executable(OEMCargoServiceInventoryTests Tests/core/CargoServiceInventoryTests.cpp)
+add_executable(OEMCargoExchangeJournalTests Tests/core/CargoExchangeJournalTests.cpp)
 target_link_libraries(OEMCargoTransferGateTests PRIVATE OEMCore)
 target_link_libraries(OEMCargoServiceRegistryTests PRIVATE OEMCore)
 target_link_libraries(OEMCargoServiceInventoryTests PRIVATE OEMCore)
+target_link_libraries(OEMCargoExchangeJournalTests PRIVATE OEMCore)
 target_link_libraries(OEMCargoManifestJournalTests PRIVATE OEMCore)
 target_link_libraries(OEMCargoManifestTests PRIVATE OEMCore)
 target_link_libraries(OEMCoreTests PRIVATE OEMCore)
@@ -41,6 +44,7 @@ add_test(NAME OEMCargoManifestJournalTests COMMAND OEMCargoManifestJournalTests)
 add_test(NAME OEMCargoTransferGateTests COMMAND OEMCargoTransferGateTests)
 add_test(NAME OEMCargoServiceRegistryTests COMMAND OEMCargoServiceRegistryTests)
 add_test(NAME OEMCargoServiceInventoryTests COMMAND OEMCargoServiceInventoryTests)
+add_test(NAME OEMCargoExchangeJournalTests COMMAND OEMCargoExchangeJournalTests)
 add_test(NAME OEMSpaceportLandingTests COMMAND OEMSpaceportLandingTests)
 add_test(NAME OEMSimulationEventTests COMMAND OEMSimulationEventTests)
 add_test(NAME OEMSimulationEventJournalTests COMMAND OEMSimulationEventJournalTests)
