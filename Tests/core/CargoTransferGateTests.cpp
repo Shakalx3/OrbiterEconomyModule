@@ -22,6 +22,7 @@ int main() {
  o.landed=false;o.groundContact=false;o.surfaceLocationKnown=false;
  o.docked=true;o.dockedVesselId="CargoShip";
  assert(!gate.authorize(transfer("GL-NT","CargoShip"),o,services).ok);
+ assert(!services.registerService(""));
  assert(services.registerService("CargoShip"));
  assert(!services.registerService("CargoShip"));
  assert(services.size()==1);
