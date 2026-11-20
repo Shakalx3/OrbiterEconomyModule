@@ -42,15 +42,17 @@ bool SpaceportLandingMonitor::observe(const LandingObservation& observation,
         return false;
     }
 
-    // A landed vessel in contact is not enough: require completed, valid
-    // same-body base matching from the bridge before changing state.
-    if (!observation.proximityKnown || observation.bodyId.empty() ||
-        observation.nearestBaseId.empty() ||
+    // A landed vessel in contact is not enough. The bridge must complete the
+    // surface-body/base search before the core can accept or reject proximity.
+    if (!observation.proximityKnown || observation.bodyId.empty())
+        return false;
+
+    // A completed search with no base, or a nearest base outside the inclusive
+    // 5 km radius, is known negative evidence.
+    if (observation.nearestBaseId.empty() ||
         !isWithinSpaceportRadius(observation.nearestBaseDistanceMetres, 5000.0)) {
-        if (observation.proximityKnown) {
-            stateKnown_ = true;
-            qualified_ = false;
-        }
+        stateKnown_ = true;
+        qualified_ = false;
         return false;
     }
 
