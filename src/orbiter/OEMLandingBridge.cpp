@@ -734,7 +734,8 @@ public:
 
 private:
 
-    // Rebuild from Orbiter handles every scenario start; the saved registry is a derived snapshot.\n    void rebuildSpaceportRegistry() {
+    // Rebuild from Orbiter handles every scenario start; the saved registry is a derived snapshot.
+    void rebuildSpaceportRegistry() {
         oem::SpaceportRegistry registry;
         const DWORD bodyCount = oapiGetGbodyCount();
         unsigned long baseCount = 0;
