@@ -40,7 +40,7 @@ The example cargo ID is `TEST`, display name is `Test cargo`, unit mass is 1 kg,
 
 ## New Game / campaign reset
 
-The portable core now defines and tests the allowlist of OEM campaign files that a future in-game New Game command may remove. The native MFD command is not yet exposed. Until it is implemented, do not manually delete individual files while Orbiter is running. The intended reset removes economy and event journals, generated cargo stock files, and player station registrations while preserving account/catalogue definitions, module preferences, and the derived `spaceports.registry`. The reset must never touch Orbiter scenario files.
+The portable core now defines and tests the allowlist of OEM campaign files that a future in-game New Game command may remove. The native MFD command is not yet exposed. Until it is implemented, do not manually delete individual files while Orbiter is running. The intended reset removes economy and event journals, generated cargo stock files, player station registrations, and cargo-service permissions while preserving account/catalogue definitions, module preferences, and the derived `spaceports.registry`. The reset must never touch Orbiter scenario files.
 
 Do not change a service's opening stock configuration after transactions have been written to `economy.journal`, unless the journal is also intentionally reset. Recovery always replays the complete global journal over the configured opening stock.
 
