@@ -4,7 +4,7 @@ These are design constraints, not final balance values.
 
 - Currency is represented as integer credits (no floating-point money).
 - A market quote is a snapshot with a timestamp and station identifier.
-- A purchase is one atomic operation: validate funds and stock, debit the buyer, credit the seller/market account, decrement stock, and add cargo.
+- A purchase is one atomic operation: validate funds and stock, debit the buyer, decrement stock; station funds are unlimited, and add cargo.
 - A sale is the inverse and must validate cargo ownership and quantity.
 - Every economic operation has a unique operation ID. Replaying it returns the prior result instead of applying it twice.
 - Contract eligibility is evaluated from recorded simulation evidence, not from the requested UI action.
@@ -17,11 +17,11 @@ Starting capital, prices, margins, and progression thresholds remain configurabl
 
 The portable `CargoCatalog` stores explicit cargo definitions: stable cargo ID, display name, unit mass, station buy price and station sell price. Prices are integer credits; unit mass must be positive and finite; IDs are unique. No catalog entries or prices are invented as runtime defaults.
 
-`MarketQuoteEngine` creates a timestamped quote snapshot for one exact cargo-service vessel. A BUY quote means the player buys from the station and therefore checks current station stock. A SELL quote means the player sells to the station and checks that accepting the quantity cannot overflow station stock. The quote captures station ID, cargo ID, side, quantity, unit price, total integer-credit value, observed station stock and simulation time. It does not reserve stock, move cargo, or transfer money. A later transaction must revalidate the quote against current state and commit account, station inventory and vessel manifest changes through one durable operation.
+`MarketQuoteEngine` creates a timestamped quote snapshot for one exact cargo-service vessel. A BUY quote means the player buys from the station and therefore checks current station stock. A SELL quote means the player sells to the station and checks that accepting the quantity cannot overflow station stock. The quote captures station ID, cargo ID, side, quantity, unit price, total integer-credit value, observed station stock and simulation time. It does not reserve stock, move cargo, or transfer money. A later transaction must revalidate the quote against current state and commit company balance, station inventory and vessel manifest changes through one durable operation.
 
 ## Atomic market operation prototype
 
-The portable `MarketTradeEngine` now applies a quoted BUY or SELL against candidate copies of the account ledger, station inventory and vessel manifest. BUY debits the company account, credits the station account, consumes station stock and adds to the vessel OEM manifest. SELL performs the inverse and requires the manifest to contain the requested cargo. All candidate projections are published only if every validation succeeds. The operation ID is shared by the ledger and cargo transfer records, so an exact replay is idempotent and conflicting reuse is rejected.
+The portable `MarketTradeEngine` now applies a quoted BUY or SELL against candidate copies of the account ledger, station inventory and vessel manifest. BUY debits the company account and consumes station stock and adds to the vessel OEM manifest. SELL credits the company account and requires the manifest to contain the requested cargo. All candidate projections are published only if every validation succeeds. The operation ID is shared by the ledger and cargo transfer records, so an exact replay is idempotent and conflicting reuse is rejected.
 
 This is currently an in-memory core transaction prototype. It is covered by portable tests but is not yet crash-durable and is not exposed in the Orbiter MFD. A unified durable market-trade journal and recovery path must be completed before enabling player-facing purchase/sale controls.
 
