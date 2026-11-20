@@ -32,6 +32,8 @@ int main() {
       out<<"OEM_CARGO_SERVICES|1\nS|GG\n"; }
     assert(!restored.load(path).ok);
     assert(restored.size()==1&&restored.isRegistered("Cargo Ship|01"));
+    restored.clear();
+    assert(restored.size()==0&&!restored.isRegistered("Cargo Ship|01"));
 
     std::remove(path.c_str());std::remove((path+".tmp").c_str());
     return 0;
