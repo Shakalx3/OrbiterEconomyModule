@@ -32,6 +32,8 @@
 - [x] Persist cargo manifest transfer history with versioned, atomic, idempotent recovery.
 - [x] Add a portable authorization gate requiring verified landed + ground-contact spaceport state or an explicitly recognized OEM cargo-service dock.
 - [x] Require an explicit trusted cargo-service registry; arbitrary docked vessels cannot authorize transfers.
+- [x] Add versioned, atomic persistence and corruption-safe loading for the trusted cargo-service allowlist.
+- [ ] Load the cargo-service allowlist in the native bridge and verify actual docked counterpart recognition.
 - [ ] Add stock-vessel cargo adapters only where a documented physical cargo interface exists.
 - [ ] Docking and spaceport-location observation through the Orbiter bridge.
 
