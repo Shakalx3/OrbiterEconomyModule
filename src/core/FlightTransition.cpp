@@ -22,9 +22,11 @@ bool FlightTransitionMonitor::observe(const FlightObservation& observation,
     if (!initialized_ || vesselId_ != observation.vesselId) {
         initialized_ = true;
         vesselId_ = observation.vesselId;
-        wasGrounded_ = observation.landed && observation.groundContact;
-        if (wasGrounded_) {
-            lastLocationKnown_ = observation.locationKnown;
+        // GroundContact alone is enough to establish a surface baseline:
+        // Orbiter can clear the landed flag while a vessel is taxiing.
+        wasGrounded_ = observation.groundContact;
+        if (wasGrounded_ && observation.locationKnown) {
+            lastLocationKnown_ = true;
             lastBodyId_ = observation.bodyId;
             lastBaseId_ = observation.nearestBaseId;
             lastDistanceMetres_ = observation.nearestBaseDistanceMetres;
@@ -32,8 +34,7 @@ bool FlightTransitionMonitor::observe(const FlightObservation& observation,
         return false;
     }
 
-    const bool grounded = observation.landed && observation.groundContact;
-    if (grounded) {
+    if (observation.groundContact) {
         wasGrounded_ = true;
         if (observation.locationKnown) {
             lastLocationKnown_ = true;
@@ -44,7 +45,7 @@ bool FlightTransitionMonitor::observe(const FlightObservation& observation,
         return false;
     }
 
-    if (wasGrounded_ && !observation.groundContact) {
+    if (wasGrounded_) {
         event = SimulationEvent();
         event.type = SIM_EVENT_TAKEOFF;
         event.vesselId = observation.vesselId;
@@ -58,8 +59,6 @@ bool FlightTransitionMonitor::observe(const FlightObservation& observation,
         return true;
     }
 
-    // Ground contact may briefly remain true while Orbiter clears the landed
-    // flag during surface taxi. That is not a takeoff.
     return false;
 }
 
