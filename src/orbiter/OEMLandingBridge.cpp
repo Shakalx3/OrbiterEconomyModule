@@ -179,15 +179,49 @@ public:
         return std::string();
     }
 
+    std::string currentMarketLocation(const std::string& vesselId) const {
+        const std::string docked = dockedCargoService(vesselId);
+        if (!docked.empty()) return docked;
+        OBJHANDLE focus = oapiGetFocusObject();
+        if (!focus || !oapiIsVessel(focus)) return std::string();
+        VESSEL *vessel = oapiGetVesselInterface(focus);
+        if (!vessel || !vessel->GetName() || vesselId != vessel->GetName() ||
+            !(vessel->GetFlightStatus() & 1u) || !vessel->GroundContact())
+            return std::string();
+        OBJHANDLE body = vessel->GetSurfaceRef();
+        if (!body) return std::string();
+        double lng=0.0, lat=0.0, radius=0.0;
+        if (vessel->GetEquPos(lng, lat, radius) != body) return std::string();
+        const double bodyRadius = oapiGetSize(body);
+        if (!(bodyRadius > 0.0) || !_finite(bodyRadius)) return std::string();
+        double nearest = -1.0;
+        std::string baseId;
+        const DWORD count = oapiGetBaseCount(body);
+        for (DWORD i=0; i<count; ++i) {
+            OBJHANDLE base = oapiGetBaseByIndex(body, (int)i);
+            if (!base) continue;
+            double blng=0.0, blat=0.0, brad=0.0;
+            oapiGetBaseEquPos(base, &blng, &blat, &brad);
+            const double d = oem::surfaceDistanceMetres(lat, lng, blat, blng, bodyRadius);
+            if (d >= 0.0 && (nearest < 0.0 || d < nearest)) {
+                char name[128] = {};
+                oapiGetObjectName(base, name, sizeof(name));
+                nearest = d;
+                baseId = name;
+            }
+        }
+        return nearest >= 0.0 && nearest <= 5000.0 ? baseId : std::string();
+    }
+
     oem::Result performCargoExchangeTest(const std::string& vesselId,
                                          oem::CargoTransferDirection direction) {
         if (sessionId_.empty() || currentSimulationTime_ <= 0)
             return oem::Result::failure("CARGO_TEST_NOT_READY",
                 "Wait until the simulation has advanced beyond its initialization frame.");
-        const std::string serviceId = dockedCargoService(vesselId);
+        const std::string serviceId = currentMarketLocation(vesselId);
         if (serviceId.empty())
-            return oem::Result::failure("CARGO_TEST_NOT_DOCKED",
-                "The focused vessel must be docked to a registered cargo service.");
+            return oem::Result::failure("CARGO_TEST_NO_LOCATION",
+                "Land within 5 km of a surface base or dock to a registered cargo service.");
         ensureCargoManifest(vesselId);
         if (!ensureCargoServiceInventory(serviceId))
             return oem::Result::failure("CARGO_SERVICE_INVENTORY_UNAVAILABLE",
@@ -245,10 +279,10 @@ public:
         if (sessionId_.empty() || currentSimulationTime_ <= 0)
             return oem::Result::failure("MARKET_NOT_READY",
                 "Wait until the simulation has advanced beyond its initialization frame.");
-        const std::string serviceId = dockedCargoService(vesselId);
+        const std::string serviceId = currentMarketLocation(vesselId);
         if (serviceId.empty())
-            return oem::Result::failure("MARKET_NOT_DOCKED",
-                "The focused vessel must be docked to a registered cargo service.");
+            return oem::Result::failure("MARKET_NO_LOCATION",
+                "Land within 5 km of a planetary spaceport or dock to a registered station.");
         ensureCargoManifest(vesselId);
         if (!ensureCargoServiceInventory(serviceId))
             return oem::Result::failure("MARKET_STOCK_UNAVAILABLE",
@@ -461,6 +495,13 @@ public:
             const std::set<std::string>& serviceIds = cargoServices_.vesselIds();
             for (std::set<std::string>::const_iterator it = serviceIds.begin(); it != serviceIds.end(); ++it)
                 ensureCargoServiceInventory(*it);
+            // Restore explicit opening stock for previously visited surface bases
+            // before replaying economy.journal, just as for registered stations.
+            const std::vector<oem::SimulationEvent>& priorEvents = eventQueue_.events();
+            for (std::size_t i = 0; i < priorEvents.size(); ++i)
+                if (priorEvents[i].type == oem::SIM_EVENT_LANDING &&
+                    priorEvents[i].locationKnown && !priorEvents[i].baseId.empty())
+                    ensureCargoServiceInventory(priorEvents[i].baseId);
             initializeEconomyState();
         }
         oapiWriteLog((char*)"OEM Landing Bridge: simulation monitoring started.");
@@ -673,7 +714,7 @@ public:
 private:
 
     bool ensureCargoServiceInventory(const std::string& serviceId) {
-        if (serviceId.empty() || !cargoServices_.isRegistered(serviceId)) return false;
+        if (serviceId.empty()) return false;
         if (cargoServiceInventories_.find(serviceId) != cargoServiceInventories_.end()) return true;
         if (cargoServiceInventoryLoadAttempted_.find(serviceId) != cargoServiceInventoryLoadAttempted_.end()) return false;
         cargoServiceInventoryLoadAttempted_.insert(serviceId);
@@ -1036,7 +1077,7 @@ public:
           status_("Dock to a registered service to trade.") {}
 
     void Update(HDC hDC) override {
-        Title(hDC, "OEM STATION MARKET");
+        Title(hDC, "OEM LOCATION MARKET");
         SelectDefaultFont(hDC, 0);
         int y = (int)ch + 3;
         DrawLine(hDC, y, "OEM ACCOUNTING ONLY - NO PHYSICAL CARGO");
@@ -1044,12 +1085,12 @@ public:
             DrawLine(hDC, y, "OEM bridge unavailable.");
             return;
         }
-        const std::string serviceId = g_bridge->dockedCargoService(vesselId_);
+        const std::string serviceId = g_bridge->currentMarketLocation(vesselId_);
         if (serviceId.empty()) {
-            DrawLine(hDC, y, "Dock to a registered cargo service.");
+            DrawLine(hDC, y, "Land at a base or dock to a registered station.");
         } else {
             char line[256];
-            sprintf(line, "STATION: %.40s", serviceId.c_str());
+            sprintf(line, "MARKET: %.40s", serviceId.c_str());
             DrawLine(hDC, y, line);
         }
         oem::Credits balance = 0;
@@ -1113,8 +1154,8 @@ public:
 
     int ButtonMenu(const MFDBUTTONMENU **menu) const override {
         static const MFDBUTTONMENU items[2] = {
-            { "Buy one unit from station", 0, 'B' },
-            { "Sell one unit to station", 0, 'S' }
+            { "Buy one unit at current location", 0, 'B' },
+            { "Sell one unit at current location", 0, 'S' }
         };
         if (menu) *menu = items;
         return 2;
@@ -1267,7 +1308,7 @@ DLLCLBK void InitModule(HINSTANCE hDLL) {
     spec.msgproc = OEMCargoExchangeTestMFD::MsgProc;
     g_cargoExchangeTestMode = oapiRegisterMFDMode(spec);
 
-    spec.name = "OEM Station Market";
+    spec.name = "OEM Location Market";
     spec.key = OAPI_KEY_M;
     spec.msgproc = OEMMarketMFD::MsgProc;
     g_marketMode = oapiRegisterMFDMode(spec);
