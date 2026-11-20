@@ -1525,6 +1525,100 @@ private:
     std::string status_;
 };
 
+
+class OEMEconomicAdminMFD : public MFD {
+public:
+    OEMEconomicAdminMFD(DWORD w, DWORD h, VESSEL *vessel)
+        : MFD(w, h, vessel),
+          vesselId_(vessel && vessel->GetName() ? vessel->GetName() : ""),
+          status_("Changes are saved automatically by OEM.") {}
+
+    void Update(HDC hDC) override {
+        Title(hDC, "OEM ECONOMIC ADMIN");
+        SelectDefaultFont(hDC, 0);
+        int y = (int)ch + 3;
+        char line[256];
+        sprintf(line, "FOCUSED VESSEL: %.38s", vesselId_.c_str());
+        DrawLine(hDC, y, line);
+        if (!g_bridge) {
+            DrawLine(hDC, y, "OEM bridge unavailable.");
+            return;
+        }
+        DrawLine(hDC, y, g_bridge->isEconomicStation(vesselId_)
+            ? "IDENTITY: REGISTERED ORBITAL STATION"
+            : "IDENTITY: ORDINARY VESSEL");
+        DrawLine(hDC, y, g_bridge->isCargoService(vesselId_)
+            ? "SERVICE: CARGO / MARKET ENABLED"
+            : "SERVICE: CARGO / MARKET DISABLED");
+        DrawLine(hDC, y, "Station identity and cargo services");
+        DrawLine(hDC, y, "are independent permissions.");
+        DrawLine(hDC, y, "STN+: register as station");
+        DrawLine(hDC, y, "STN-: remove station status");
+        DrawLine(hDC, y, "SVC+: enable cargo service");
+        DrawLine(hDC, y, "SVC-: disable cargo service");
+        DrawLine(hDC, y, status_.c_str());
+    }
+
+    bool ConsumeKeyBuffered(DWORD key) override {
+        if (!g_bridge) return false;
+        oem::Result result;
+        if (key == OAPI_KEY_R)
+            result = g_bridge->setEconomicStationRegistered(vesselId_, true);
+        else if (key == OAPI_KEY_X)
+            result = g_bridge->setEconomicStationRegistered(vesselId_, false);
+        else if (key == OAPI_KEY_T)
+            result = g_bridge->setCargoServiceRegistered(vesselId_, true);
+        else if (key == OAPI_KEY_D)
+            result = g_bridge->setCargoServiceRegistered(vesselId_, false);
+        else
+            return false;
+        status_ = result.ok ? "Saved. Registry updated." : result.code + ": " + result.message;
+        return true;
+    }
+
+    bool ConsumeButton(int bt, int event) override {
+        if (!(event & PANEL_MOUSE_LBDOWN)) return false;
+        static const DWORD keys[4] = { OAPI_KEY_R, OAPI_KEY_X, OAPI_KEY_T, OAPI_KEY_D };
+        return bt >= 0 && bt < 4 ? ConsumeKeyBuffered(keys[bt]) : false;
+    }
+
+    char *ButtonLabel(int bt) override {
+        static char *labels[4] = {
+            (char*)"STN+", (char*)"STN-", (char*)"SVC+", (char*)"SVC-"
+        };
+        return bt >= 0 && bt < 4 ? labels[bt] : 0;
+    }
+
+    int ButtonMenu(const MFDBUTTONMENU **menu) const override {
+        static const MFDBUTTONMENU items[4] = {
+            { "Register focused vessel as an orbital station", 0, 'R' },
+            { "Remove orbital station identity", 0, 'X' },
+            { "Enable cargo and market services", 0, 'T' },
+            { "Disable cargo and market services", 0, 'D' }
+        };
+        if (menu) *menu = items;
+        return 4;
+    }
+
+    static int MsgProc(UINT msg, UINT mfd, WPARAM wparam, LPARAM lparam) {
+        if (msg == OAPI_MSG_MFD_OPENEDEX && g_bridge) {
+            MFDMODEOPENSPEC *spec = (MFDMODEOPENSPEC*)wparam;
+            return (int)(new OEMEconomicAdminMFD(
+                spec->w, spec->h, (VESSEL*)lparam));
+        }
+        return 0;
+    }
+
+private:
+    void DrawLine(HDC hDC, int &y, const char *text) {
+        TextOutA(hDC, 4, y, text, (int)strlen(text));
+        y += (int)ch;
+    }
+
+    std::string vesselId_;
+    std::string status_;
+};
+
 } // namespace
 
 DLLCLBK void InitModule(HINSTANCE hDLL) {
@@ -1551,6 +1645,11 @@ DLLCLBK void InitModule(HINSTANCE hDLL) {
     spec.key = OAPI_KEY_M;
     spec.msgproc = OEMMarketMFD::MsgProc;
     g_marketMode = oapiRegisterMFDMode(spec);
+
+    spec.name = "OEM Economic Admin";
+    spec.key = OAPI_KEY_A;
+    spec.msgproc = OEMEconomicAdminMFD::MsgProc;
+    g_economicAdminMode = oapiRegisterMFDMode(spec);
 }
 
 DLLCLBK void ExitModule(HINSTANCE hDLL) {
@@ -1558,10 +1657,12 @@ DLLCLBK void ExitModule(HINSTANCE hDLL) {
     if (g_cargoManifestMode >= 0) oapiUnregisterMFDMode(g_cargoManifestMode);
     if (g_cargoExchangeTestMode >= 0) oapiUnregisterMFDMode(g_cargoExchangeTestMode);
     if (g_marketMode >= 0) oapiUnregisterMFDMode(g_marketMode);
+    if (g_economicAdminMode >= 0) oapiUnregisterMFDMode(g_economicAdminMode);
     g_flightLogMode = -1;
     g_cargoManifestMode = -1;
     g_cargoExchangeTestMode = -1;
     g_marketMode = -1;
+    g_economicAdminMode = -1;
     g_bridge = 0;
     // Orbiter owns and destroys registered oapi::Module instances.
 }
