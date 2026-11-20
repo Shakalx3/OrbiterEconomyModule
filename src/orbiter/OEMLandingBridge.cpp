@@ -9,6 +9,7 @@
 #include "orbitersdk.h"
 #include "../core/SpaceportLanding.h"
 #include "../core/FlightTransition.h"
+#include "../core/DockingTransition.h"
 #include "../core/SimulationEvent.h"
 #include "../core/SimulationEventJournal.h"
 #include "../core/SurfaceDistance.h"
@@ -44,7 +45,7 @@ class OEMLandingBridge : public oapi::Module {
 public:
     explicit OEMLandingBridge(HINSTANCE hDLL)
         : oapi::Module(hDLL), landingMonitors_(), flightMonitors_(),
-          eventQueue_(), journalStore_(), journalPath_(makeJournalPath(hDLL)),
+          dockingMonitors_(), eventQueue_(), journalStore_(), journalPath_(makeJournalPath(hDLL)),
           journalReady_(false), sessionId_(), lastFocus_(0) {
         g_bridge = this;
     }
@@ -58,6 +59,7 @@ public:
     void clbkSimulationStart(RenderMode mode) override {
         landingMonitors_.clear();
         flightMonitors_.clear();
+        dockingMonitors_.clear();
         sessionId_.clear();
         lastFocus_ = 0;
         oem::SimulationEventQueue restored;
@@ -83,6 +85,7 @@ public:
     void clbkSimulationEnd() override {
         landingMonitors_.clear();
         flightMonitors_.clear();
+        dockingMonitors_.clear();
         sessionId_.clear();
         lastFocus_ = 0;
         oapiWriteLog((char*)"OEM Landing Bridge: simulation monitoring stopped.");
@@ -114,6 +117,7 @@ public:
         if (hVessel != lastFocus_) {
             landingMonitors_.clear();
             flightMonitors_.clear();
+            dockingMonitors_.clear();
             lastFocus_ = hVessel;
         }
 
@@ -174,6 +178,46 @@ public:
             }
         }
 
+        // Compare Orbiter's actual per-port state with the previous sample.
+        // The first sample is a baseline, not a docking event.
+        oem::DockingObservation docking;
+        docking.vesselPresent = true;
+        docking.vesselId = landing.vesselId;
+        docking.simulationTime = simSeconds;
+        docking.simulationTimeMilliseconds = simMilliseconds;
+        const UINT dockCount = vessel->DockCount();
+        for (UINT dockIndex = 0; dockIndex < dockCount; ++dockIndex) {
+            DOCKHANDLE hDock = vessel->GetDockHandle(dockIndex);
+            if (!hDock) continue;
+            OBJHANDLE hOther = vessel->GetDockStatus(hDock);
+            if (!hOther || !oapiIsVessel(hOther)) continue;
+            char otherName[128] = {};
+            oapiGetObjectName(hOther, otherName, sizeof(otherName));
+            if (otherName[0] != '\0')
+                docking.ports.push_back(oem::DockingPortObservation(dockIndex, otherName));
+        }
+        std::vector<oem::SimulationEvent> dockingEvents;
+        if (dockingMonitors_[hVessel].observe(docking, dockingEvents)) {
+            for (std::size_t i = 0; i < dockingEvents.size(); ++i) {
+                oem::SimulationEvent& dockEvent = dockingEvents[i];
+                dockEvent.eventId = oem::makeSimulationEventId(
+                    sessionId_, dockEvent.type, dockEvent.vesselId,
+                    dockEvent.simulationTimeMilliseconds);
+                char discriminator[256];
+                sprintf(discriminator, ":PORT%d:%s", dockEvent.dockingPortIndex,
+                        dockEvent.relatedVesselId.c_str());
+                dockEvent.eventId += discriminator;
+                if (publishEvent(dockEvent)) {
+                    char message[512];
+                    sprintf(message, "OEM %s: vessel=%s other=%s port=%d simt=%lld",
+                            oem::simulationEventTypeName(dockEvent.type),
+                            dockEvent.vesselId.c_str(), dockEvent.relatedVesselId.c_str(),
+                            dockEvent.dockingPortIndex, dockEvent.simulationTime);
+                    oapiWriteLog(message);
+                }
+            }
+        }
+
         // Publish a takeoff only after a grounded baseline followed by
         // actual loss of GroundContact. Taxi transitions are not takeoffs.
         oem::FlightObservation flight;
@@ -228,6 +272,7 @@ public:
     void clbkDeleteVessel(OBJHANDLE hVessel) override {
         landingMonitors_.erase(hVessel);
         flightMonitors_.erase(hVessel);
+        dockingMonitors_.erase(hVessel);
     }
 
 private:
@@ -263,6 +308,7 @@ private:
 
     std::map<OBJHANDLE, oem::SpaceportLandingMonitor> landingMonitors_;
     std::map<OBJHANDLE, oem::FlightTransitionMonitor> flightMonitors_;
+    std::map<OBJHANDLE, oem::DockingTransitionMonitor> dockingMonitors_;
     oem::SimulationEventQueue eventQueue_;
     oem::SimulationEventJournalStore journalStore_;
     std::string journalPath_;
@@ -324,11 +370,14 @@ public:
                     type, hours, minutes, seconds);
             DrawLine(hDC, y, line);
 
-            if (event.locationKnown) {
+            if (event.type == oem::SIM_EVENT_DOCK ||
+                event.type == oem::SIM_EVENT_UNDOCK) {
+                sprintf(line, "%.12s <-> %.12s port %d",
+                        event.vesselId.c_str(), event.relatedVesselId.c_str(),
+                        event.dockingPortIndex);
+            } else if (event.locationKnown) {
                 sprintf(line, "%.15s @ %.9s/%.9s",
-                        event.vesselId.c_str(),
-                        event.bodyId.c_str(),
-                        event.baseId.c_str());
+                        event.vesselId.c_str(), event.bodyId.c_str(), event.baseId.c_str());
             } else {
                 sprintf(line, "%.15s @ location unknown", event.vesselId.c_str());
             }

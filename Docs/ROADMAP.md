@@ -13,9 +13,10 @@
 - [x] Add versioned journal serialization, atomic replacement, and recovery tests for an incomplete final record.
 - [x] Build and runtime-validate the bridge-to-event-journal integration.
 - [x] Build and runtime-validate journal persistence across scenario reloads.
-- [ ] Add a native MFD flight log with paging over persisted events.
-- [ ] Runtime-validate the flight log MFD in Orbiter 2010.
-- [ ] Add native docking/undocking observation and publish those events.
+- [x] Add a native MFD flight log with paging over persisted events.
+- [x] Runtime-validate the flight log MFD in Orbiter 2010.
+- [x] Add native docking/undocking observation and publish those events from actual dock-port state.
+- [ ] Runtime-validate docking/undocking event detection and journal display in Orbiter 2010.
 - [ ] Connect verified events to contract/cargo eligibility and settlement.
 
 ## Phase A — career and persistence
