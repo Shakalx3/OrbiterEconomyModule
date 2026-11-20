@@ -1,3 +1,10 @@
+## Procedural planetary opening stock (planned)
+
+- [ ] On first registration of a planetary surface base, optionally generate its initial cargo stock from a deterministic, persisted planet-profile seed rather than leaving every new port empty.
+- [ ] Derive eligible cargo categories and quantity ranges from the celestial body's properties and a future explicit economy/biome/industry profile; use bounded randomness only within those rules.
+- [ ] Persist the generated result in the normal per-location stock config so reloads never reroll it; never regenerate or overwrite an existing stock file or a location with prior transactions.
+- [ ] Keep a configurable empty-stock mode and make generated starting stock clearly distinguishable from physically loaded vessel cargo. Do not infer real industrial output from Orbiter properties alone.
+
 # Roadmap
 
 ## Phase 0 — foundation (in progress)
