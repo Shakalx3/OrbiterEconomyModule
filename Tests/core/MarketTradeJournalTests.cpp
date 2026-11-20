@@ -24,11 +24,11 @@ int main(){
  // Rebuild projections from explicit opening balances and stock.
  oem::Ledger recoveredLedger;assert(recoveredLedger.createAccount("company",1000).ok);assert(recoveredLedger.createAccount("ISS",0).ok);
  oem::CargoServiceInventory recoveredStock("ISS");assert(recoveredStock.setInitialStock("oxygen",8,10.0).ok);
- oem::CargoManifest recoveredShip("GL-01");
- assert(store.load(path,cat,recoveredLedger,recoveredStock,recoveredShip).ok);
+ std::map<std::string,oem::CargoManifest> recovered;
+ assert(store.load(path,cat,recoveredLedger,recoveredStock,recovered).ok);
  assert(recoveredLedger.getBalance("company",balance)&&balance==625);
  assert(recoveredLedger.getBalance("ISS",balance)&&balance==375);
- assert(recoveredStock.quantity("oxygen")==5&&recoveredShip.quantity("oxygen")==3);
+ assert(recoveredStock.quantity("oxygen")==5&&recovered["GL-01"].quantity("oxygen")==3);
  // Append a second sale and verify full replay.
  oem::MarketQuote sell;assert(qe.createQuote(cat,stock,"quote-2","oxygen",oem::MARKET_SELL_TO_STATION,1,110,sell).ok);
  assert(store.apply(path,cat,sell,"trade-2","company","ISS",ledger,stock,ship).ok);
