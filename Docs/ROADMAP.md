@@ -6,8 +6,10 @@
 - [x] Confirm Orbiter 2010 SDK headers are present in the repository.
 - [x] Add first LuaMFD telemetry probe and validate it in Orbiter 2010.
 - [ ] Confirm local compiler/toolchain and target architecture.
-- [ ] Build the portable core and test harness with the user's toolchain.
-- [ ] Implement and validate the native Orbiter bridge.
+- [x] Build the portable core and test harness in GitHub CI.
+- [ ] Implement and validate the production native Orbiter bridge.
+- [x] Verify native landed-state, vessel-position, surface-base enumeration, and 5 km distance path in a diagnostic MFD.
+- [ ] Validate `VESSEL::GroundContact()` in a separate diagnostic MFD in the target Orbiter installation.
 
 ## Phase A — career and persistence
 - [ ] New company / career state with configurable starting capital.
