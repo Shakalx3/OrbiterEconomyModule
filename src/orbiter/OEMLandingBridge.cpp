@@ -30,6 +30,7 @@ OEMLandingBridge *g_bridge = 0;
 int g_flightLogMode = -1;
 int g_cargoManifestMode = -1;
 int g_cargoExchangeTestMode = -1;
+int g_marketMode = -1;
 
 std::string makeJournalPath(HINSTANCE module) {
     char modulePath[MAX_PATH] = {};
@@ -144,6 +145,14 @@ public:
         return cargoServices_.isRegistered(vesselId);
     }
 
+    const oem::CargoCatalog* marketCatalog() const {
+        return economyReady_ ? &cargoCatalog_ : 0;
+    }
+
+    bool companyBalance(oem::Credits& balance) const {
+        return economyReady_ && ledger_.getBalance("company", balance);
+    }
+
     const oem::CargoServiceInventory* cargoServiceInventory(const std::string& serviceId) const {
         std::map<std::string, oem::CargoServiceInventory>::const_iterator it =
             cargoServiceInventories_.find(serviceId);
@@ -227,6 +236,83 @@ public:
                 ++cargoTransferSequence_);
         transfer.transferId = transferId;
         return applyCargoTransfer(transfer, (double)currentSimulationTime_);
+    }
+
+    oem::Result performMarketTrade(const std::string& vesselId, oem::MarketSide side) {
+        if (!economyReady_ || economyJournalPath_.empty())
+            return oem::Result::failure("MARKET_UNAVAILABLE",
+                "The global economy is not ready. Check accounts.cfg, cargo_catalog.cfg and the economy journal.");
+        if (sessionId_.empty() || currentSimulationTime_ <= 0)
+            return oem::Result::failure("MARKET_NOT_READY",
+                "Wait until the simulation has advanced beyond its initialization frame.");
+        const std::string serviceId = dockedCargoService(vesselId);
+        if (serviceId.empty())
+            return oem::Result::failure("MARKET_NOT_DOCKED",
+                "The focused vessel must be docked to a registered cargo service.");
+        ensureCargoManifest(vesselId);
+        if (!ensureCargoServiceInventory(serviceId))
+            return oem::Result::failure("MARKET_STOCK_UNAVAILABLE",
+                "The registered station's explicit stock configuration is unavailable.");
+
+        oem::Credits balance = 0;
+        if (!ledger_.getBalance("company", balance))
+            return oem::Result::failure("MARKET_ACCOUNT_MISSING",
+                "accounts.cfg must define the company account ID 'company' before trading.");
+        std::map<std::string, oem::CargoManifest>::iterator manifest = cargoManifests_.find(vesselId);
+        std::map<std::string, oem::CargoServiceInventory>::iterator inventory =
+            cargoServiceInventories_.find(serviceId);
+        if (manifest == cargoManifests_.end() || inventory == cargoServiceInventories_.end())
+            return oem::Result::failure("MARKET_PROJECTION_UNAVAILABLE",
+                "The station inventory or vessel manifest is unavailable.");
+
+        const std::vector<oem::CargoDefinition>& definitions = cargoCatalog_.entries();
+        std::string selectedCargo;
+        for (std::size_t i = 0; i < definitions.size(); ++i) {
+            const std::string& cargoId = definitions[i].cargoId;
+            if (side == oem::MARKET_BUY_FROM_STATION) {
+                if (inventory->second.quantity(cargoId) > 0) {
+                    selectedCargo = cargoId;
+                    break;
+                }
+            } else if (side == oem::MARKET_SELL_TO_STATION) {
+                if (manifest->second.quantity(cargoId) > 0) {
+                    selectedCargo = cargoId;
+                    break;
+                }
+            } else {
+                return oem::Result::failure("MARKET_SIDE", "Unknown market operation.");
+            }
+        }
+        if (selectedCargo.empty())
+            return oem::Result::failure(side == oem::MARKET_BUY_FROM_STATION
+                ? "MARKET_NO_STOCK" : "MARKET_NO_CARGO",
+                side == oem::MARKET_BUY_FROM_STATION
+                ? "No catalog item has available station stock."
+                : "The vessel has no catalog cargo available to sell.");
+
+        char operationId[256];
+        sprintf(operationId, "OEMMARKET-%s-%lu", sessionId_.c_str(),
+                ++cargoTransferSequence_);
+        oem::MarketQuote quote;
+        oem::MarketQuoteEngine quoteEngine;
+        const oem::Result quoted = quoteEngine.createQuote(
+            cargoCatalog_, inventory->second, std::string("QUOTE-") + operationId,
+            selectedCargo, side, 1, currentSimulationTime_, quote);
+        if (!quoted.ok) return quoted;
+
+        const oem::Result committed = economyJournalStore_.applyTrade(
+            economyJournalPath_, cargoCatalog_, quote, operationId, "company",
+            ledger_, cargoServiceInventories_, manifest->second);
+        if (!committed.ok) return committed;
+
+        char message[512];
+        sprintf(message, "OEM MARKET: %s cargo=%s quantity=1 total=%lld company_balance=%lld",
+            side == oem::MARKET_BUY_FROM_STATION ? "BUY" : "SELL",
+            selectedCargo.c_str(), (long long)quote.totalPrice,
+            (long long)(balance + (side == oem::MARKET_BUY_FROM_STATION
+                ? -quote.totalPrice : quote.totalPrice)));
+        oapiWriteLog(message);
+        return oem::Result::success();
     }
 
     const oem::CargoManifest* cargoManifest(const std::string& vesselId) const {
@@ -941,6 +1027,115 @@ private:
     std::string vesselId_;
 };
 
+class OEMMarketMFD : public MFD {
+public:
+    OEMMarketMFD(DWORD w, DWORD h, VESSEL *vessel)
+        : MFD(w, h, vessel),
+          vesselId_(vessel && vessel->GetName() ? vessel->GetName() : ""),
+          status_("Dock to a registered service to trade.") {}
+
+    void Update(HDC hDC) override {
+        Title(hDC, "OEM STATION MARKET");
+        SelectDefaultFont(hDC, 0);
+        int y = (int)ch + 3;
+        DrawLine(hDC, y, "OEM ACCOUNTING ONLY - NO PHYSICAL CARGO");
+        if (!g_bridge) {
+            DrawLine(hDC, y, "OEM bridge unavailable.");
+            return;
+        }
+        const std::string serviceId = g_bridge->dockedCargoService(vesselId_);
+        if (serviceId.empty()) {
+            DrawLine(hDC, y, "Dock to a registered cargo service.");
+        } else {
+            char line[256];
+            sprintf(line, "STATION: %.40s", serviceId.c_str());
+            DrawLine(hDC, y, line);
+        }
+        oem::Credits balance = 0;
+        if (g_bridge->companyBalance(balance)) {
+            char line[128];
+            sprintf(line, "COMPANY BALANCE: %lld cr", (long long)balance);
+            DrawLine(hDC, y, line);
+        } else {
+            DrawLine(hDC, y, "COMPANY ACCOUNT: missing (accounts.cfg)");
+        }
+        const oem::CargoCatalog *catalog = g_bridge->marketCatalog();
+        const oem::CargoServiceInventory *stock = serviceId.empty()
+            ? 0 : g_bridge->cargoServiceInventory(serviceId);
+        const oem::CargoManifest *manifest = g_bridge->cargoManifest(vesselId_);
+        if (!catalog) {
+            DrawLine(hDC, y, "Market configuration is not ready.");
+        } else if (catalog->entries().empty()) {
+            DrawLine(hDC, y, "Cargo catalog is empty.");
+        } else {
+            DrawLine(hDC, y, "CARGO / STOCK / SHIP / BUY / SELL");
+            const std::vector<oem::CargoDefinition>& items = catalog->entries();
+            for (std::size_t i = 0; i < items.size() && i < 4; ++i) {
+                const long long stationQty = stock ? stock->quantity(items[i].cargoId) : 0;
+                const long long vesselQty = manifest ? manifest->quantity(items[i].cargoId) : 0;
+                char line[256];
+                sprintf(line, "%.10s %lld/%lld %lld/%lld",
+                    items[i].cargoId.c_str(), stationQty, (long long)items[i].buyPrice,
+                    vesselQty, (long long)items[i].sellPrice);
+                DrawLine(hDC, y, line);
+            }
+        }
+        DrawLine(hDC, y, "B: BUY 1 UNIT     S: SELL 1 UNIT");
+        DrawLine(hDC, y, status_.c_str());
+    }
+
+    bool ConsumeKeyBuffered(DWORD key) override {
+        if (!g_bridge) return false;
+        oem::Result result;
+        if (key == OAPI_KEY_B) {
+            result = g_bridge->performMarketTrade(vesselId_, oem::MARKET_BUY_FROM_STATION);
+        } else if (key == OAPI_KEY_S) {
+            result = g_bridge->performMarketTrade(vesselId_, oem::MARKET_SELL_TO_STATION);
+        } else {
+            return false;
+        }
+        status_ = result.ok ? "Trade durably committed." : result.code + ": " + result.message;
+        return true;
+    }
+
+    bool ConsumeButton(int bt, int event) override {
+        if (!(event & PANEL_MOUSE_LBDOWN)) return false;
+        if (bt == 0) return ConsumeKeyBuffered(OAPI_KEY_B);
+        if (bt == 1) return ConsumeKeyBuffered(OAPI_KEY_S);
+        return false;
+    }
+
+    char *ButtonLabel(int bt) override {
+        static char *labels[2] = { (char*)"BUY", (char*)"SELL" };
+        return bt >= 0 && bt < 2 ? labels[bt] : 0;
+    }
+
+    int ButtonMenu(const MFDBUTTONMENU **menu) const override {
+        static const MFDBUTTONMENU items[2] = {
+            { "Buy one unit from station", 0, 'B' },
+            { "Sell one unit to station", 0, 'S' }
+        };
+        if (menu) *menu = items;
+        return 2;
+    }
+
+    static int MsgProc(UINT msg, UINT mfd, WPARAM wparam, LPARAM lparam) {
+        if (msg == OAPI_MSG_MFD_OPENEDEX && g_bridge) {
+            MFDMODEOPENSPEC *spec = (MFDMODEOPENSPEC*)wparam;
+            return (int)(new OEMMarketMFD(spec->w, spec->h, (VESSEL*)lparam));
+        }
+        return 0;
+    }
+
+private:
+    void DrawLine(HDC hDC, int &y, const char *text) {
+        TextOutA(hDC, 4, y, text, (int)strlen(text));
+        y += (int)ch;
+    }
+    std::string vesselId_;
+    std::string status_;
+};
+
 class OEMCargoExchangeTestMFD : public MFD {
 public:
     OEMCargoExchangeTestMFD(DWORD w, DWORD h, VESSEL *vessel)
@@ -1070,15 +1265,22 @@ DLLCLBK void InitModule(HINSTANCE hDLL) {
     spec.key = OAPI_KEY_E;
     spec.msgproc = OEMCargoExchangeTestMFD::MsgProc;
     g_cargoExchangeTestMode = oapiRegisterMFDMode(spec);
+
+    spec.name = "OEM Station Market";
+    spec.key = OAPI_KEY_M;
+    spec.msgproc = OEMMarketMFD::MsgProc;
+    g_marketMode = oapiRegisterMFDMode(spec);
 }
 
 DLLCLBK void ExitModule(HINSTANCE hDLL) {
     if (g_flightLogMode >= 0) oapiUnregisterMFDMode(g_flightLogMode);
     if (g_cargoManifestMode >= 0) oapiUnregisterMFDMode(g_cargoManifestMode);
     if (g_cargoExchangeTestMode >= 0) oapiUnregisterMFDMode(g_cargoExchangeTestMode);
+    if (g_marketMode >= 0) oapiUnregisterMFDMode(g_marketMode);
     g_flightLogMode = -1;
     g_cargoManifestMode = -1;
     g_cargoExchangeTestMode = -1;
+    g_marketMode = -1;
     g_bridge = 0;
     // Orbiter owns and destroys registered oapi::Module instances.
 }
