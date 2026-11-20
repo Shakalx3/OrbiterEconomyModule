@@ -6,6 +6,7 @@
 #include <iomanip>
 #include <sstream>
 #include <map>
+#include <iterator>
 #include <vector>
 #ifdef _WIN32
 #include <windows.h>
