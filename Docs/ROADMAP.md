@@ -18,6 +18,9 @@
 - [x] Add native docking/undocking observation and publish those events from actual dock-port state.
 - [x] Runtime-validate docking/undocking event detection and journal display in Orbiter 2010.
 - [ ] Connect verified events to contract/cargo eligibility and settlement.
+- [x] Generalize the native market location resolver to accept either a registered docked station or a landed vessel within 5 km of an Orbiter surface base.
+- [x] Use the same explicit per-location stock configuration and global economy journal for planetary bases and stations.
+- [ ] Runtime-validate planetary-base BUY/SELL, stock accounting, and recovery after scenario restart in Orbiter 2010.
 
 ## Phase A — career and persistence
 - [ ] New company / career state beyond the explicitly configured opening account.
@@ -26,10 +29,10 @@
 - [x] Use Orbiter simulation time for cargo and market operation timestamps.
 
 ## Phase B — stations, markets, and cargo
-- [ ] Solar-system location identifiers and station definitions.
+- [ ] Solar-system location identifiers and station definitions, shared by stations and planetary bases.
 - [x] Portable market catalog, quote engine, and atomic BUY/SELL transaction engine.
 - [x] Global journal records market trades in the same ordered stream as cargo exchanges.
-- [x] Native Station Market MFD (key M) with one-unit BUY/SELL operations at registered docked services.
+- [x] Native Location Market MFD (key M) with one-unit BUY/SELL operations at registered docked stations or verified landed planetary bases.
 - [x] Runtime-validate market purchases, sales, and correct opening balance in Orbiter 2010. (The user confirmed BUY/SELL and opening balance; restart recovery remains a separate check.)
 - [x] Add portable abstract cargo manifests with transfer history, mass accounting and idempotent load/unload operations.
 - [x] Add portable station-side stock accounting with explicit initial stock, load debits, unload credits, quantity bounds and idempotent transfer IDs.
@@ -57,7 +60,7 @@
 - [x] Portable delivery contract model with vessel, cargo, quantity, origin, destination, reward and deadline.
 - [x] Evidence-based eligibility using post-acceptance origin loads and verified destination landing/docking events.
 - [x] In-memory idempotent payout through the company ledger.
-- [ ] Durable contract acceptance/completion/payout history in the global economy journal.
+- [ ] Durable contract acceptance/completion/payout history in the global economy journal, with station and planetary-base destinations treated equally.
 - [ ] Native bridge integration and contract MFD.
 - [ ] Runtime-validate delivery and payout recovery after scenario restart.
 
