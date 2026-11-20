@@ -8,6 +8,10 @@ on:
       - "src/core/SurfaceDistance.h"
       - "src/core/SpaceportLanding.h"
       - "src/core/SpaceportLanding.cpp"
+      - "src/core/SimulationEvent.h"
+      - "src/core/SimulationEvent.cpp"
+      - "src/core/FlightTransition.h"
+      - "src/core/FlightTransition.cpp"
       - "SDK/Orbitersdk/include/**"
       - "SDK/Orbitersdk/lib/**"
       - ".github/workflows/oem-native-test.yml"
@@ -17,6 +21,10 @@ on:
       - "src/core/SurfaceDistance.h"
       - "src/core/SpaceportLanding.h"
       - "src/core/SpaceportLanding.cpp"
+      - "src/core/SimulationEvent.h"
+      - "src/core/SimulationEvent.cpp"
+      - "src/core/FlightTransition.h"
+      - "src/core/FlightTransition.cpp"
       - "SDK/Orbitersdk/include/**"
       - "SDK/Orbitersdk/lib/**"
       - ".github/workflows/oem-native-test.yml"
@@ -43,7 +51,7 @@ jobs:
         run: |
           cl /nologo /LD /EHsc /O2 /MD /DWIN32 /D_WINDOWS /D_USRDLL /I"SDK\\Orbitersdk\\include" src\\orbiter\\OEMSpaceportTest.cpp OEMSpaceportTest.res /link /LIBPATH:"SDK\\Orbitersdk\\lib" orbiter.lib orbitersdk.lib gdi32.lib user32.lib /OUT:OEMSpaceportTest.dll
           cl /nologo /LD /EHsc /O2 /MD /DWIN32 /D_WINDOWS /D_USRDLL /I"SDK\\Orbitersdk\\include" src\\orbiter\\OEMGroundContactTest.cpp OEMGroundContactTest.res /link /LIBPATH:"SDK\\Orbitersdk\\lib" orbiter.lib orbitersdk.lib gdi32.lib user32.lib /OUT:OEMGroundContactTest.dll
-          cl /nologo /LD /EHsc /O2 /MD /DWIN32 /D_WINDOWS /D_USRDLL /I"SDK\\Orbitersdk\\include" /I"src\\core" src\\orbiter\\OEMLandingBridge.cpp src\\core\\SpaceportLanding.cpp OEMLandingBridge.res /link /LIBPATH:"SDK\\Orbitersdk\\lib" orbiter.lib orbitersdk.lib gdi32.lib user32.lib /OUT:OEMLandingBridge.dll
+          cl /nologo /LD /EHsc /O2 /MD /DWIN32 /D_WINDOWS /D_USRDLL /I"SDK\\Orbitersdk\\include" /I"src\\core" src\\orbiter\\OEMLandingBridge.cpp src\\core\\SpaceportLanding.cpp src\\core\\SimulationEvent.cpp src\\core\\FlightTransition.cpp OEMLandingBridge.res /link /LIBPATH:"SDK\\Orbitersdk\\lib" orbiter.lib orbitersdk.lib gdi32.lib user32.lib /OUT:OEMLandingBridge.dll
       - name: Replace the rolling release and remove obsolete releases
         if: github.event_name == 'push'
         shell: pwsh
@@ -52,9 +60,6 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $tag = "oem-native-diagnostics-current"
-
-          # Remove every previous release (including its tag), so the repository
-          # exposes one unambiguous download target instead of per-commit clutter.
           $oldReleases = gh release list --repo $env:GITHUB_REPOSITORY --limit 1000 --json tagName | ConvertFrom-Json
           foreach ($release in $oldReleases) {
             gh release delete $release.tagName --repo $env:GITHUB_REPOSITORY --yes --cleanup-tag
@@ -62,8 +67,7 @@ jobs:
               throw "Could not delete obsolete release $($release.tagName)"
             }
           }
-
-          gh release create $tag OEMSpaceportTest.dll OEMGroundContactTest.dll OEMLandingBridge.dll --repo $env:GITHUB_REPOSITORY --title "OEM Native Diagnostics (current)" --notes "Latest successful Win32 build for Orbiter 2010. Contains OEMSpaceportTest, OEMGroundContactTest, and OEMLandingBridge. The bridge logs verified touchdown events; runtime validation is tracked separately." --prerelease
+          gh release create $tag OEMSpaceportTest.dll OEMGroundContactTest.dll OEMLandingBridge.dll --repo $env:GITHUB_REPOSITORY --title "OEM Native Diagnostics (current)" --notes "Latest successful Win32 build for Orbiter 2010. Contains OEMSpaceportTest, OEMGroundContactTest, and OEMLandingBridge. Bridge queues verified takeoff and spaceport landing events; events are not yet persisted or settled financially." --prerelease
           if ($LASTEXITCODE -ne 0) {
             throw "Could not publish rolling release"
           }
