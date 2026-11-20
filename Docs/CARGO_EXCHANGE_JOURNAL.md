@@ -27,6 +27,6 @@ OEM_CARGO_STOCK|1|495353
 S|54455354|2|1.0
 ```
 
-`495353` is the UTF-8 hex ID for the registered service vessel `ISS`; `54455354` is the test cargo ID `TEST`. This explicitly seeds two units at 1 kg per unit. It is not a physical Orbiter payload.
+`495353` is the UTF-8 hex ID for the registered service vessel `ISS`; `54455354` is the test cargo ID `TEST`. This explicitly seeds two units at 1 kg per unit. It is not a physical Orbiter payload. Create the file before starting or restarting the scenario, because stock configuration is loaded at simulation startup.
 
 In Orbiter, focus a vessel docked to ISS and open the `OEM Cargo Exchange Test` MFD (key E). Press LOAD once: station stock should decrease to one and the vessel OEM manifest should show one TEST unit. Press UNLD once: station stock should return to two and the vessel manifest should return to empty. Restart the scenario and verify the exchange recovery log reports two transfers for ISS; the MFD should still show stock quantity two and an empty vessel manifest. The journal stores both operations durably. Do not use this test MFD as a physical cargo-loading mechanism.
