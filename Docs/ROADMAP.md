@@ -33,7 +33,8 @@
 - [x] Add a portable authorization gate requiring verified landed + ground-contact spaceport state or an explicitly recognized OEM cargo-service dock.
 - [x] Require an explicit trusted cargo-service registry; arbitrary docked vessels cannot authorize transfers.
 - [x] Add versioned, atomic persistence and corruption-safe loading for the trusted cargo-service allowlist.
-- [ ] Load the cargo-service allowlist in the native bridge and verify actual docked counterpart recognition.
+- [x] Load the cargo-service allowlist in the native bridge and annotate actual dock/undock events for registered counterpart vessels.
+- [ ] Build and runtime-validate cargo-service recognition in Orbiter 2010.
 - [ ] Add stock-vessel cargo adapters only where a documented physical cargo interface exists.
 - [ ] Docking and spaceport-location observation through the Orbiter bridge.
 
