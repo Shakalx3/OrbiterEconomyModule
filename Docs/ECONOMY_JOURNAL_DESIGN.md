@@ -66,5 +66,6 @@ Separate legacy files do not encode a total order across stations and between ex
 
 1. Add a portable global journal codec, append and transactional replay layer.
 2. Add cross-station and interleaving tests, including idempotency across record types.
-3. Add a safe legacy-history inspection/migration report; refuse histories whose global chronology cannot be proven.
-4. Only then integrate global recovery and commits into the native bridge and build a native DLL.
+3. Add a read-only legacy-history inspection report; refuse histories whose global chronology cannot be proven. (Inspector implemented; migration itself remains pending.)
+4. Verify legacy manifests against exchange/trade histories and implement an explicit migration only when one ordered source stream is provable.
+5. Only then integrate global recovery and commits into the native bridge and build a native DLL.
