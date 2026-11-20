@@ -28,13 +28,17 @@ The bridge observes simulation time, vessel identity, docking and location, then
 4. Financial changes are recorded as ledger entries. Balances are derived or reconciled against the ledger; silent balance edits are prohibited.
 5. Large time jumps and time acceleration are processed deterministically in bounded economic ticks.
 6. Saves are versioned and written transactionally. A partially written save must not replace the last valid save.
-7. A spaceport landing is valid only when Orbiter reports the vessel landed and in ground contact, and the vessel's surface position is within 5,000 m of at least one surface base on the same reference body. The nearest VTOL pad/runway is intentionally irrelevant to this rule.
+7. A spaceport landing is valid only when Orbiter reports the vessel landed, the vessel has actual ground contact, and its surface position is within 5,000 m of at least one surface base on the same reference body. The nearest VTOL pad/runway is intentionally irrelevant to this rule.
 
 ## Spaceport landing detection
 
-The Orbiter 2010 SDK headers in this repository expose the required native calls: VESSEL::GetSurfaceRef(), VESSEL::GetEquPos(), oapiGetBaseCount(), oapiGetBaseByIndex(), and oapiGetBaseEquPos(). The bridge can enumerate bases on the vessel's current surface-reference body and compare their coordinates to the vessel's coordinates. The core uses a great-circle distance on the body's mean-radius sphere; the threshold is inclusive at 5,000 m. Invalid coordinates or a missing surface reference fail closed.
+The Orbiter 2010 SDK provides a direct ground-contact query: `VESSEL::GroundContact() const`. Its documented result is true when at least one of the vessel's touchdown reference points is in contact with a planetary surface. This is distinct from `GetFlightStatus() & 1`, which reports the vessel's inactive/landed state. Production acceptance requires both signals; neither is substituted for the other.
 
-The LuaMFD probe remains telemetry only: the Lua API does not expose base enumeration. Native bridge integration and in-simulator validation remain outstanding.
+The native bridge obtains the surface reference with `VESSEL::GetSurfaceRef()`, vessel coordinates with `VESSEL::GetEquPos()`, and enumerates bases on that same body with `oapiGetBaseCount()`, `oapiGetBaseByIndex()`, and `oapiGetBaseEquPos()`. It compares coordinates using the body's mean radius and the core's great-circle distance helper. The 5,000 m threshold is inclusive.
+
+The portable `SpaceportLandingMonitor` consumes bridge observations and emits a single arrival event only on a known transition into a fully verified landing. A vessel already parked when monitoring starts establishes a baseline and does not generate a false arrival. Unknown location evidence is not treated as acceptance or rejection; a completed search with no matching base is a known negative result. The existing `OEMSpaceportTest` MFD remains a diagnostic reference and is not the production event source.
+
+The LuaMFD probe remains telemetry only: its API does not expose base enumeration. The native ground-contact method has now been identified in the SDK header; wiring it into a separate production bridge and validating it in Orbiter remain outstanding.
 
 ## Compatibility strategy
 
@@ -44,4 +48,4 @@ The initial market map covers Earth orbit, the Moon, and Mars in greater depth. 
 
 ## Current implementation boundary
 
-The first code slice is deliberately SDK-independent. No Orbiter SDK header, graphics API, or vessel callback is included until the exact local compiler/toolchain and Orbiter target architecture are confirmed.
+The portable core includes the ledger, surface-distance calculation, and a tested landing-transition monitor. A separate native diagnostic has already verified Launchpad discovery, native vessel access, surface-base enumeration, and the 5 km calculation. The diagnostic has not yet exercised `GroundContact()`; the production Orbiter bridge and end-to-end event delivery are still outstanding.
