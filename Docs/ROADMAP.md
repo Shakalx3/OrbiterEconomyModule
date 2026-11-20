@@ -31,6 +31,7 @@
 - [x] Add portable abstract cargo manifests with transfer history, mass accounting and idempotent load/unload operations.
 - [x] Persist cargo manifest transfer history with versioned, atomic, idempotent recovery.
 - [x] Add a portable authorization gate requiring verified landed + ground-contact spaceport state or an explicitly recognized OEM cargo-service dock.
+- [x] Require an explicit trusted cargo-service registry; arbitrary docked vessels cannot authorize transfers.
 - [ ] Add stock-vessel cargo adapters only where a documented physical cargo interface exists.
 - [ ] Docking and spaceport-location observation through the Orbiter bridge.
 
