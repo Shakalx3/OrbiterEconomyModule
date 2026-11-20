@@ -16,6 +16,8 @@ on:
       - "src/core/FlightTransition.cpp"
       - "src/core/DockingTransition.h"
       - "src/core/DockingTransition.cpp"
+      - "src/core/CargoServiceRegistry.h"
+      - "src/core/CargoServiceRegistry.cpp"
       - "SDK/Orbitersdk/include/**"
       - "SDK/Orbitersdk/lib/**"
       - ".github/workflows/oem-native-test.yml"
@@ -81,5 +83,5 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Could not delete previous rolling tag" }
           }
 
-          gh release create $tag OEMSpaceportTest.dll OEMGroundContactTest.dll OEMLandingBridge.dll --repo $env:GITHUB_REPOSITORY --title "OEM Native Diagnostics (current)" --notes "Latest successful Win32 build for Orbiter 2010. OEMLandingBridge includes background takeoff/landing and docking/undocking monitors, a persistent versioned event journal, and the OEM Flight Log MFD (MFD mode list; key L). Events are not yet settled financially." --prerelease
+          gh release create $tag OEMSpaceportTest.dll OEMGroundContactTest.dll OEMLandingBridge.dll --repo $env:GITHUB_REPOSITORY --title "OEM Native Diagnostics (current)" --notes "Latest successful Win32 build for Orbiter 2010. OEMLandingBridge includes background takeoff/landing and docking/undocking monitors, a persistent versioned event journal, trusted cargo-service registry loading from OEMData\\cargo_services.cfg, and the OEM Flight Log MFD (MFD mode list; key L). Events are not yet settled financially; cargo transfer UI is not yet connected." --prerelease
           if ($LASTEXITCODE -ne 0) { throw "Could not publish rolling release" }
