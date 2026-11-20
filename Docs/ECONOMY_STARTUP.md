@@ -6,7 +6,8 @@ The native bridge now uses one file, `OEMData/economy.journal`, for all future c
 
 The following files are read beside the module, under `OEMData`:
 
-- `cargo_services.cfg`: explicit list of trusted service-vessel names.
+- `economic_stations.registry`: player-managed orbital station identities. Register or remove the focused vessel in-game using the OEM Economic Admin MFD (key A). OEM creates and maintains this file; do not edit it manually.
+- `cargo_services.cfg`: trusted cargo-service permissions, maintained in-game from the same Admin MFD. A cargo-service vessel is not automatically an orbital station; these are independent roles.
 - `cargo_stock_<HEX location ID>.cfg`: explicit opening stock for each registered station vessel or planetary surface base. For a planetary base, OEM automatically creates this file on its first confirmed landing, using the exact Orbiter base name; the new file contains an empty inventory. For a registered station, the file is created when its inventory is first initialized if it does not already exist. Existing files are never replaced automatically.
 - `accounts.cfg`: optional until market trading is enabled. If absent, the company ledger starts with no accounts and market trades cannot be executed.
 - `cargo_catalog.cfg`: optional until market trading is enabled. If absent, there are no defined tradeable cargo types.
@@ -37,9 +38,9 @@ C|54455354|5465737420636172676F|1.0|100|60
 
 The example cargo ID is `TEST`, display name is `Test cargo`, unit mass is 1 kg, company purchase price is 100 credits, and company sale price is 60 credits. It matches the two-unit TEST stock in the sample `cargo_stock_495353.cfg`. These prices and the 10,000-credit example balance are test values; choose the opening balance and prices deliberately before using the economy in a live scenario.
 
-## Reset policy
+## New Game / campaign reset
 
-To intentionally reset a test economy, stop Orbiter and back up or remove only `OEMData/economy.journal`. Then review the explicit opening configuration files. The old test journals may be kept or deleted separately; they are not read by the new bridge.
+The portable core now defines and tests the allowlist of OEM campaign files that a future in-game New Game command may remove. The native MFD command is not yet exposed. Until it is implemented, do not manually delete individual files while Orbiter is running. The intended reset removes economy and event journals, generated cargo stock files, and player station registrations while preserving account/catalogue definitions, module preferences, and the derived `spaceports.registry`. The reset must never touch Orbiter scenario files.
 
 Do not change a service's opening stock configuration after transactions have been written to `economy.journal`, unless the journal is also intentionally reset. Recovery always replays the complete global journal over the configured opening stock.
 
@@ -61,4 +62,4 @@ Each surface-base record contains:
 
 The SDK's `oapiGetBasePadCount()` counts VTOL pads only, explicitly not runways. The current registry therefore does not claim runway counts, atmospheric composition, weather, local industry, or economic activity. Those require separate configuration parsing or future OEM-authored profiles; they are not fabricated from missing SDK data.
 
-The registry is a mission-target catalogue, not a market stock file. It does not alter `cargo_stock_*.cfg`, the economy journal, or vessel cargo. Orbital stations will be unified with these surface locations in a later shared location model.
+The registry is a mission-target catalogue, not a market stock file. It does not alter `cargo_stock_*.cfg`, the economy journal, or vessel cargo. Orbital stations are now represented in the shared economic-location model only when explicitly registered in-game through the OEM Economic Admin MFD. A vessel with cargo-service permission but without station registration remains a service vessel, not a station.
