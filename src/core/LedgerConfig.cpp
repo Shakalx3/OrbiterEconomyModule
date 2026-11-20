@@ -30,7 +30,11 @@ Result LedgerConfigStore::save(const std::string&p,const Ledger&ledger)const{
  if(!ledger.entries().empty())return Result::failure("LEDGER_CONFIG_ACTIVE","Opening balances cannot be saved from a ledger that already contains transactions.");
  const std::string tmp=p+".tmp";std::ofstream out(tmp.c_str(),std::ios::binary|std::ios::trunc);if(!out)return Result::failure("LEDGER_CONFIG_OPEN","Could not create temporary account configuration.");
  out<<"OEM_ACCOUNTS|1\n";
- // Ledger intentionally exposes balances by lookup only; save is not supported until an explicit account enumeration API exists.
- out.close();std::remove(tmp.c_str());return Result::failure("LEDGER_CONFIG_SAVE_UNSUPPORTED","Use the explicit text configuration format; runtime balances are not exported as opening balances.");
+ const std::map<std::string, Credits>& accounts=ledger.accounts();
+ for(std::map<std::string, Credits>::const_iterator it=accounts.begin();it!=accounts.end();++it)out<<"A|"<<hex(it->first)<<'|'<<it->second<<"\\n";
+ out.flush();if(!out.good()){out.close();std::remove(tmp.c_str());return Result::failure("LEDGER_CONFIG_WRITE","Could not write account configuration.");}
+ out.close();if(out.fail()){std::remove(tmp.c_str());return Result::failure("LEDGER_CONFIG_CLOSE","Could not close account configuration.");}
+ if(!replaceFile(tmp,p)){std::remove(tmp.c_str());return Result::failure("LEDGER_CONFIG_REPLACE","Could not atomically replace account configuration.");}
+ return Result::success();
 }
 }
