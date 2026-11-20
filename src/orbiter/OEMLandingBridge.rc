@@ -1,0 +1,7 @@
+#include "resource.h"
+
+STRINGTABLE
+BEGIN
+    IDS_INFO "OEM LANDING BRIDGE:\r\n\r\nMonitors Orbiter vessel state after each simulation step. Emits a spaceport landing event only after landed state, actual ground contact, and a same-body surface-base distance of 5 km or less are verified."
+    IDS_TYPE "Modules"
+END
