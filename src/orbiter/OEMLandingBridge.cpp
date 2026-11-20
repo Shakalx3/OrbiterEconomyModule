@@ -18,6 +18,8 @@
 #include "../core/CargoManifest.h"
 #include "../core/CargoManifestJournal.h"
 #include "../core/CargoTransferGate.h"
+#include "../core/CargoExchangeJournal.h"
+#include "../core/CargoServiceInventoryConfig.h"
 
 namespace {
 
@@ -79,6 +81,42 @@ std::string makeCargoManifestPath(HINSTANCE module, const std::string& vesselId)
     path += filename;
     return path;
 }
+
+std::string makeCargoStockConfigPath(HINSTANCE module, const std::string& serviceId) {
+    char modulePath[MAX_PATH] = {};
+    const DWORD length = GetModuleFileNameA(module, modulePath, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) return std::string();
+    char *separator = strrchr(modulePath, '\\');
+    if (!separator) separator = strrchr(modulePath, '/');
+    if (!separator) return std::string();
+    *separator = '\0';
+    char dataDirectory[MAX_PATH] = {};
+    sprintf(dataDirectory, "%s\\OEMData", modulePath);
+    if (!CreateDirectoryA(dataDirectory, 0) && GetLastError() != ERROR_ALREADY_EXISTS) return std::string();
+    const std::string filename = "cargo_stock_" + encodePathComponent(serviceId) + ".cfg";
+    if (strlen(dataDirectory) + 1 + filename.size() >= MAX_PATH) return std::string();
+    std::string path(dataDirectory); path += "\\"; path += filename; return path;
+}
+
+std::string makeCargoExchangePath(HINSTANCE module, const std::string& serviceId) {
+    char modulePath[MAX_PATH] = {};
+    const DWORD length = GetModuleFileNameA(module, modulePath, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) return std::string();
+    char *separator = strrchr(modulePath, '\\');
+    if (!separator) separator = strrchr(modulePath, '/');
+    if (!separator) return std::string();
+    *separator = '\0';
+    char dataDirectory[MAX_PATH] = {};
+    sprintf(dataDirectory, "%s\\OEMData", modulePath);
+    if (!CreateDirectoryA(dataDirectory, 0) && GetLastError() != ERROR_ALREADY_EXISTS) return std::string();
+    char exchangeDirectory[MAX_PATH] = {};
+    sprintf(exchangeDirectory, "%s\\cargo_exchanges", dataDirectory);
+    if (!CreateDirectoryA(exchangeDirectory, 0) && GetLastError() != ERROR_ALREADY_EXISTS) return std::string();
+    const std::string filename = "exchange_" + encodePathComponent(serviceId) + ".journal";
+    if (strlen(exchangeDirectory) + 1 + filename.size() >= MAX_PATH) return std::string();
+    std::string path(exchangeDirectory); path += "\\"; path += filename; return path;
+}
+
 std::string makeCargoServicesPath(HINSTANCE module) {
     char modulePath[MAX_PATH] = {};
     const DWORD length = GetModuleFileNameA(module, modulePath, MAX_PATH);
@@ -106,8 +144,9 @@ public:
         : oapi::Module(hDLL), module_(hDLL), landingMonitors_(), flightMonitors_(),
           dockingMonitors_(), eventQueue_(), journalStore_(), journalPath_(makeJournalPath(hDLL)),
           cargoServices_(), cargoServicesPath_(makeCargoServicesPath(hDLL)),
-          cargoManifestStore_(), cargoManifests_(), cargoManifestLoadAttempted_(),
-          journalReady_(false), sessionId_(), lastFocus_(0) {
+          cargoManifestStore_(), cargoTransferGate_(), cargoManifests_(), cargoManifestLoadAttempted_(),
+          cargoStockConfigStore_(), cargoExchangeStore_(), cargoServiceInventories_(),
+          cargoServiceInventoryLoadAttempted_(), journalReady_(false), sessionId_(), lastFocus_(0) {
         g_bridge = this;
     }
 
@@ -205,16 +244,27 @@ public:
         oem::CargoTransfer candidateTransfer = transfer;
         candidateTransfer.simulationTime = simulationTime >= 0.0
             ? (oem::SimulationSeconds)simulationTime : 0;
-        oem::CargoManifest candidate(current->second);
-        const oem::Result applied = cargoTransferGate_.apply(
-            candidate, candidateTransfer, observation, cargoServices_);
-        if (!applied.ok) return applied;
-        const std::string path = makeCargoManifestPath(module_, vesselId);
-        if (path.empty())
-            return oem::Result::failure("CARGO_MANIFEST_PATH", "Could not resolve cargo manifest journal path.");
-        const oem::Result saved = cargoManifestStore_.save(path, candidate);
-        if (!saved.ok) return saved;
-        cargoManifests_[vesselId] = candidate;
+        const oem::Result authorized = cargoTransferGate_.authorize(
+            candidateTransfer, observation, cargoServices_);
+        if (!authorized.ok) return authorized;
+        if (!ensureCargoServiceInventory(candidateTransfer.locationId))
+            return oem::Result::failure("CARGO_SERVICE_INVENTORY_UNAVAILABLE",
+                "The registered cargo service stock or exchange history could not be loaded safely.");
+        std::map<std::string, oem::CargoServiceInventory>::const_iterator station =
+            cargoServiceInventories_.find(candidateTransfer.locationId);
+        if (station == cargoServiceInventories_.end())
+            return oem::Result::failure("CARGO_SERVICE_INVENTORY_UNAVAILABLE",
+                "The registered cargo service inventory is unavailable.");
+        const std::string exchangePath = makeCargoExchangePath(module_, candidateTransfer.locationId);
+        if (exchangePath.empty())
+            return oem::Result::failure("CARGO_EXCHANGE_PATH", "Could not resolve cargo exchange journal path.");
+        oem::CargoServiceInventory candidateStation(station->second);
+        oem::CargoManifest candidateManifest(current->second);
+        const oem::Result committed = cargoExchangeStore_.apply(
+            exchangePath, candidateStation, candidateManifest, candidateTransfer);
+        if (!committed.ok) return committed;
+        cargoServiceInventories_[candidateTransfer.locationId] = candidateStation;
+        cargoManifests_[vesselId] = candidateManifest;
         return oem::Result::success();
     }
 
@@ -224,6 +274,8 @@ public:
         dockingMonitors_.clear();
         cargoManifests_.clear();
         cargoManifestLoadAttempted_.clear();
+        cargoServiceInventories_.clear();
+        cargoServiceInventoryLoadAttempted_.clear();
         sessionId_.clear();
         lastFocus_ = 0;
         oem::SimulationEventQueue restored;
@@ -257,6 +309,11 @@ public:
             sprintf(message, "OEM Cargo Services: load failed (%s): %s",
                     servicesLoaded.code.c_str(), servicesLoaded.message.c_str());
             oapiWriteLog(message);
+        }
+        if (servicesLoaded.ok) {
+            const std::set<std::string>& serviceIds = cargoServices_.vesselIds();
+            for (std::set<std::string>::const_iterator it = serviceIds.begin(); it != serviceIds.end(); ++it)
+                ensureCargoServiceInventory(*it);
         }
         oapiWriteLog((char*)"OEM Landing Bridge: simulation monitoring started.");
     }
@@ -465,6 +522,55 @@ public:
     }
 
 private:
+
+    bool ensureCargoServiceInventory(const std::string& serviceId) {
+        if (serviceId.empty() || !cargoServices_.isRegistered(serviceId)) return false;
+        if (cargoServiceInventories_.find(serviceId) != cargoServiceInventories_.end()) return true;
+        if (cargoServiceInventoryLoadAttempted_.find(serviceId) != cargoServiceInventoryLoadAttempted_.end()) return false;
+        cargoServiceInventoryLoadAttempted_.insert(serviceId);
+        const std::string configPath = makeCargoStockConfigPath(module_, serviceId);
+        if (configPath.empty()) {
+            oapiWriteLog((char*)"OEM Cargo Stock: could not resolve stock configuration path.");
+            return false;
+        }
+        oem::CargoServiceInventory candidate(serviceId);
+        const oem::Result configured = cargoStockConfigStore_.load(configPath, serviceId, candidate);
+        if (!configured.ok) {
+            char message[512];
+            sprintf(message, "OEM Cargo Stock: load failed service=%s (%s): %s",
+                    serviceId.c_str(), configured.code.c_str(), configured.message.c_str());
+            oapiWriteLog(message);
+            return false;
+        }
+        const std::string exchangePath = makeCargoExchangePath(module_, serviceId);
+        if (exchangePath.empty()) {
+            oapiWriteLog((char*)"OEM Cargo Exchange: could not resolve exchange journal path.");
+            return false;
+        }
+        std::map<std::string, oem::CargoManifest> recoveredManifests(cargoManifests_);
+        const oem::Result recovered = cargoExchangeStore_.load(
+            exchangePath, candidate, recoveredManifests);
+        if (!recovered.ok) {
+            char message[512];
+            sprintf(message, "OEM Cargo Exchange: recovery failed service=%s (%s): %s",
+                    serviceId.c_str(), recovered.code.c_str(), recovered.message.c_str());
+            oapiWriteLog(message);
+            return false;
+        }
+        cargoServiceInventories_.insert(std::make_pair(serviceId, candidate));
+        for (std::map<std::string, oem::CargoManifest>::const_iterator it = recoveredManifests.begin();
+             it != recoveredManifests.end(); ++it) {
+            cargoManifests_[it->first] = it->second;
+            if (!it->second.history().empty()) cargoManifestLoadAttempted_.insert(it->first);
+        }
+        char message[512];
+        sprintf(message, "OEM Cargo Stock: service=%s lines=%lu transfers=%lu.",
+                serviceId.c_str(), (unsigned long)candidate.lines().size(),
+                (unsigned long)candidate.history().size());
+        oapiWriteLog(message);
+        return true;
+    }
+
     void ensureCargoManifest(const std::string& vesselId) {
         if (vesselId.empty() || cargoManifestLoadAttempted_.find(vesselId) != cargoManifestLoadAttempted_.end()) return;
         const std::string path = makeCargoManifestPath(module_, vesselId);
@@ -529,6 +635,10 @@ private:
     oem::CargoTransferGate cargoTransferGate_;
     std::map<std::string, oem::CargoManifest> cargoManifests_;
     std::set<std::string> cargoManifestLoadAttempted_;
+    oem::CargoServiceInventoryConfigStore cargoStockConfigStore_;
+    oem::CargoExchangeJournalStore cargoExchangeStore_;
+    std::map<std::string, oem::CargoServiceInventory> cargoServiceInventories_;
+    std::set<std::string> cargoServiceInventoryLoadAttempted_;
     bool journalReady_;
     std::string sessionId_;
     OBJHANDLE lastFocus_;
