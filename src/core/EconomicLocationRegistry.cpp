@@ -53,10 +53,16 @@ const EconomicLocation* EconomicLocationRegistry::find(const std::string& id) co
 
 const EconomicLocation* EconomicLocationRegistry::findStorageId(
     const std::string& storageId, EconomicLocationKind kind) const {
-    for (std::size_t i = 0; i < entries_.size(); ++i)
-        if (entries_[i].storageId == storageId && entries_[i].kind == kind)
-            return &entries_[i];
-    return 0;
+    const EconomicLocation* match = 0;
+    for (std::size_t i = 0; i < entries_.size(); ++i) {
+        if (entries_[i].storageId != storageId || entries_[i].kind != kind)
+            continue;
+        // Legacy storage IDs are not globally unique (e.g. Canaveral on
+        // Earth and Moon). Never guess when a caller has not supplied a body.
+        if (match) return 0;
+        match = &entries_[i];
+    }
+    return match;
 }
 
 const std::vector<EconomicLocation>& EconomicLocationRegistry::entries() const {
