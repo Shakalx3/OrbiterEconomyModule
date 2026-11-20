@@ -30,7 +30,7 @@
 - [ ] Market inventories and buy/sell transactions.
 - [x] Add portable abstract cargo manifests with transfer history, mass accounting and idempotent load/unload operations.
 - [x] Persist cargo manifest transfer history with versioned, atomic, idempotent recovery.
-- [ ] Connect transfer authorization to verified docking/spaceport state.
+- [x] Add a portable authorization gate requiring verified landed + ground-contact spaceport state or an explicitly recognized OEM cargo-service dock.
 - [ ] Add stock-vessel cargo adapters only where a documented physical cargo interface exists.
 - [ ] Docking and spaceport-location observation through the Orbiter bridge.
 
