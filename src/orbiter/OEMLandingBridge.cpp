@@ -1071,6 +1071,7 @@ public:
             sprintf(line, "VESSEL: %.24s x %lld", item.cargoId.c_str(), item.quantity);
             DrawLine(hDC, y, line);
         }
+        // Diagnostic transfers update only OEM accounting; Orbiter physics is untouched.
         DrawLine(hDC, y, "L: LOAD 1 UNIT     U: UNLOAD 1 UNIT");
         DrawLine(hDC, y, status_.c_str());
     }
