@@ -41,6 +41,8 @@
 - [x] Integrate the unified exchange journal into native bridge startup and transfer commits; reject divergent legacy per-vessel manifest histories rather than silently discarding them.
 - [x] Persist explicit per-service initial-stock configuration and validate it before exchange replay; a missing file means zero stock.
 - [ ] Runtime-validate native exchange recovery in Orbiter 2010; transfer controls remain intentionally unexposed.
+- [x] Specify the global economy journal format, ordered replay model, unlimited station funds, and legacy migration safety.
+- [ ] Implement and test the global economy journal across stations and operation types.
 - [ ] Add stock-vessel cargo adapters only where a documented physical cargo interface exists.
 - [x] Docking and spaceport-location observation through the Orbiter bridge.
 
