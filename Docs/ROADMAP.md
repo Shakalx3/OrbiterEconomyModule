@@ -76,6 +76,18 @@
 - [ ] Add stock-vessel cargo adapters only where a documented physical cargo interface exists.
 - [x] Docking and spaceport-location observation through the Orbiter bridge.
 
+### Live vessel refuelling — planned
+
+- [ ] Use Orbiter's native propellant API to inspect live vessel fuel resources: `GetPropellantCount`, `GetPropellantHandleByIndex`, `GetPropellantMass`, and `GetPropellantMaxMass`.
+- [ ] Refuel the actual running vessel through `SetPropellantMass` (or `SetFuelMass` for the default resource); never simulate refuelling by changing only CargoManifest, vessel empty mass, or an OEM-only counter.
+- [ ] Offer fuel purchases at registered economic stations and verified planetary spaceports. Docking must be to a registered economic station; surface refuelling requires the existing landed + ground-contact + same-body spaceport verification. Arbitrary nearby or docked vessels must not qualify.
+- [ ] Calculate purchasable quantity from the live tank capacity and current mass; reject overfill, invalid handles, non-finite values, negative quantities, and transactions with no available tank capacity.
+- [ ] Initially expose propellant resources by stable per-vessel resource slot/handle for selection and display. Orbiter's generic propellant API exposes resource handles and mass/capacity, but does not provide a universal human-readable fuel-type name; do not guess that different resources are chemically interchangeable. Add vessel-specific resource-to-product mappings only through explicit adapters/configuration.
+- [ ] Add explicit station/spaceport fuel stock and price configuration. Missing fuel stock means zero available fuel; never create free or implicit starting stock. Keep fuel stock separate from cargo manifests and cargo exchange accounting.
+- [ ] Commit each refuelling purchase idempotently to the global economy journal, charging the company account and debiting the location's fuel stock exactly once; persist enough before/after tank state to detect and safely reconcile interrupted operations.
+- [ ] Treat the SDK's `SetPropellantMass` as the physical commit operation: validate before mutation, read back the resulting mass, and define rollback/recovery behavior for failed writes or interrupted transactions before enabling real purchases.
+- [ ] Add an in-game Refuel MFD/terminal flow showing location, selected tank/resource, current mass, capacity, available stock, unit price, requested quantity, and total cost; support partial and full refuelling.
+- [ ] Runtime-test live refuelling at both an orbital station and a planetary spaceport, including multiple propellant resources, full tanks, insufficient stock/funds, save/reload, time acceleration, and duplicate-operation recovery.
 ## Phase C — contracts
 - [x] Portable delivery contract model with vessel, cargo, quantity, origin, destination, reward and deadline.
 - [x] Evidence-based eligibility using post-acceptance origin loads and verified destination landing/docking events.
