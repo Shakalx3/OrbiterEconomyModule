@@ -35,6 +35,7 @@ class OEMLandingBridge;
 OEMLandingBridge *g_bridge = 0;
 int g_flightLogMode = -1;
 int g_cargoManifestMode = -1;
+int g_cargoExchangeTestMode = -1;
 
 std::string makeJournalPath(HINSTANCE module) {
     char modulePath[MAX_PATH] = {};
@@ -154,7 +155,8 @@ public:
           cargoServices_(), cargoServicesPath_(makeCargoServicesPath(hDLL)),
           cargoManifestStore_(), cargoTransferGate_(), cargoManifests_(), cargoManifestLoadAttempted_(),
           cargoStockConfigStore_(), cargoExchangeStore_(), cargoServiceInventories_(),
-          cargoServiceInventoryLoadAttempted_(), journalReady_(false), sessionId_(), lastFocus_(0) {
+          cargoServiceInventoryLoadAttempted_(), journalReady_(false), sessionId_(),
+          currentSimulationTime_(0), cargoTransferSequence_(0), lastFocus_(0) {
         g_bridge = this;
     }
 
@@ -165,6 +167,91 @@ public:
     bool journalReady() const { return journalReady_; }
     bool isCargoService(const std::string& vesselId) const {
         return cargoServices_.isRegistered(vesselId);
+    }
+
+    const oem::CargoServiceInventory* cargoServiceInventory(const std::string& serviceId) const {
+        std::map<std::string, oem::CargoServiceInventory>::const_iterator it =
+            cargoServiceInventories_.find(serviceId);
+        return it == cargoServiceInventories_.end() ? 0 : &it->second;
+    }
+
+    std::string dockedCargoService(const std::string& vesselId) const {
+        OBJHANDLE focus = oapiGetFocusObject();
+        if (!focus || !oapiIsVessel(focus)) return std::string();
+        VESSEL *vessel = oapiGetVesselInterface(focus);
+        if (!vessel || !vessel->GetName() || vesselId != vessel->GetName())
+            return std::string();
+        const UINT count = vessel->DockCount();
+        for (UINT i = 0; i < count; ++i) {
+            DOCKHANDLE dock = vessel->GetDockHandle(i);
+            if (!dock) continue;
+            OBJHANDLE other = vessel->GetDockStatus(dock);
+            if (!other || !oapiIsVessel(other)) continue;
+            char otherName[128] = {};
+            oapiGetObjectName(other, otherName, sizeof(otherName));
+            if (otherName[0] != '\0' && cargoServices_.isRegistered(otherName))
+                return std::string(otherName);
+        }
+        return std::string();
+    }
+
+    oem::Result performCargoExchangeTest(const std::string& vesselId,
+                                         oem::CargoTransferDirection direction) {
+        if (sessionId_.empty() || currentSimulationTime_ <= 0)
+            return oem::Result::failure("CARGO_TEST_NOT_READY",
+                "Wait until the simulation has advanced beyond its initialization frame.");
+        const std::string serviceId = dockedCargoService(vesselId);
+        if (serviceId.empty())
+            return oem::Result::failure("CARGO_TEST_NOT_DOCKED",
+                "The focused vessel must be docked to a registered cargo service.");
+        ensureCargoManifest(vesselId);
+        if (!ensureCargoServiceInventory(serviceId))
+            return oem::Result::failure("CARGO_SERVICE_INVENTORY_UNAVAILABLE",
+                "The registered service stock and exchange journal are not available.");
+        std::map<std::string, oem::CargoManifest>::const_iterator manifest =
+            cargoManifests_.find(vesselId);
+        std::map<std::string, oem::CargoServiceInventory>::const_iterator inventory =
+            cargoServiceInventories_.find(serviceId);
+        if (manifest == cargoManifests_.end() || inventory == cargoServiceInventories_.end())
+            return oem::Result::failure("CARGO_TEST_PROJECTION_UNAVAILABLE",
+                "The cargo accounting projections are unavailable.");
+
+        oem::CargoTransfer transfer;
+        transfer.vesselId = vesselId;
+        transfer.locationId = serviceId;
+        transfer.direction = direction;
+        transfer.quantity = 1;
+        if (direction == oem::CARGO_LOAD) {
+            if (inventory->second.lines().empty())
+                return oem::Result::failure("CARGO_TEST_NO_STOCK",
+                    "The service has no configured stock. Add an explicit stock line first.");
+            const oem::CargoStockLine& line = inventory->second.lines()[0];
+            transfer.cargoId = line.cargoId;
+            transfer.unitMassKg = line.unitMassKg;
+        } else if (direction == oem::CARGO_UNLOAD) {
+            const std::vector<oem::CargoLine>& lines = manifest->second.lines();
+            bool found = false;
+            for (std::size_t i = 0; i < lines.size(); ++i) {
+                if (lines[i].originLocationId == serviceId && lines[i].quantity > 0) {
+                    transfer.cargoId = lines[i].cargoId;
+                    transfer.unitMassKg = lines[i].unitMassKg;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+                return oem::Result::failure("CARGO_TEST_NO_CARGO",
+                    "The vessel has no manifest cargo from this service to return.");
+        } else {
+            return oem::Result::failure("CARGO_TEST_DIRECTION",
+                "Unknown diagnostic transfer direction.");
+        }
+
+        char transferId[256];
+        sprintf(transferId, "OEMTEST-%s-%lu", sessionId_.c_str(),
+                ++cargoTransferSequence_);
+        transfer.transferId = transferId;
+        return applyCargoTransfer(transfer, (double)currentSimulationTime_);
     }
 
     const oem::CargoManifest* cargoManifest(const std::string& vesselId) const {
@@ -336,6 +423,8 @@ public:
         cargoServiceInventories_.clear();
         cargoServiceInventoryLoadAttempted_.clear();
         sessionId_.clear();
+        currentSimulationTime_ = 0;
+        cargoTransferSequence_ = 0;
         lastFocus_ = 0;
         oem::SimulationEventQueue restored;
         const oem::Result loaded = journalPath_.empty()
@@ -390,6 +479,7 @@ public:
         // The first positive-time sample is the baseline. simt=0 telemetry can
         // contain transient vessel states during scenario initialization.
         if (simt <= 0.0) return;
+        currentSimulationTime_ = (oem::SimulationSeconds)simt;
 
         if (sessionId_.empty()) {
             const double startMjd = mjd - simt / 86400.0;
@@ -732,6 +822,8 @@ private:
     std::set<std::string> cargoServiceInventoryLoadAttempted_;
     bool journalReady_;
     std::string sessionId_;
+    oem::SimulationSeconds currentSimulationTime_;
+    unsigned long cargoTransferSequence_;
     OBJHANDLE lastFocus_;
 };
 
@@ -931,6 +1023,113 @@ private:
     std::string vesselId_;
 };
 
+class OEMCargoExchangeTestMFD : public MFD {
+public:
+    OEMCargoExchangeTestMFD(DWORD w, DWORD h, VESSEL *vessel)
+        : MFD(w, h, vessel),
+          vesselId_(vessel && vessel->GetName() ? vessel->GetName() : ""),
+          status_("Ready. Ledger only; no physical cargo is moved.") {}
+
+    void Update(HDC hDC) override {
+        Title(hDC, "OEM CARGO EXCHANGE TEST");
+        SelectDefaultFont(hDC, 0);
+        int y = (int)ch + 3;
+        DrawLine(hDC, y, "LEDGER ONLY - NO PHYSICAL CARGO");
+        DrawLine(hDC, y, "One unit per command; restart to test recovery.");
+        if (!g_bridge) {
+            DrawLine(hDC, y, "OEM bridge unavailable.");
+            return;
+        }
+        const std::string serviceId = g_bridge->dockedCargoService(vesselId_);
+        if (serviceId.empty()) {
+            DrawLine(hDC, y, "Dock to a registered cargo service.");
+            DrawLine(hDC, y, "ISS is registered by default.");
+        } else {
+            char line[256];
+            sprintf(line, "SERVICE: %.36s", serviceId.c_str());
+            DrawLine(hDC, y, line);
+            const oem::CargoServiceInventory *stock =
+                g_bridge->cargoServiceInventory(serviceId);
+            if (!stock) {
+                DrawLine(hDC, y, "Service inventory unavailable.");
+            } else if (stock->lines().empty()) {
+                DrawLine(hDC, y, "STOCK: empty (configure explicitly)");
+            } else {
+                const oem::CargoStockLine& item = stock->lines()[0];
+                sprintf(line, "LOAD: %.24s x %lld", item.cargoId.c_str(), item.quantity);
+                DrawLine(hDC, y, line);
+            }
+        }
+        const oem::CargoManifest *manifest = g_bridge->cargoManifest(vesselId_);
+        if (!manifest) {
+            DrawLine(hDC, y, "Vessel manifest unavailable.");
+        } else if (manifest->lines().empty()) {
+            DrawLine(hDC, y, "VESSEL: empty");
+        } else {
+            const oem::CargoLine& item = manifest->lines()[0];
+            char line[256];
+            sprintf(line, "VESSEL: %.24s x %lld", item.cargoId.c_str(), item.quantity);
+            DrawLine(hDC, y, line);
+        }
+        DrawLine(hDC, y, "L: LOAD 1 UNIT     U: UNLOAD 1 UNIT");
+        DrawLine(hDC, y, status_.c_str());
+    }
+
+    bool ConsumeKeyBuffered(DWORD key) override {
+        if (!g_bridge) return false;
+        oem::Result result;
+        if (key == OAPI_KEY_L) {
+            result = g_bridge->performCargoExchangeTest(vesselId_, oem::CARGO_LOAD);
+        } else if (key == OAPI_KEY_U) {
+            result = g_bridge->performCargoExchangeTest(vesselId_, oem::CARGO_UNLOAD);
+        } else {
+            return false;
+        }
+        status_ = result.ok ? "Transfer committed to durable OEM journal." :
+            result.code + ": " + result.message;
+        return true;
+    }
+
+    bool ConsumeButton(int bt, int event) override {
+        if (!(event & PANEL_MOUSE_LBDOWN)) return false;
+        if (bt == 0) return ConsumeKeyBuffered(OAPI_KEY_L);
+        if (bt == 1) return ConsumeKeyBuffered(OAPI_KEY_U);
+        return false;
+    }
+
+    char *ButtonLabel(int bt) override {
+        static char *labels[2] = { (char*)"LOAD", (char*)"UNLD" };
+        return bt >= 0 && bt < 2 ? labels[bt] : 0;
+    }
+
+    int ButtonMenu(const MFDBUTTONMENU **menu) const override {
+        static const MFDBUTTONMENU items[2] = {
+            { "Load one unit to OEM manifest", 0, 'L' },
+            { "Unload one unit to service stock", 0, 'U' }
+        };
+        if (menu) *menu = items;
+        return 2;
+    }
+
+    static int MsgProc(UINT msg, UINT mfd, WPARAM wparam, LPARAM lparam) {
+        if (msg == OAPI_MSG_MFD_OPENEDEX && g_bridge) {
+            MFDMODEOPENSPEC *spec = (MFDMODEOPENSPEC*)wparam;
+            return (int)(new OEMCargoExchangeTestMFD(
+                spec->w, spec->h, (VESSEL*)lparam));
+        }
+        return 0;
+    }
+
+private:
+    void DrawLine(HDC hDC, int &y, const char *text) {
+        TextOutA(hDC, 4, y, text, (int)strlen(text));
+        y += (int)ch;
+    }
+
+    std::string vesselId_;
+    std::string status_;
+};
+
 } // namespace
 
 DLLCLBK void InitModule(HINSTANCE hDLL) {
@@ -947,13 +1146,20 @@ DLLCLBK void InitModule(HINSTANCE hDLL) {
     spec.key = OAPI_KEY_C;
     spec.msgproc = OEMCargoManifestMFD::MsgProc;
     g_cargoManifestMode = oapiRegisterMFDMode(spec);
+
+    spec.name = "OEM Cargo Exchange Test";
+    spec.key = OAPI_KEY_E;
+    spec.msgproc = OEMCargoExchangeTestMFD::MsgProc;
+    g_cargoExchangeTestMode = oapiRegisterMFDMode(spec);
 }
 
 DLLCLBK void ExitModule(HINSTANCE hDLL) {
     if (g_flightLogMode >= 0) oapiUnregisterMFDMode(g_flightLogMode);
     if (g_cargoManifestMode >= 0) oapiUnregisterMFDMode(g_cargoManifestMode);
+    if (g_cargoExchangeTestMode >= 0) oapiUnregisterMFDMode(g_cargoExchangeTestMode);
     g_flightLogMode = -1;
     g_cargoManifestMode = -1;
+    g_cargoExchangeTestMode = -1;
     g_bridge = 0;
     // Orbiter owns and destroys registered oapi::Module instances.
 }
