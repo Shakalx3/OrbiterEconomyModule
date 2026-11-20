@@ -11,7 +11,7 @@ The bridge observes simulation time, vessel identity, takeoff, landing, docking 
 ## Initial module boundaries
 
 - Core: identifiers, domain types, validation, deterministic rules.
-- Simulation event journal: append-only in-memory event collection with deterministic event IDs and duplicate/conflict checks.
+- Simulation event journal: append-only event collection with deterministic event IDs, duplicate/conflict checks, and a versioned disk snapshot written through a temporary file and atomic replacement.
 - Ledger: integer-credit accounting, immutable transaction records, idempotency keys.
 - Market: station inventories, buy/sell quotes, stock changes.
 - Cargo: manifests and ownership/quantity tracking. Initial cargo is abstract; physical cargo and third-party vessel adapters are later extensions.
@@ -42,7 +42,7 @@ The portable `SpaceportLandingMonitor` consumes these observations and emits one
 
 The portable `FlightTransitionMonitor` emits a takeoff after a grounded baseline followed by actual loss of `GroundContact()`. It preserves the last known surface body/base/distance as departure context. The first observation is always a baseline, so a vessel already airborne when monitoring starts does not generate a fabricated takeoff.
 
-Both event types are published into the core's append-only in-memory `SimulationEventQueue`. The bridge logs the deterministic event ID and event facts. The queue currently lives only for the active simulation session: it is not yet persisted, exposed to an MFD, or connected to contract settlement. Dock/undock event types are reserved in the domain model but their native observation adapter is a later increment.
+Both event types are published into the core's append-only `SimulationEventQueue`. The bridge persists the queue to `OEMData/events.journal` beside the module DLL after each new event. The journal has a versioned text format, hex-encoded identifiers, and atomic temporary-file replacement; a torn final record is ignored during recovery. The bridge reloads the journal at simulation start and logs the number of restored records. Session IDs include the scenario start MJD plus process/tick identity so repeating a scenario does not reuse earlier event IDs. The journal is not yet exposed to an MFD or connected to contract settlement. Dock/undock event types are reserved in the domain model but their native observation adapter is a later increment.
 
 ## Compatibility strategy
 
@@ -52,4 +52,4 @@ The initial market map covers Earth orbit, the Moon, and Mars in greater depth. 
 
 ## Current implementation boundary
 
-The portable core includes the ledger, surface-distance calculation, tested landing and takeoff transition monitors, and an idempotent in-memory simulation event journal. The background bridge has been validated in the target Orbiter installation for real takeoff/landing timestamps, vessel identity, body/base identification and distance. The new queue integration still requires a fresh native build and runtime check. Persistence, docking integration, contracts, cargo handover, settlement and economic UI remain outstanding.
+The portable core includes the ledger, surface-distance calculation, tested landing and takeoff transition monitors, an idempotent event queue, and a versioned event-journal store with atomic replacement and torn-tail recovery tests. The background bridge has been validated in the target Orbiter installation for real takeoff/landing timestamps, vessel identity, body/base identification and distance. Disk persistence is implemented but still requires a fresh native build and runtime reload test. Docking integration, contracts, cargo handover, settlement and economic UI remain outstanding.
