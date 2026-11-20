@@ -105,6 +105,7 @@ public:
                     loaded.code.c_str(), loaded.message.c_str());
             oapiWriteLog(message);
         }
+        cargoServices_.clear();
         const oem::Result servicesLoaded = cargoServicesPath_.empty()
             ? oem::Result::failure("CARGO_SERVICES_PATH", "Could not resolve cargo service configuration path.")
             : cargoServices_.load(cargoServicesPath_);
