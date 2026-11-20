@@ -3,6 +3,7 @@ project(OrbiterEconomyModule LANGUAGES CXX)
 add_library(OEMCore
     src/core/Ledger.cpp
     src/core/CargoManifest.cpp
+    src/core/CargoManifestJournal.cpp
     src/core/SpaceportLanding.cpp
     src/core/SimulationEvent.cpp
     src/core/SimulationEventJournal.cpp
@@ -12,6 +13,8 @@ add_library(OEMCore
 target_include_directories(OEMCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
 add_executable(OEMCoreTests Tests/core/LedgerTests.cpp)
 add_executable(OEMCargoManifestTests Tests/core/CargoManifestTests.cpp)
+add_executable(OEMCargoManifestJournalTests Tests/core/CargoManifestJournalTests.cpp)
+target_link_libraries(OEMCargoManifestJournalTests PRIVATE OEMCore)
 target_link_libraries(OEMCargoManifestTests PRIVATE OEMCore)
 target_link_libraries(OEMCoreTests PRIVATE OEMCore)
 add_executable(OEMSpaceportLandingTests Tests/core/SpaceportLandingTests.cpp)
@@ -25,6 +28,7 @@ target_link_libraries(OEMDockingTransitionTests PRIVATE OEMCore)
 enable_testing()
 add_test(NAME OEMCoreTests COMMAND OEMCoreTests)
 add_test(NAME OEMCargoManifestTests COMMAND OEMCargoManifestTests)
+add_test(NAME OEMCargoManifestJournalTests COMMAND OEMCargoManifestJournalTests)
 add_test(NAME OEMSpaceportLandingTests COMMAND OEMSpaceportLandingTests)
 add_test(NAME OEMSimulationEventTests COMMAND OEMSimulationEventTests)
 add_test(NAME OEMSimulationEventJournalTests COMMAND OEMSimulationEventJournalTests)
