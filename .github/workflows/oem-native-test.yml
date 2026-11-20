@@ -52,7 +52,7 @@ jobs:
           cl /nologo /LD /EHsc /O2 /MD /DWIN32 /D_WINDOWS /D_USRDLL /I"SDK\\Orbitersdk\\include" src\\orbiter\\OEMSpaceportTest.cpp OEMSpaceportTest.res /link /LIBPATH:"SDK\\Orbitersdk\\lib" orbiter.lib orbitersdk.lib gdi32.lib user32.lib /OUT:OEMSpaceportTest.dll
           cl /nologo /LD /EHsc /O2 /MD /DWIN32 /D_WINDOWS /D_USRDLL /I"SDK\\Orbitersdk\\include" src\\orbiter\\OEMGroundContactTest.cpp OEMGroundContactTest.res /link /LIBPATH:"SDK\\Orbitersdk\\lib" orbiter.lib orbitersdk.lib gdi32.lib user32.lib /OUT:OEMGroundContactTest.dll
           cl /nologo /LD /EHsc /O2 /MD /DWIN32 /D_WINDOWS /D_USRDLL /I"SDK\\Orbitersdk\\include" /I"src\\core" src\\orbiter\\OEMLandingBridge.cpp src\\core\\SpaceportLanding.cpp src\\core\\SimulationEvent.cpp src\\core\\FlightTransition.cpp OEMLandingBridge.res /link /LIBPATH:"SDK\\Orbitersdk\\lib" orbiter.lib orbitersdk.lib gdi32.lib user32.lib /OUT:OEMLandingBridge.dll
-      - name: Replace the rolling release and remove obsolete releases
+      - name: Replace the rolling release
         if: github.event_name == 'push'
         shell: pwsh
         env:
@@ -60,14 +60,27 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $tag = "oem-native-diagnostics-current"
-          $oldReleases = gh release list --repo $env:GITHUB_REPOSITORY --limit 1000 --json tagName | ConvertFrom-Json
-          foreach ($release in $oldReleases) {
-            gh release delete $release.tagName --repo $env:GITHUB_REPOSITORY --yes --cleanup-tag
+
+          # Remove only the rolling release. Do not enumerate/delete historical
+          # releases, and do not ask gh to delete a tag that may already be absent.
+          $release = gh release view $tag --repo $env:GITHUB_REPOSITORY --json tagName 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release delete $tag --repo $env:GITHUB_REPOSITORY --yes
             if ($LASTEXITCODE -ne 0) {
-              throw "Could not delete obsolete release $($release.tagName)"
+              throw "Could not delete previous rolling release"
             }
           }
-          gh release create $tag OEMSpaceportTest.dll OEMGroundContactTest.dll OEMLandingBridge.dll --repo $env:GITHUB_REPOSITORY --title "OEM Native Diagnostics (current)" --notes "Latest successful Win32 build for Orbiter 2010. Contains OEMSpaceportTest, OEMGroundContactTest, and OEMLandingBridge. Bridge queues verified takeoff and spaceport landing events; events are not yet persisted or settled financially." --prerelease
+
+          # Remove the old tag only when it exists on the remote.
+          git ls-remote --exit-code --tags origin "refs/tags/$tag" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            git push origin ":refs/tags/$tag"
+            if ($LASTEXITCODE -ne 0) {
+              throw "Could not delete previous rolling tag"
+            }
+          }
+
+          gh release create $tag OEMSpaceportTest.dll OEMGroundContactTest.dll OEMLandingBridge.dll --repo $env:GITHUB_REPOSITORY --title "OEM Native Diagnostics (current)" --notes "Latest successful Win32 build for Orbiter 2010. Contains OEMSpaceportTest, OEMGroundContactTest, and OEMLandingBridge. Bridge queues takeoff and spaceport landing events after stable airborne confirmation; events are not yet persisted or settled financially." --prerelease
           if ($LASTEXITCODE -ne 0) {
             throw "Could not publish rolling release"
           }
