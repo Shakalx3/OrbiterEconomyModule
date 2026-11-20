@@ -1,6 +1,7 @@
 #ifndef OEM_CORE_CARGO_SERVICE_REGISTRY_H
 #define OEM_CORE_CARGO_SERVICE_REGISTRY_H
 
+#include <cstddef>
 #include <set>
 #include <string>
 
