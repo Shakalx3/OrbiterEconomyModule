@@ -12,7 +12,7 @@ int main() {
         c.cargoId="cargo-"+std::to_string(i);
         c.destinationLocationId="destination-"+std::to_string(i);
         c.destinationBodyId=i%2?"Mars":"Earth";
-        c.quantity=1;c.reward=100+i;
+        c.quantity=1;c.reward=100+i;c.allowanceSeconds=86400+i*3600;
         candidates.push_back(c);
     }
     oem::MissionBoard first,repeat;
@@ -24,6 +24,7 @@ int main() {
         assert(first.offers[i].contractId==repeat.offers[i].contractId);
         assert(first.offers[i].destinationLocationId==repeat.offers[i].destinationLocationId);
         assert(first.offers[i].originLocationId=="origin");
+        assert(first.offers[i].deadline-first.offers[i].acceptedAt>=86400);
     }
     oem::MissionBoard empty;
     std::vector<oem::MissionCandidate> none;
