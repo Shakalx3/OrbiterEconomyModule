@@ -1,6 +1,7 @@
 #include "MissionBoard.h"
 #include <cassert>
 #include <cstdio>
+#include <iostream>
 #include <map>
 #include <vector>
 
@@ -39,6 +40,7 @@ int main() {
     std::map<std::string,oem::MissionBoard> recovered;
     assert(store.load(path,recovered).ok);
     assert(recovered.size()==2);
+    if(recovered["origin"].offers.size()!=first.offers.size()) std::cerr<<"expected "<<first.offers.size()<<" recovered "<<recovered["origin"].offers.size()<<"\\n";
     assert(recovered["origin"].offers.size()==first.offers.size());
     assert(recovered["empty-origin"].offers.empty());
     std::remove(path.c_str());
