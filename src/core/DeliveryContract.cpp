@@ -152,6 +152,19 @@ Result DeliveryContractBook::restoreExpired(const std::string& id) {
     return Result::success();
 }
 
+std::vector<std::string> DeliveryContractBook::expireDue(SimulationSeconds now) {
+    std::vector<std::string> expired;
+    if (now < 0) return expired;
+    for (std::size_t i = 0; i < contracts_.size(); ++i) {
+        DeliveryContract& c = contracts_[i];
+        if (c.status == CONTRACT_ACCEPTED && c.deadline > 0 && now > c.deadline) {
+            c.status = CONTRACT_EXPIRED;
+            expired.push_back(c.contractId);
+        }
+    }
+    return expired;
+}
+
 const DeliveryContract* DeliveryContractBook::find(const std::string& id) const {
     std::map<std::string, std::size_t>::const_iterator it = indexes_.find(id);
     return it == indexes_.end() ? 0 : &contracts_[it->second];
