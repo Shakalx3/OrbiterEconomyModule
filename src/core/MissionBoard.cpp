@@ -11,7 +11,7 @@
 
 namespace oem {
 namespace {
-const char* kHeader = "OEM_MISSION_BOARDS|2";
+const char* kHeader = "OEM_MISSION_BOARDS|3";
 std::string hex(const std::string& value) {
     if(value.empty()) return "-";
     static const char digits[] = "0123456789ABCDEF";
@@ -68,7 +68,7 @@ bool writeBoard(std::ostream& out,const MissionBoard& b) {
 }
 MissionCandidate::MissionCandidate()
     : cargoId(),destinationLocationId(),destinationBodyId(),destinationCanonicalId(),
-      quantity(1),reward(0),allowanceSeconds(604800) {}
+      missionType(),missionTitle(),missionBriefing(),quantity(1),reward(0),allowanceSeconds(604800) {}
 MissionBoard::MissionBoard()
     : originLocationId(),originCanonicalId(),simulationDay(-1),generation(0),offers() {}
 
@@ -169,7 +169,7 @@ Result MissionBoardStore::load(const std::string& path,
         if(!line.empty()&&line[line.size()-1]=='\r') line.erase(line.size()-1);
         if(line.empty()) continue;
         std::vector<std::string> f=split(line);
-        if(f.empty()||f[0]!="B"||(versionOne&&f.size()!=5)||(versionTwo&&f.size()!=6))
+        if(f.empty()||f[0]!="B"||(versionOne&&f.size()!=5)||((versionTwo||versionThree)&&f.size()!=6))
             return Result::failure("MISSION_BOARD_CORRUPT","Mission board header record is malformed.");
         MissionBoard b; long long day=0,generation=0,count=0;
         if(versionOne) {
@@ -191,14 +191,14 @@ Result MissionBoardStore::load(const std::string& path,
             if(!line.empty()&&line[line.size()-1]=='\r') line.erase(line.size()-1);
             f=split(line); DeliveryContract c;
             long long qty=0,reward=0,accepted=0,deadline=0;
-            if(f.size()!=11||f[0]!="O"||!unhex(f[1],c.contractId)||!unhex(f[2],c.vesselId)||
+            if((versionThree?f.size()!=14:f.size()!=11)||f[0]!="O"||!unhex(f[1],c.contractId)||!unhex(f[2],c.vesselId)||
                !unhex(f[3],c.cargoId)||!number(f[4],qty)||qty<=0||!unhex(f[5],c.originLocationId)||
                !unhex(f[6],c.destinationLocationId)||!unhex(f[7],c.destinationBodyId)||
                !number(f[8],reward)||reward<=0||!number(f[9],accepted)||!number(f[10],deadline)||
                c.contractId.empty()||c.cargoId.empty()||c.originLocationId!=b.originLocationId||
                c.destinationLocationId.empty()||c.destinationLocationId==c.originLocationId)
                 return Result::failure("MISSION_BOARD_CORRUPT","Mission board offer is invalid.");
-            c.quantity=qty; c.reward=reward; c.acceptedAt=accepted; c.deadline=deadline;
+            if(!versionThree) { c.missionType="DELIVERY"; c.missionTitle="Cargo delivery"; c.missionBriefing="Deliver the contracted cargo to the named destination."; }\n            c.quantity=qty; c.reward=reward; c.acceptedAt=accepted; c.deadline=deadline;
             b.offers.push_back(c);
         }
         if(!parsed.insert(std::make_pair(b.originCanonicalId,b)).second)
