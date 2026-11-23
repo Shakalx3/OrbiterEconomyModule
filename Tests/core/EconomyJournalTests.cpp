@@ -65,9 +65,6 @@ int main(){
  contract.contractId="delivery-001";contract.vesselId="GL-01";contract.cargoId="oxygen";
  contract.quantity=2;contract.originLocationId="ISS";contract.destinationLocationId="MARS";
  contract.destinationBodyId="Mars";
-  contract.missionType="PRIORITY";contract.missionTitle="Priority cargo delivery";
-  contract.missionBriefing="A reported shortage requires this oxygen shipment.";
- contract.missionType="PRIORITY";contract.missionTitle="Priority cargo delivery";
  contract.missionBriefing="A shortage has been reported. Deliver oxygen to MARS before the deadline.";
  contract.reward=250;contract.acceptedAt=20;contract.deadline=100;
  assert(store.acceptContract(contractPath,contractBook,contract).ok);
