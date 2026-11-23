@@ -1357,6 +1357,9 @@ private:
             return false;
         }
 
+        propellantRecoveryReady_ = recoverPropellantTransactions(openingLedger);
+        if (!propellantRecoveryReady_)
+            oapiWriteLog((char*)"OEM Propellant: unresolved transaction recovery; new refuelling operations are disabled.");
         ledger_ = openingLedger;
         cargoCatalog_ = openingCatalog;
         cargoManifests_.swap(openingManifests);
