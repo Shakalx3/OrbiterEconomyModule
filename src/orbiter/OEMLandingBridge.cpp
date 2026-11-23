@@ -620,6 +620,21 @@ public:
         const oem::SimulationSeconds simSeconds =
             (oem::SimulationSeconds)(simt >= 0.0 ? simt : 0.0);
 
+        if (economyReady_) {
+            oem::DeliveryContractBook due = contractBook_;
+            const std::vector<std::string> expired = due.expireDue(simSeconds);
+            for (std::size_t i = 0; i < expired.size(); ++i) {
+                const oem::Result committed = economyJournalStore_.expireContract(
+                    economyJournalPath_, contractBook_, expired[i]);
+                if (!committed.ok) {
+                    char error[512];
+                    sprintf(error, "OEM CONTRACT: expiry commit failed id=%s (%s): %s",
+                        expired[i].c_str(), committed.code.c_str(), committed.message.c_str());
+                    oapiWriteLog(error);
+                }
+            }
+        }
+
         // OEM follows only Orbiter's current focus vessel. A focus change
         // establishes a fresh baseline so inactive vessels cannot generate events.
         OBJHANDLE hVessel = oapiGetFocusObject();
