@@ -65,6 +65,8 @@ int main(){
  contract.contractId="delivery-001";contract.vesselId="GL-01";contract.cargoId="oxygen";
  contract.quantity=2;contract.originLocationId="ISS";contract.destinationLocationId="MARS";
  contract.destinationBodyId="Mars";
+  contract.missionType="PRIORITY";contract.missionTitle="Priority cargo delivery";
+  contract.missionBriefing="A reported shortage requires this oxygen shipment.";
  contract.missionType="PRIORITY";contract.missionTitle="Priority cargo delivery";
  contract.missionBriefing="A shortage has been reported. Deliver oxygen to MARS before the deadline.";
  contract.reward=250;contract.acceptedAt=20;contract.deadline=100;
@@ -98,6 +100,9 @@ int main(){
  assert(recoveredContracts.find(contract.contractId)!=0);
  assert(recoveredContracts.find(contract.contractId)->status==oem::CONTRACT_SETTLED);
  assert(recoveredContracts.find(contract.contractId)->destinationBodyId=="Mars");
+  assert(recoveredContracts.find(contract.contractId)->missionType=="PRIORITY");
+  assert(recoveredContracts.find(contract.contractId)->missionTitle=="Priority cargo delivery");
+  assert(recoveredContracts.find(contract.contractId)->missionBriefing=="A reported shortage requires this oxygen shipment.");
  assert(recoveredContracts.find(contract.contractId)->missionType=="PRIORITY");
  assert(recoveredContracts.find(contract.contractId)->missionTitle=="Priority cargo delivery");
  assert(recoveredContracts.find(contract.contractId)->missionBriefing==contract.missionBriefing);
