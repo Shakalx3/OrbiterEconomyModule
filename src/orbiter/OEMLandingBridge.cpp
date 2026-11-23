@@ -2551,14 +2551,17 @@ public:
             DrawLine(hDC, y, "LOCAL MISSION BOARD");
             for (std::size_t i=0;i<offers.size() && i<3;++i) {
                 const oem::DeliveryContract& offer=offers[i];
-                sprintf(line,"%lu: %.16s x%lld  %lld cr",
-                    (unsigned long)(i+1),offer.cargoId.c_str(),offer.quantity,(long long)offer.reward);
+                const long long allowance = offer.deadline - offer.acceptedAt;
+                if (allowance >= 86400)
+                    sprintf(line,"%lu: %.8s x%lld %lldcr %lldd",
+                        (unsigned long)(i+1),offer.cargoId.c_str(),offer.quantity,
+                        (long long)offer.reward,allowance/86400);
+                else
+                    sprintf(line,"%lu: %.8s x%lld %lldcr %lldh",
+                        (unsigned long)(i+1),offer.cargoId.c_str(),offer.quantity,
+                        (long long)offer.reward,allowance/3600);
                 DrawLine(hDC,y,line);
                 sprintf(line,"   TO: %.32s",offer.destinationLocationId.c_str());
-                DrawLine(hDC,y,line);
-                const long long allowance = offer.deadline - offer.acceptedAt;
-                if (allowance >= 86400) sprintf(line,"   ALLOW: %lld days",allowance/86400);
-                else sprintf(line,"   ALLOW: %lld hours",allowance/3600);
                 DrawLine(hDC,y,line);
             }
             DrawLine(hDC,y,"1/2/3: SELECT  A: ACCEPT SELECTED");
@@ -2580,17 +2583,15 @@ public:
                 c.status == oem::CONTRACT_SETTLED ? "PAID" :
                 c.status == oem::CONTRACT_CANCELLED ? "CANCELLED" : "EXPIRED";
             char line[256];
-            sprintf(line, "%.14s %s", c.contractId.c_str(), state);
+            const long long allowance = c.deadline - c.acceptedAt;
+            if (allowance >= 86400)
+                sprintf(line, "%.10s %s %lldd", c.contractId.c_str(), state, allowance/86400);
+            else
+                sprintf(line, "%.10s %s %lldh", c.contractId.c_str(), state, allowance/3600);
             DrawLine(hDC, y, line);
             sprintf(line, "  %.12s -> %.12s  x%lld",
                 c.originLocationId.c_str(), c.destinationLocationId.c_str(), c.quantity);
             DrawLine(hDC, y, line);
-            const long long allowance = c.deadline - c.acceptedAt;
-            if (allowance > 0) {
-                if (allowance >= 86400) sprintf(line,"  WINDOW: %lld days",allowance/86400);
-                else sprintf(line,"  WINDOW: %lld hours",allowance/3600);
-                DrawLine(hDC,y,line);
-            }
             ++shown;
         }
         if (shown == 0) DrawLine(hDC, y, "No accepted contracts.");
