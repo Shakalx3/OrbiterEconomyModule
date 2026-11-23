@@ -293,8 +293,16 @@ public:
     oem::Result settleDeliveryContract(const std::string& contractId) {
         if (!economyReady_ || economyJournalPath_.empty())
             return oem::Result::failure("CONTRACT_ECONOMY_UNAVAILABLE", "Economy journal is unavailable.");
+        const oem::DeliveryContract *contract = contractBook_.find(contractId);
+        if (!contract)
+            return oem::Result::failure("CONTRACT_NOT_FOUND", "Contract does not exist.");
+        std::map<std::string, oem::CargoManifest>::iterator manifest =
+            cargoManifests_.find(contract->vesselId);
+        if (manifest == cargoManifests_.end())
+            return oem::Result::failure("CONTRACT_CARGO_MISSING", "Contract vessel cargo manifest is unavailable.");
         return economyJournalStore_.settleContract(
-            economyJournalPath_, contractBook_, contractId, "company", ledger_);
+            economyJournalPath_, contractBook_, contractId, "company", ledger_,
+            cargoServiceInventories_, manifest->second);
     }
 
     bool companyBalance(oem::Credits& balance) const {
