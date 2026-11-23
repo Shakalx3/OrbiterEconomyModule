@@ -116,6 +116,13 @@
 
 ### Mission generation and contract system — planned
 
+- [x] Replace first-match delivery destination selection with a complete eligible-location pool and a session-seeded pseudo-random choice, so registry/file order does not dictate every route; keep the selected destination stable while its pending offer is displayed.
+- [ ] Runtime-test destination distribution across several registered planetary bases and orbital stations, confirming that changing the order of `spaceports.registry` does not change the selection bias.
+- [ ] Make each base/station maintain a variable mission board: it may offer several missions at once or none at all, according to generation rules and local conditions; do not force exactly one offer per location.
+- [ ] Resolve and validate the exact canonical origin location (including celestial body for planetary bases) before generating each mission, then calculate the origin-to-destination distance using location-appropriate data.
+- [ ] Use a consistent route-distance model: surface distance for compatible same-body surface routes, and an explicit orbital/inter-body route estimate for other combinations; do not treat unrelated coordinates or a straight-line chord as a proven flight path.
+- [ ] Derive each mission's deadline/time allowance and reward from its estimated route distance, with configurable baseline rates, margins, and sensible minimum/maximum bounds; longer routes should generally allow more time and pay more.
+- [ ] Persist generated mission-board contents and generator state so offers do not reroll on MFD refresh or scenario reload; preserve accepted missions and their quoted reward/deadline unchanged.
 - [ ] Expand the existing delivery-contract prototype into a durable mission system, initially offering standalone missions while keeping the data model extensible to future multi-stage chains and campaigns.
 - [ ] Generate mission offers procedurally from a curated pool of objective definitions and compatible templates; validate every generated offer against actual registered locations, cargo catalogue, available stock, and supported Orbiter observations before publishing it.
 - [ ] Assemble mission flavor text procedurally from reusable, context-aware fragments (issuer, reason, task, instructions, deadline, and optional details); generated prose must never contradict the actual objective or reward.
