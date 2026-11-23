@@ -26,6 +26,7 @@ add_library(OEMCore
     src/core/EconomicLocationRegistry.cpp
     src/core/CampaignReset.cpp
     src/core/EconomicStationRegistry.cpp
+    src/core/PropellantPlan.cpp
 )
 target_include_directories(OEMCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
 add_executable(OEMCoreTests Tests/core/LedgerTests.cpp)
@@ -72,6 +73,8 @@ add_executable(OEMSpaceportRegistryTests Tests/core/SpaceportRegistryTests.cpp)
 add_executable(OEMEconomicLocationRegistryTests Tests/core/EconomicLocationRegistryTests.cpp)
 add_executable(OEMCampaignResetTests Tests/core/CampaignResetTests.cpp)
 add_executable(OEMEconomicStationRegistryTests Tests/core/EconomicStationRegistryTests.cpp)
+add_executable(OEMPropellantPlanTests Tests/core/PropellantPlanTests.cpp)
+target_link_libraries(OEMPropellantPlanTests PRIVATE OEMCore)
 target_link_libraries(OEMEconomicLocationRegistryTests PRIVATE OEMCore)
 target_link_libraries(OEMCampaignResetTests PRIVATE OEMCore)
 target_link_libraries(OEMEconomicStationRegistryTests PRIVATE OEMCore)
@@ -102,3 +105,4 @@ add_test(NAME OEMSpaceportRegistryTests COMMAND OEMSpaceportRegistryTests)
 add_test(NAME OEMEconomicLocationRegistryTests COMMAND OEMEconomicLocationRegistryTests)
 add_test(NAME OEMCampaignResetTests COMMAND OEMCampaignResetTests)
 add_test(NAME OEMEconomicStationRegistryTests COMMAND OEMEconomicStationRegistryTests)
+add_test(NAME OEMPropellantPlanTests COMMAND OEMPropellantPlanTests)
