@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cstdio>
 #include <fstream>
+#include <iostream>
 #include <map>
 #include <string>
 static oem::CargoDefinition oxygen(){oem::CargoDefinition d;d.cargoId="oxygen";d.displayName="Oxygen";d.unitMassKg=10.0;d.buyPrice=100;d.sellPrice=60;return d;}
@@ -67,7 +68,9 @@ int main(){
  oem::DeliveryContractBook recoveredContracts;
  std::map<std::string,oem::CargoServiceInventory> noStocks;
  std::map<std::string,oem::CargoManifest> noManifests;
- assert(store.load(contractPath,cat,contractRecoveredLedger,noStocks,noManifests,&recoveredContracts).ok);
+ oem::Result contractReplay=store.load(contractPath,cat,contractRecoveredLedger,noStocks,noManifests,&recoveredContracts);
+ if(!contractReplay.ok)std::cerr<<"Contract replay failed: "<<contractReplay.code<<" "<<contractReplay.message<<"\\n";
+ assert(contractReplay.ok);
  assert(recoveredContracts.find(contract.contractId)!=0);
  assert(recoveredContracts.find(contract.contractId)->status==oem::CONTRACT_SETTLED);
  assert(contractRecoveredLedger.getBalance("company",balance)&&balance==1250);
