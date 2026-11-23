@@ -202,6 +202,7 @@ Result MissionBoardStore::load(const std::string& path,
                c.contractId.empty()||c.cargoId.empty()||c.originLocationId!=b.originLocationId||
                c.destinationLocationId.empty()||c.destinationLocationId==c.originLocationId||
                (versionThree&&(!unhex(f[11],c.missionType)||!unhex(f[12],c.missionTitle)||!unhex(f[13],c.missionBriefing))))
+                return Result::failure("MISSION_BOARD_CORRUPT","Mission board offer is invalid.");
             if(!versionThree) { c.missionType="DELIVERY"; c.missionTitle="Cargo delivery"; c.missionBriefing="Deliver the contracted cargo to the named destination."; }
             c.quantity=qty; c.reward=reward; c.acceptedAt=accepted; c.deadline=deadline;
             b.offers.push_back(c);
