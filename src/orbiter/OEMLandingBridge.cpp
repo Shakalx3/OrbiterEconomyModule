@@ -307,7 +307,7 @@ public:
             economyJournalPath_, contractBook_, contractId, "company", ledger_);
         if (result.ok && !wasSettled) {
             char notice[512];
-            sprintf(notice, "CONTRACT COMPLETED\\nDelivery received\\n+ %lld CR",
+            sprintf(notice, "CONTRACT COMPLETED\nDelivery received\n+ %lld CR",
                     (long long)reward);
             showCompletionNotice(notice);
             char log[512];
@@ -953,7 +953,7 @@ private:
         oapiAnnotationSetColour(completionNote_, _V(0.25, 1.0, 0.35));
         char buffer[512];
         strncpy(buffer, text, sizeof(buffer) - 1);
-        buffer[sizeof(buffer) - 1] = '\\0';
+        buffer[sizeof(buffer) - 1] = '\0';
         oapiAnnotationSetText(completionNote_, buffer);
         notificationUntil_ = currentSimulationTime_ + 7;
     }
