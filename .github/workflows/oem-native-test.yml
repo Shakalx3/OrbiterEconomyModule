@@ -2,7 +2,7 @@ name: OEM native spaceport test build
 
 on:
   push:
-    branches: [development]
+    branches: [development, feature/delivery-contracts]
     paths:
       - "src/orbiter/**"
       - "src/core/SurfaceDistance.h"
