@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <map>
+#include <algorithm>
 #include <set>
 #include <vector>
 #include <string>
@@ -48,6 +49,17 @@ int g_deliveryContractsMode = -1;
 int g_economicAdminMode = -1;
 int g_propellantMonitorMode = -1;
 int g_propellantRefuelMode = -1;
+
+unsigned long deliveryDestinationScore(const std::string& seed,
+                                       const std::string& destination) {
+    unsigned long hash = 2166136261UL;
+    const std::string value = seed + "|" + destination;
+    for (std::size_t i = 0; i < value.size(); ++i) {
+        hash ^= static_cast<unsigned char>(value[i]);
+        hash *= 16777619UL;
+    }
+    return hash;
+}
 
 std::string makeJournalPath(HINSTANCE module) {
     char modulePath[MAX_PATH] = {};
@@ -559,27 +571,55 @@ public:
         if (stock == cargoServiceInventories_.end()) return false;
         std::string destination;
         std::string destinationBody;
-        // Offers can target any registered economic location, including a
-        // planetary spaceport. Load its stock projection before publishing.
+        std::vector<std::string> destinationIds;
+        std::map<std::string, std::string> destinationBodies;
+        // Build the complete eligible destination pool first. Never let the
+        // order of spaceports.registry decide which location receives every offer.
         const std::vector<oem::EconomicLocation>& locations = economicLocations_.entries();
         for (std::size_t i = 0; i < locations.size(); ++i) {
-            if (locations[i].storageId == origin) continue;
-            if (!ensureCargoServiceInventory(locations[i].storageId)) continue;
-            destination = locations[i].storageId;
-            destinationBody = locations[i].celestialBody;
-            break;
+            const std::string& candidateId = locations[i].storageId;
+            if (candidateId == origin || !ensureCargoServiceInventory(candidateId))
+                continue;
+            destinationIds.push_back(candidateId);
+            destinationBodies[candidateId] = locations[i].celestialBody;
         }
-        // Keep support for cargo services not also registered as economic stations.
-        if (destination.empty()) {
+        // Preserve support for cargo services not also registered as economic stations.
+        if (destinationIds.empty()) {
             const std::set<std::string>& services = cargoServices_.vesselIds();
-            for (std::set<std::string>::const_iterator it = services.begin(); it != services.end(); ++it) {
+            for (std::set<std::string>::const_iterator it = services.begin();
+                 it != services.end(); ++it) {
                 if (*it != origin && ensureCargoServiceInventory(*it)) {
-                    destination = *it;
-                    break;
+                    destinationIds.push_back(*it);
                 }
             }
         }
-        if (destination.empty()) return false;
+        if (destinationIds.empty()) return false;
+
+        // Stable-sort the pool, then choose its pseudo-random winner from a
+        // session/vessel/origin/offer seed. The result is independent of registry
+        // insertion order and remains fixed while this pending offer is displayed.
+        std::sort(destinationIds.begin(), destinationIds.end());
+        const unsigned long offerSequence = ++contractOfferSequence_;
+        char seedSequence[32];
+        sprintf(seedSequence, "%lu", offerSequence);
+        const std::string selectionSeed = sessionId_ + "|" + vesselId + "|" +
+            origin + "|" + seedSequence;
+        unsigned long bestScore = 0;
+        bool haveDestination = false;
+        for (std::size_t i = 0; i < destinationIds.size(); ++i) {
+            const unsigned long score = deliveryDestinationScore(
+                selectionSeed, destinationIds[i]);
+            if (!haveDestination || score < bestScore) {
+                bestScore = score;
+                destination = destinationIds[i];
+                haveDestination = true;
+            }
+        }
+        if (!destination.empty()) {
+            std::map<std::string, std::string>::const_iterator body =
+                destinationBodies.find(destination);
+            if (body != destinationBodies.end()) destinationBody = body->second;
+        }
         oem::Credits availableFunds = 0;
         if (!ledger_.getBalance("company", availableFunds)) return false;
         const std::vector<oem::CargoDefinition>& items = cargoCatalog_.entries();
@@ -594,7 +634,7 @@ public:
         if (!selected) return false;
         oem::DeliveryContract generated;
         char id[256];
-        sprintf(id, "OEMDELIVERY-%s-%lu", sessionId_.c_str(), ++contractOfferSequence_);
+        sprintf(id, "OEMDELIVERY-%s-%lu", sessionId_.c_str(), offerSequence);
         generated.contractId = id;
         generated.vesselId = vesselId;
         generated.cargoId = selected->cargoId;
