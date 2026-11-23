@@ -14,7 +14,8 @@ enum ContractStatus {
     CONTRACT_ACCEPTED = 1,
     CONTRACT_COMPLETED = 2,
     CONTRACT_SETTLED = 3,
-    CONTRACT_EXPIRED = 4
+    CONTRACT_EXPIRED = 4,
+    CONTRACT_CANCELLED = 5
 };
 
 struct DeliveryContract {
@@ -53,6 +54,8 @@ public:
                             SimulationSeconds completedAt);
     Result restoreSettled(const std::string& contractId);
     Result restoreExpired(const std::string& contractId);
+    Result cancel(const std::string& contractId);
+    Result restoreCancelled(const std::string& contractId);
     std::vector<std::string> expireDue(SimulationSeconds now);
 
     const DeliveryContract* find(const std::string& contractId) const;
