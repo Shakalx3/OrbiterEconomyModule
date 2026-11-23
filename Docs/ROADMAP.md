@@ -117,6 +117,7 @@
 ### Mission generation and contract system — planned
 
 - [x] Replace first-match delivery destination selection with a complete eligible-location pool and a session-seeded pseudo-random choice, so registry/file order does not dictate every route; keep the selected destination stable while its pending offer is displayed.
+- [x] Refresh unaccepted delivery offers once per in-game day; accepted contracts retain their original terms.
 - [ ] Runtime-test destination distribution across several registered planetary bases and orbital stations, confirming that changing the order of `spaceports.registry` does not change the selection bias.
 - [ ] Make each base/station maintain a variable mission board: it may offer several missions at once or none at all, according to generation rules and local conditions; do not force exactly one offer per location.
 - [ ] Resolve and validate the exact canonical origin location (including celestial body for planetary bases) before generating each mission, then calculate the origin-to-destination distance using location-appropriate data.
