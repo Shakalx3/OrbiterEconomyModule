@@ -2520,6 +2520,7 @@ public:
         if (!(event & PANEL_MOUSE_LBDOWN)) return false;
         if (bt == 0) return ConsumeKeyBuffered(OAPI_KEY_A);
         if (bt == 1) return ConsumeKeyBuffered(OAPI_KEY_S);
+        if (bt == 2) return ConsumeKeyBuffered(OAPI_KEY_C);
         return false;
     }
 
