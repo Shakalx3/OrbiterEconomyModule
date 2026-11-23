@@ -45,6 +45,12 @@ public:
     Result observe(const SimulationEvent& event, const CargoManifest& manifest);
     Result settle(const std::string& contractId, const std::string& companyAccountId,
                   Ledger& ledger);
+    // Journal replay hooks. These restore already-committed facts without re-evaluating
+    // Orbiter state or issuing a second payment.
+    Result restoreCompleted(const std::string& contractId, const std::string& eventId,
+                            SimulationSeconds completedAt);
+    Result restoreSettled(const std::string& contractId);
+    Result restoreExpired(const std::string& contractId);
 
     const DeliveryContract* find(const std::string& contractId) const;
     const std::vector<DeliveryContract>& contracts() const;
