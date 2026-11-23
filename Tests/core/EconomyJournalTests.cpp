@@ -51,5 +51,29 @@ int main(){
  assert(!store.load(path,cat,untouched,untouchedStocks,untouchedManifests).ok);
  assert(untouched.getBalance("company",balance)&&balance==1000);
  assert(untouchedStocks["ISS"].quantity("oxygen")==5&&untouchedStocks["MARS"].quantity("oxygen")==4);
+ // Contract acceptance, completion and payout are one replayable lifecycle.
+ const std::string contractPath="OEMContractEconomyJournalTests.journal";std::remove(contractPath.c_str());
+ oem::Ledger contractLedger;assert(contractLedger.createAccount("company",1000).ok);
+ oem::DeliveryContractBook contractBook;oem::DeliveryContract contract;
+ contract.contractId="delivery-001";contract.vesselId="GL-01";contract.cargoId="oxygen";
+ contract.quantity=2;contract.originLocationId="ISS";contract.destinationLocationId="MARS";
+ contract.reward=250;contract.acceptedAt=20;contract.deadline=100;
+ assert(store.acceptContract(contractPath,contractBook,contract).ok);
+ assert(store.completeContract(contractPath,contractBook,contract.contractId,"landing-event-50",50).ok);
+ assert(store.settleContract(contractPath,contractBook,contract.contractId,"company",contractLedger).ok);
+ assert(contractBook.find(contract.contractId)->status==oem::CONTRACT_SETTLED);
+ assert(contractLedger.getBalance("company",balance)&&balance==1250);
+ oem::Ledger contractRecoveredLedger;assert(contractRecoveredLedger.createAccount("company",1000).ok);
+ oem::DeliveryContractBook recoveredContracts;
+ std::map<std::string,oem::CargoServiceInventory> noStocks;
+ std::map<std::string,oem::CargoManifest> noManifests;
+ assert(store.load(contractPath,cat,contractRecoveredLedger,noStocks,noManifests,&recoveredContracts).ok);
+ assert(recoveredContracts.find(contract.contractId)!=0);
+ assert(recoveredContracts.find(contract.contractId)->status==oem::CONTRACT_SETTLED);
+ assert(contractRecoveredLedger.getBalance("company",balance)&&balance==1250);
+ // Replaying the same committed settlement again must not pay twice.
+ assert(store.load(contractPath,cat,contractRecoveredLedger,noStocks,noManifests,&recoveredContracts).ok);
+ assert(contractRecoveredLedger.getBalance("company",balance)&&balance==1250);
+ std::remove(contractPath.c_str());
  std::remove(path.c_str());return 0;
 }
