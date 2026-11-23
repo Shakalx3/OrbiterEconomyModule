@@ -66,7 +66,7 @@ bool writeBoard(std::ostream& out, const MissionBoard& b) {
     return (bool)out;
 }
 }
-MissionCandidate::MissionCandidate():cargoId(),destinationLocationId(),destinationBodyId(),quantity(1),reward(0){}
+MissionCandidate::MissionCandidate():cargoId(),destinationLocationId(),destinationBodyId(),quantity(1),reward(0),allowanceSeconds(604800){}
 MissionBoard::MissionBoard():originLocationId(),simulationDay(-1),generation(0),offers(){}
 
 Result MissionBoardStore::generate(const std::string& origin,long long day,unsigned long generation,
@@ -104,7 +104,7 @@ Result MissionBoardStore::generate(const std::string& origin,long long day,unsig
                 std::to_string(day)+"-"+std::to_string(generation)+"-"+std::to_string(n);
             offer.cargoId=c.cargoId; offer.quantity=c.quantity; offer.originLocationId=origin;
             offer.destinationLocationId=c.destinationLocationId; offer.destinationBodyId=c.destinationBodyId;
-            offer.reward=c.reward; offer.acceptedAt=day*86400; offer.deadline=offer.acceptedAt+7*86400;
+            offer.reward=c.reward; offer.acceptedAt=day*86400; offer.deadline=offer.acceptedAt+(c.allowanceSeconds>0?c.allowanceSeconds:604800);
             next.offers.push_back(offer);
         }
     }
