@@ -1024,6 +1024,21 @@ private:
             oapiWriteLog((char*)"OEM Economy: cargo_catalog.cfg missing; market trading remains unavailable until explicitly configured.");
         }
 
+        // Recovery must start from the opening inventory of every registered
+        // cargo service. Loading only the currently encountered location makes
+        // valid older journal entries fail when their service is not yet docked.
+        const std::set<std::string>& registeredServices = cargoServices_.vesselIds();
+        for (std::set<std::string>::const_iterator service = registeredServices.begin();
+             service != registeredServices.end(); ++service) {
+            if (!ensureCargoServiceInventory(*service)) {
+                char message[512];
+                sprintf(message, "OEM Economy: could not load opening inventory for registered service=%s.",
+                        service->c_str());
+                oapiWriteLog(message);
+                return false;
+            }
+        }
+
         std::map<std::string, oem::CargoManifest> openingManifests;
         const oem::Result recovered = economyJournalStore_.load(
             economyJournalPath_, openingCatalog, openingLedger,
