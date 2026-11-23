@@ -7,7 +7,7 @@ PropellantResourceChange::PropellantResourceChange()
     : resourceIndex(0), capacityKg(0.0), beforeMassKg(0.0), afterMassKg(0.0) {}
 
 PropellantTransaction::PropellantTransaction()
-    : operationId(), vesselId(), quote(), state(PROPELLANT_TX_PREPARED), resources() {}
+    : operationId(), vesselId(), quote(), simulationTime(0), state(PROPELLANT_TX_PREPARED), resources() {}
 
 namespace {
 bool near(double a, double b) {
@@ -19,7 +19,8 @@ bool near(double a, double b) {
 Result createPreparedPropellantTransaction(
     const std::string& operationId, const std::string& vesselId,
     const std::vector<PropellantResourceState>& before,
-    const PropellantQuote& quote, PropellantTransaction& transaction) {
+    const PropellantQuote& quote, PropellantTransaction& transaction,
+    SimulationSeconds simulationTime) {
     if (operationId.empty() || vesselId.empty() || quote.quoteId.empty() ||
         quote.totalCostCredits <= 0 || quote.fillPlan.targetMassKg.size() != before.size() ||
         before.empty())
@@ -56,6 +57,7 @@ Result createPreparedPropellantTransaction(
     candidate.operationId = operationId;
     candidate.vesselId = vesselId;
     candidate.quote = quote;
+    candidate.simulationTime = simulationTime;
     candidate.state = PROPELLANT_TX_PREPARED;
     for (std::size_t i = 0; i < before.size(); ++i) {
         const double target = quote.fillPlan.targetMassKg[i];
