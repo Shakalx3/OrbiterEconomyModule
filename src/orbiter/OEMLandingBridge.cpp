@@ -371,6 +371,157 @@ public:
         return oem::Result::success();
     }
 
+    oem::Result performPropellantPurchase(const std::string& vesselId, bool fillAll) {
+        if (!economyReady_ || !propellantRecoveryReady_ || economyJournalPath_.empty() ||
+            propellantTransactionJournalPath_.empty())
+            return oem::Result::failure("PROPELLANT_UNAVAILABLE",
+                "Economy or propellant transaction recovery is not ready.");
+        if (currentSimulationTime_ <= 0 || !isFocusedVessel(vesselId))
+            return oem::Result::failure("PROPELLANT_FOCUS",
+                "Wait for simulation time to advance and keep the purchasing vessel focused.");
+
+        oem::PropellantPriceContext context;
+        std::string locationName;
+        oem::Result result = resolvePropellantContext(vesselId, context, locationName);
+        if (!result.ok) return result;
+        double unitPrice = 0.0;
+        result = resolvePropellantUnitPrice(context, unitPrice);
+        if (!result.ok) return result;
+
+        VESSEL* vessel = oapiGetVesselInterface(oapiGetFocusObject());
+        if (!vessel) return oem::Result::failure("PROPELLANT_VESSEL", "Could not access the focused vessel.");
+        std::vector<oem::PropellantResourceState> before;
+        result = readPropellantSnapshot(vesselId, before);
+        if (!result.ok) return result;
+        oem::PropellantTotals totals;
+        result = oem::inspectPropellantResources(before, totals);
+        if (!result.ok) return result;
+        if (!(totals.freeCapacityKg > 1.0e-9))
+            return oem::Result::failure("PROPELLANT_TANKS_FULL", "All propellant resources are already full.");
+
+        const double requested = fillAll || totals.freeCapacityKg < 100.0
+            ? totals.freeCapacityKg : 100.0;
+        oem::Credits balance = 0;
+        if (!ledger_.getBalance("company", balance))
+            return oem::Result::failure("PROPELLANT_ACCOUNT", "Company account is not configured.");
+        FILETIME fileTime;
+        GetSystemTimeAsFileTime(&fileTime);
+        const unsigned __int64 stamp =
+            (static_cast<unsigned __int64>(fileTime.dwHighDateTime) << 32) |
+            static_cast<unsigned __int64>(fileTime.dwLowDateTime);
+        char operation[256];
+        sprintf(operation, "REFUEL-%s-%I64u-%lu", vesselId.c_str(), stamp,
+            ++propellantOperationSequence_);
+        const std::string operationId(operation);
+        oem::PropellantQuote quote;
+        char quoteId[288];
+        sprintf(quoteId, "QUOTE-%s", operation);
+        result = oem::createPropellantQuote(before, quoteId, context,
+            requested, unitPrice, balance, quote);
+        if (!result.ok) return result;
+
+        oem::PropellantTransaction transaction;
+        result = oem::createPreparedPropellantTransaction(operationId, vesselId,
+            before, quote, transaction, currentSimulationTime_);
+        if (!result.ok) return result;
+        result = propellantTransactionJournal_.prepare(
+            propellantTransactionJournalPath_, transaction);
+        if (!result.ok) return result;
+
+        std::vector<oem::PropellantResourceState> immediate;
+        result = readPropellantSnapshot(vesselId, immediate);
+        if (!result.ok || oem::classifyPropellantRecovery(transaction, immediate,
+                std::vector<double>()) != oem::PROPELLANT_RECOVERY_ABORT_UNCHANGED) {
+            propellantRecoveryReady_ = false;
+            return oem::Result::failure("PROPELLANT_SNAPSHOT_CHANGED",
+                "Tank state changed after PREPARED was recorded; automatic refuelling is stopped for recovery.");
+        }
+
+        const DWORD count = vessel->GetPropellantCount();
+        if (count != before.size()) {
+            propellantRecoveryReady_ = false;
+            return oem::Result::failure("PROPELLANT_RESOURCE_CHANGED",
+                "Propellant resource count changed after PREPARED was recorded.");
+        }
+        for (DWORD i = 0; i < count; ++i) {
+            PROPELLANT_HANDLE resource = vessel->GetPropellantHandleByIndex(i);
+            if (!resource) {
+                propellantRecoveryReady_ = false;
+                return oem::Result::failure("PROPELLANT_INVALID_HANDLE",
+                    "Orbiter returned an invalid resource handle during refuelling.");
+            }
+            vessel->SetPropellantMass(resource, quote.fillPlan.targetMassKg[i]);
+        }
+
+        std::vector<oem::PropellantResourceState> after;
+        result = readPropellantSnapshot(vesselId, after);
+        std::vector<double> rollback;
+        const oem::PropellantRecoveryAction action = result.ok
+            ? oem::classifyPropellantRecovery(transaction, after, rollback)
+            : oem::PROPELLANT_RECOVERY_CONFLICT;
+        if (action == oem::PROPELLANT_RECOVERY_FINALIZE_CHARGE) {
+            result = economyJournalStore_.chargePropellant(economyJournalPath_,
+                operationId, "company", quote.totalCostCredits,
+                currentSimulationTime_, ledger_);
+            if (!result.ok) {
+                propellantRecoveryReady_ = false;
+                return oem::Result::failure("PROPELLANT_CHARGE_PENDING",
+                    "Physical fill is complete, but its durable charge is pending recovery.");
+            }
+            result = propellantTransactionJournal_.setTerminalState(
+                propellantTransactionJournalPath_, operationId, oem::PROPELLANT_TX_COMMITTED);
+            if (!result.ok) {
+                propellantRecoveryReady_ = false;
+                return oem::Result::failure("PROPELLANT_COMMIT_PENDING",
+                    "Fuel and payment are committed; the transaction terminal marker will be recovered on restart.");
+            }
+            char log[512];
+            sprintf(log, "OEM REFUEL COMMITTED: vessel=%s location=%s body=%s mass=%.3f kg cost=%lld cr",
+                vesselId.c_str(), locationName.c_str(), context.celestialBody.c_str(),
+                requested, (long long)quote.totalCostCredits);
+            oapiWriteLog(log);
+            return oem::Result::success();
+        }
+
+        if (action == oem::PROPELLANT_RECOVERY_ROLLBACK_PARTIAL) {
+            for (DWORD i = 0; i < count; ++i) {
+                PROPELLANT_HANDLE resource = vessel->GetPropellantHandleByIndex(i);
+                if (!resource || i >= rollback.size()) {
+                    propellantRecoveryReady_ = false;
+                    return oem::Result::failure("PROPELLANT_ROLLBACK_FAILED",
+                        "Partial fill could not be safely rolled back.");
+                }
+                vessel->SetPropellantMass(resource, rollback[i]);
+            }
+            std::vector<oem::PropellantResourceState> restored;
+            result = readPropellantSnapshot(vesselId, restored);
+            if (!result.ok || oem::classifyPropellantRecovery(transaction, restored,
+                    rollback) != oem::PROPELLANT_RECOVERY_ABORT_UNCHANGED) {
+                propellantRecoveryReady_ = false;
+                return oem::Result::failure("PROPELLANT_ROLLBACK_FAILED",
+                    "Rollback verification failed; transaction remains PREPARED.");
+            }
+            result = propellantTransactionJournal_.setTerminalState(
+                propellantTransactionJournalPath_, operationId, oem::PROPELLANT_TX_ABORTED);
+            if (!result.ok) {
+                propellantRecoveryReady_ = false;
+                return result;
+            }
+            return oem::Result::failure("PROPELLANT_WRITE_PARTIAL",
+                "Partial resource write was rolled back; no charge was made.");
+        }
+        if (action == oem::PROPELLANT_RECOVERY_ABORT_UNCHANGED) {
+            result = propellantTransactionJournal_.setTerminalState(
+                propellantTransactionJournalPath_, operationId, oem::PROPELLANT_TX_ABORTED);
+            if (!result.ok) propellantRecoveryReady_ = false;
+            return oem::Result::failure("PROPELLANT_WRITE_UNCHANGED",
+                "Orbiter did not apply the requested fuel change; no charge was made.");
+        }
+        propellantRecoveryReady_ = false;
+        return oem::Result::failure("PROPELLANT_WRITE_CONFLICT",
+            "Orbiter resource values do not match the prepared transaction; no automatic correction was attempted.");
+    }
+
     const oem::CargoCatalog* marketCatalog() const {
         return economyReady_ ? &cargoCatalog_ : 0;
     }
