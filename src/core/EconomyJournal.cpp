@@ -21,7 +21,7 @@ std::vector<std::string> split(const std::string&s){std::vector<std::string>v;st
 bool num(const std::string&s,long long&v){if(s.empty())return false;char*e=0;long long n=std::strtoll(s.c_str(),&e,10);if(!e||*e)return false;v=n;return true;}
 bool dbl(const std::string&s,double&v){if(s.empty())return false;std::istringstream in(s);in.imbue(std::locale::classic());double n=0.0;in>>n;if(!in||in.peek()!=std::char_traits<char>::eof()||!std::isfinite(n))return false;v=n;return true;}
 const char* kHeader="OEM_ECONOMY_JOURNAL|1";
-struct Entry{char type;std::string op,buyer,station,vessel,cargo;int side;long long qty;Credits unit,total;SimulationSeconds time;CargoTransfer transfer;};
+struct Entry{char type;std::string op,buyer,station,vessel,cargo;int side;long long qty;Credits unit,total;SimulationSeconds time;CargoTransfer transfer;DeliveryContract contract;std::string eventId,account;};
 std::string encodeX(const CargoTransfer&t){std::ostringstream o;o.imbue(std::locale::classic());o<<"X|"<<hx(t.transferId)<<'|'<<(int)t.direction<<'|'<<hx(t.vesselId)<<'|'<<hx(t.locationId)<<'|'<<hx(t.cargoId)<<'|'<<t.quantity<<'|'<<std::setprecision(17)<<t.unitMassKg<<'|'<<t.simulationTime<<'\n';return o.str();}
 std::string encodeT(const Entry&r){std::ostringstream o;o<<"T|"<<hx(r.op)<<'|'<<hx(r.buyer)<<'|'<<hx(r.station)<<'|'<<hx(r.vessel)<<'|'<<hx(r.cargo)<<'|'<<r.side<<'|'<<r.qty<<'|'<<r.unit<<'|'<<r.total<<'|'<<r.time<<'\n';return o.str();}
 bool decode(const std::string&s,Entry&r){std::vector<std::string>f=split(s);long long a=0,b=0,c=0,d=0,e=0;
