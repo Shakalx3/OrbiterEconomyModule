@@ -2630,6 +2630,11 @@ DLLCLBK void InitModule(HINSTANCE hDLL) {
     spec.key = OAPI_KEY_P;
     spec.msgproc = OEMPropellantMonitorMFD::MsgProc;
     g_propellantMonitorMode = oapiRegisterMFDMode(spec);
+
+    spec.name = "OEM Refuelling";
+    spec.key = OAPI_KEY_U;
+    spec.msgproc = OEMPropellantRefuelMFD::MsgProc;
+    g_propellantRefuelMode = oapiRegisterMFDMode(spec);
 }
 
 DLLCLBK void ExitModule(HINSTANCE hDLL) {
@@ -2640,6 +2645,7 @@ DLLCLBK void ExitModule(HINSTANCE hDLL) {
     if (g_deliveryContractsMode >= 0) oapiUnregisterMFDMode(g_deliveryContractsMode);
     if (g_economicAdminMode >= 0) oapiUnregisterMFDMode(g_economicAdminMode);
     if (g_propellantMonitorMode >= 0) oapiUnregisterMFDMode(g_propellantMonitorMode);
+    if (g_propellantRefuelMode >= 0) oapiUnregisterMFDMode(g_propellantRefuelMode);
     g_flightLogMode = -1;
     g_cargoManifestMode = -1;
     g_cargoExchangeTestMode = -1;
@@ -2647,6 +2653,7 @@ DLLCLBK void ExitModule(HINSTANCE hDLL) {
     g_deliveryContractsMode = -1;
     g_economicAdminMode = -1;
     g_propellantMonitorMode = -1;
+    g_propellantRefuelMode = -1;
     g_bridge = 0;
     // Orbiter owns and destroys registered oapi::Module instances.
 }
