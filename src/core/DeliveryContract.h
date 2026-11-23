@@ -27,6 +27,10 @@ struct DeliveryContract {
     std::string destinationLocationId;
     // Optional celestial-body constraint for planetary destination evidence.
     std::string destinationBodyId;
+    // Procedural, immutable mission presentation metadata.
+    std::string missionType;
+    std::string missionTitle;
+    std::string missionBriefing;
     Credits reward;
     SimulationSeconds acceptedAt;
     SimulationSeconds deadline;
