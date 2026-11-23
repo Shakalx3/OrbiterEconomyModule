@@ -49,7 +49,7 @@ int main() {
     twoTanks.push_back(oem::PropellantResourceState(5.0, 25.0));
     oem::PropellantQuote twoQuote;
     assert(oem::createPropellantQuote(twoTanks, "QUOTE-2", context,
-        80.0, 2.0, 1000, twoQuote).ok);
+        90.0, 2.0, 1000, twoQuote).ok);
     oem::PropellantTransaction twoTx;
     assert(oem::createPreparedPropellantTransaction(
         "REFUEL-OP-2", "TestShip", twoTanks, twoQuote, twoTx).ok);
