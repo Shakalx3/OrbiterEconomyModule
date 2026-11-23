@@ -105,6 +105,53 @@ Result DeliveryContractBook::settle(const std::string& id,
     return Result::success();
 }
 
+Result DeliveryContractBook::restoreCompleted(const std::string& id,
+                                              const std::string& eventId,
+                                              SimulationSeconds completedAt) {
+    std::map<std::string, std::size_t>::iterator it = indexes_.find(id);
+    if (it == indexes_.end())
+        return Result::failure("CONTRACT_NOT_FOUND", "Contract does not exist.");
+    if (eventId.empty() || completedAt < 0)
+        return Result::failure("CONTRACT_COMPLETION_RECORD", "Completion event and non-negative time are required.");
+    DeliveryContract& c = contracts_[it->second];
+    if (c.status == CONTRACT_COMPLETED || c.status == CONTRACT_SETTLED) {
+        if (c.completionEventId == eventId && c.completedAt == completedAt)
+            return Result::success();
+        return Result::failure("CONTRACT_COMPLETION_CONFLICT", "Contract already has different completion evidence.");
+    }
+    if (c.status != CONTRACT_ACCEPTED || completedAt < c.acceptedAt ||
+        (c.deadline > 0 && completedAt > c.deadline))
+        return Result::failure("CONTRACT_COMPLETION_INVALID", "Completion record is inconsistent with contract state or deadline.");
+    c.status = CONTRACT_COMPLETED;
+    c.completionEventId = eventId;
+    c.completedAt = completedAt;
+    return Result::success();
+}
+
+Result DeliveryContractBook::restoreSettled(const std::string& id) {
+    std::map<std::string, std::size_t>::iterator it = indexes_.find(id);
+    if (it == indexes_.end())
+        return Result::failure("CONTRACT_NOT_FOUND", "Contract does not exist.");
+    DeliveryContract& c = contracts_[it->second];
+    if (c.status == CONTRACT_SETTLED) return Result::success();
+    if (c.status != CONTRACT_COMPLETED)
+        return Result::failure("CONTRACT_NOT_COMPLETE", "Only a completed contract can be restored as settled.");
+    c.status = CONTRACT_SETTLED;
+    return Result::success();
+}
+
+Result DeliveryContractBook::restoreExpired(const std::string& id) {
+    std::map<std::string, std::size_t>::iterator it = indexes_.find(id);
+    if (it == indexes_.end())
+        return Result::failure("CONTRACT_NOT_FOUND", "Contract does not exist.");
+    DeliveryContract& c = contracts_[it->second];
+    if (c.status == CONTRACT_EXPIRED) return Result::success();
+    if (c.status != CONTRACT_ACCEPTED)
+        return Result::failure("CONTRACT_STATE", "Only an accepted contract can expire.");
+    c.status = CONTRACT_EXPIRED;
+    return Result::success();
+}
+
 const DeliveryContract* DeliveryContractBook::find(const std::string& id) const {
     std::map<std::string, std::size_t>::const_iterator it = indexes_.find(id);
     return it == indexes_.end() ? 0 : &contracts_[it->second];
