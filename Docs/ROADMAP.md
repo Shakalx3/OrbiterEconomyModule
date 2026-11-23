@@ -79,6 +79,7 @@
 ### Live vessel refuelling — planned
 
 - [ ] Treat all propellant resources on a vessel as one unified OEM fuel commodity, regardless of Orbiter resource type or vessel-specific fuel naming. The player sees one aggregate fuel quantity and one aggregate capacity; no per-engine/per-resource fuel selection or chemical-type distinction is exposed.
+- [x] Add a portable, tested aggregate propellant snapshot validator and deterministic multi-resource fill planner (`PropellantPlan`); it rejects invalid values, missing resources, and over-capacity requests without mutating an existing plan.
 - [ ] Use Orbiter's native propellant API to inspect every live resource: `GetPropellantCount`, `GetPropellantHandleByIndex`, `GetPropellantMass`, and `GetPropellantMaxMass`. Calculate vessel-wide current fuel and maximum capacity by summing the masses/capacities of all valid propellant resources.
 - [ ] Refuel the actual running vessel through `SetPropellantMass` on the underlying resource handles (or `SetFuelMass` where appropriate); distribute the purchased aggregate quantity across available free capacity using a deterministic policy. Never simulate refuelling by changing only CargoManifest, vessel empty mass, or an OEM-only counter.
 - [ ] Offer unified-fuel purchases at registered economic stations and verified planetary spaceports. Docking must be to a registered economic station; surface refuelling requires the existing landed + ground-contact + same-body spaceport verification. Arbitrary nearby or docked vessels must not qualify.
