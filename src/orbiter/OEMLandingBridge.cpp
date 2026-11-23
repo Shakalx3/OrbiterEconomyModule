@@ -35,6 +35,7 @@ int g_flightLogMode = -1;
 int g_cargoManifestMode = -1;
 int g_cargoExchangeTestMode = -1;
 int g_marketMode = -1;
+int g_deliveryContractsMode = -1;
 int g_economicAdminMode = -1;
 
 std::string makeJournalPath(HINSTANCE module) {
@@ -1566,6 +1567,126 @@ private:
     std::string status_;
 };
 
+class OEMDeliveryContractsMFD : public MFD {
+public:
+    OEMDeliveryContractsMFD(DWORD w, DWORD h, VESSEL *vessel)
+        : MFD(w, h, vessel),
+          vesselId_(vessel && vessel->GetName() ? vessel->GetName() : ""),
+          status_("Offers require two registered cargo services.") {}
+
+    void Update(HDC hDC) override {
+        Title(hDC, "OEM DELIVERY CONTRACTS");
+        SelectDefaultFont(hDC, 0);
+        int y = (int)ch + 3;
+        if (!g_bridge) {
+            DrawLine(hDC, y, "OEM bridge unavailable.");
+            return;
+        }
+        oem::DeliveryContract offer;
+        if (g_bridge->currentDeliveryOffer(vesselId_, offer)) {
+            char line[256];
+            DrawLine(hDC, y, "AVAILABLE CARGO DELIVERY");
+            sprintf(line, "CARGO: %.28s x %lld", offer.cargoId.c_str(), offer.quantity);
+            DrawLine(hDC, y, line);
+            sprintf(line, "FROM: %.34s", offer.originLocationId.c_str());
+            DrawLine(hDC, y, line);
+            sprintf(line, "TO:   %.34s", offer.destinationLocationId.c_str());
+            DrawLine(hDC, y, line);
+            sprintf(line, "REWARD: %lld cr  DEADLINE: 7 days", (long long)offer.reward);
+            DrawLine(hDC, y, line);
+            DrawLine(hDC, y, "A: ACCEPT  |  Then BUY cargo at origin");
+        } else {
+            DrawLine(hDC, y, "No offer at this location.");
+            DrawLine(hDC, y, "Need stock here and another registered");
+            DrawLine(hDC, y, "cargo service as destination.");
+        }
+        DrawLine(hDC, y, "------------------------------");
+        DrawLine(hDC, y, "YOUR CONTRACTS");
+        const std::vector<oem::DeliveryContract>& contracts =
+            g_bridge->deliveryContractBook().contracts();
+        int shown = 0;
+        for (std::size_t n = contracts.size(); n > 0 && shown < 5; --n) {
+            const oem::DeliveryContract& c = contracts[n - 1];
+            if (c.vesselId != vesselId_) continue;
+            const char *state = c.status == oem::CONTRACT_ACCEPTED ? "ACTIVE" :
+                c.status == oem::CONTRACT_COMPLETED ? "READY TO PAY" :
+                c.status == oem::CONTRACT_SETTLED ? "PAID" : "EXPIRED";
+            char line[256];
+            sprintf(line, "%.14s %s", c.contractId.c_str(), state);
+            DrawLine(hDC, y, line);
+            sprintf(line, "  %.12s -> %.12s  x%lld",
+                c.originLocationId.c_str(), c.destinationLocationId.c_str(), c.quantity);
+            DrawLine(hDC, y, line);
+            ++shown;
+        }
+        if (shown == 0) DrawLine(hDC, y, "No accepted contracts.");
+        DrawLine(hDC, y, "S: SETTLE COMPLETED CONTRACT");
+        DrawLine(hDC, y, status_.c_str());
+    }
+
+    bool ConsumeKeyBuffered(DWORD key) override {
+        if (!g_bridge) return false;
+        oem::Result result;
+        if (key == OAPI_KEY_A) {
+            result = g_bridge->acceptDeliveryOffer(vesselId_);
+        } else if (key == OAPI_KEY_S) {
+            result = oem::Result::failure("CONTRACT_NOT_COMPLETE", "No completed contract is waiting for payment.");
+            const std::vector<oem::DeliveryContract>& contracts =
+                g_bridge->deliveryContractBook().contracts();
+            for (std::size_t i = 0; i < contracts.size(); ++i) {
+                if (contracts[i].vesselId == vesselId_ &&
+                    contracts[i].status == oem::CONTRACT_COMPLETED) {
+                    result = g_bridge->settleDeliveryContract(contracts[i].contractId);
+                    break;
+                }
+            }
+        } else {
+            return false;
+        }
+        status_ = result.ok ? "Contract journal updated." : result.code + ": " + result.message;
+        return true;
+    }
+
+    bool ConsumeButton(int bt, int event) override {
+        if (!(event & PANEL_MOUSE_LBDOWN)) return false;
+        if (bt == 0) return ConsumeKeyBuffered(OAPI_KEY_A);
+        if (bt == 1) return ConsumeKeyBuffered(OAPI_KEY_S);
+        return false;
+    }
+
+    char *ButtonLabel(int bt) override {
+        static char *labels[2] = { (char*)"ACCEPT", (char*)"PAY" };
+        return bt >= 0 && bt < 2 ? labels[bt] : 0;
+    }
+
+    int ButtonMenu(const MFDBUTTONMENU **menu) const override {
+        static const MFDBUTTONMENU items[2] = {
+            { "Accept the current delivery offer", 0, 'A' },
+            { "Settle the first completed contract", 0, 'S' }
+        };
+        if (menu) *menu = items;
+        return 2;
+    }
+
+    static int MsgProc(UINT msg, UINT mfd, WPARAM wparam, LPARAM lparam) {
+        if (msg == OAPI_MSG_MFD_OPENEDEX && g_bridge) {
+            MFDMODEOPENSPEC *spec = (MFDMODEOPENSPEC*)wparam;
+            return (int)(new OEMDeliveryContractsMFD(
+                spec->w, spec->h, (VESSEL*)lparam));
+        }
+        return 0;
+    }
+
+private:
+    void DrawLine(HDC hDC, int &y, const char *text) {
+        TextOutA(hDC, 4, y, text, (int)strlen(text));
+        y += (int)ch;
+    }
+
+    std::string vesselId_;
+    std::string status_;
+};
+
 class OEMCargoExchangeTestMFD : public MFD {
 public:
     OEMCargoExchangeTestMFD(DWORD w, DWORD h, VESSEL *vessel)
@@ -1795,6 +1916,11 @@ DLLCLBK void InitModule(HINSTANCE hDLL) {
     spec.msgproc = OEMMarketMFD::MsgProc;
     g_marketMode = oapiRegisterMFDMode(spec);
 
+    spec.name = "OEM Delivery Contracts";
+    spec.key = OAPI_KEY_D;
+    spec.msgproc = OEMDeliveryContractsMFD::MsgProc;
+    g_deliveryContractsMode = oapiRegisterMFDMode(spec);
+
     spec.name = "OEM Economic Admin";
     spec.key = OAPI_KEY_A;
     spec.msgproc = OEMEconomicAdminMFD::MsgProc;
@@ -1806,11 +1932,13 @@ DLLCLBK void ExitModule(HINSTANCE hDLL) {
     if (g_cargoManifestMode >= 0) oapiUnregisterMFDMode(g_cargoManifestMode);
     if (g_cargoExchangeTestMode >= 0) oapiUnregisterMFDMode(g_cargoExchangeTestMode);
     if (g_marketMode >= 0) oapiUnregisterMFDMode(g_marketMode);
+    if (g_deliveryContractsMode >= 0) oapiUnregisterMFDMode(g_deliveryContractsMode);
     if (g_economicAdminMode >= 0) oapiUnregisterMFDMode(g_economicAdminMode);
     g_flightLogMode = -1;
     g_cargoManifestMode = -1;
     g_cargoExchangeTestMode = -1;
     g_marketMode = -1;
+    g_deliveryContractsMode = -1;
     g_economicAdminMode = -1;
     g_bridge = 0;
     // Orbiter owns and destroys registered oapi::Module instances.
