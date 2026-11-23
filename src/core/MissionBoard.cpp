@@ -1,6 +1,10 @@
 #include "MissionBoard.h"
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 #include <fstream>
 #include <sstream>
 #include <set>
@@ -89,8 +93,8 @@ Result MissionBoardStore::generate(const std::string& origin,long long day,unsig
             if(best==eligible.size())break;
             used.insert(best);
             const MissionCandidate& c=eligible[best];
-            DeliveryContract offer; offer.contractId="OEMMISSION-"+std::to_string(day)+"-"+
-                std::to_string(generation)+"-"+std::to_string(n);
+            DeliveryContract offer; offer.contractId="OEMMISSION-"+std::to_string(score(origin))+"-"+
+                std::to_string(day)+"-"+std::to_string(generation)+"-"+std::to_string(n);
             offer.cargoId=c.cargoId; offer.quantity=c.quantity; offer.originLocationId=origin;
             offer.destinationLocationId=c.destinationLocationId; offer.destinationBodyId=c.destinationBodyId;
             offer.reward=c.reward; offer.acceptedAt=day*86400; offer.deadline=offer.acceptedAt+7*86400;
@@ -109,8 +113,13 @@ Result MissionBoardStore::save(const std::string& path,const std::map<std::strin
     for(std::map<std::string,MissionBoard>::const_iterator it=boards.begin();it!=boards.end();++it)
         if(!writeBoard(out,it->second)){out.close();std::remove(temp.c_str());return Result::failure("MISSION_BOARD_WRITE","Could not write mission board record.");}
     out.close(); if(!out){std::remove(temp.c_str());return Result::failure("MISSION_BOARD_WRITE","Could not finish mission board file.");}
-    std::remove(path.c_str());
-    if(std::rename(temp.c_str(),path.c_str())!=0){std::remove(temp.c_str());return Result::failure("MISSION_BOARD_RENAME","Could not replace mission board file.");}
+#ifdef _WIN32
+    if(!MoveFileExA(temp.c_str(),path.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){
+        std::remove(temp.c_str());return Result::failure("MISSION_BOARD_RENAME","Could not atomically replace mission board file.");
+    }
+#else
+    if(std::rename(temp.c_str(),path.c_str())!=0){std::remove(temp.c_str());return Result::failure("MISSION_BOARD_RENAME","Could not atomically replace mission board file.");}
+#endif
     return Result::success();
 }
 
