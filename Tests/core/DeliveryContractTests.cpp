@@ -72,5 +72,25 @@ int main() {
     assert(unloadManifest.load(transfer("load",oem::CARGO_LOAD,"ISS",3,150)).ok);
     assert(unloadManifest.unload(transfer("unload",oem::CARGO_UNLOAD,"ISS",3,190)).ok);
     assert(!unloadBook.observe(e,unloadManifest).ok); // cargo not aboard at event time
+    oem::DeliveryContractBook replayBook;
+    oem::DeliveryContract replay=contract();
+    replay.contractId="replay-contract";
+    assert(replayBook.accept(replay).ok);
+    assert(replayBook.restoreCompleted("replay-contract","persisted-arrival",300).ok);
+    assert(replayBook.restoreCompleted("replay-contract","persisted-arrival",300).ok);
+    assert(!replayBook.restoreCompleted("replay-contract","different-arrival",300).ok);
+    assert(replayBook.restoreSettled("replay-contract").ok);
+    assert(replayBook.restoreSettled("replay-contract").ok);
+    assert(replayBook.find("replay-contract")->status==oem::CONTRACT_SETTLED);
+
+    oem::DeliveryContractBook clockBook;
+    oem::DeliveryContract clockContract=contract();
+    clockContract.contractId="clock-expiry";
+    assert(clockBook.accept(clockContract).ok);
+    assert(clockBook.expireDue(1000).empty());
+    const std::vector<std::string> expiredIds=clockBook.expireDue(1001);
+    assert(expiredIds.size()==1&&expiredIds[0]=="clock-expiry");
+    assert(clockBook.expireDue(2000).empty());
+    assert(clockBook.find("clock-expiry")->status==oem::CONTRACT_EXPIRED);
     return 0;
 }
