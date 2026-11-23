@@ -60,6 +60,8 @@ on:
       - "src/core/DeliveryContract.cpp"
       - "src/core/MissionBoard.h"
       - "src/core/MissionBoard.cpp"
+      - "src/core/MissionEconomics.h"
+      - "src/core/MissionEconomics.cpp"
       - "OEMData/cargo_services.cfg"
       - "OEMData/cargo_stock_495353.cfg"
       - "OEMData/accounts.cfg"
