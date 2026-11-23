@@ -1,5 +1,6 @@
 #include "PropellantTransactionJournal.h"
 #include <cmath>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -112,7 +113,7 @@ Result PropellantTransactionJournal::load(const std::string& path,
 Result PropellantTransactionJournal::prepare(const std::string& path,const PropellantTransaction& t) const {
     if(t.state!=PROPELLANT_TX_PREPARED||t.operationId.empty())return Result::failure("PROPELLANT_TX_PREPARE","Only a valid PREPARED transaction can be persisted.");
     std::map<std::string,PropellantTransaction> all;Result r=load(path,all);
-    if(!r.ok&&r.code!="PROPELLANT_TX_HEADER")return r;
+    if(!r.ok)return r;
     std::map<std::string,PropellantTransaction>::const_iterator it=all.find(t.operationId);
     if(it!=all.end())return sameImmutable(it->second,t)?Result::success():Result::failure("PROPELLANT_TX_CONFLICT","Operation ID already exists with different transaction data.");
     std::ifstream check(path.c_str(),std::ios::binary);bool exists=(bool)check;
