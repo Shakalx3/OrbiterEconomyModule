@@ -102,6 +102,27 @@ int main(){
  assert(contractRecoveredLedger.getBalance("company",balance)&&balance==1250);
  assert(recoveredContractManifests["GL-01"].quantity("oxygen")==0);
  assert(recoveredContractStocks["MARS"].quantity("oxygen")==6);
+ // Propellant charges share the global journal and replay exactly once.
+ const std::string propellantPath="OEMPropellantEconomyJournalTests.journal";std::remove(propellantPath.c_str());
+ oem::Ledger fuelLedger;assert(fuelLedger.createAccount("company",1000).ok);
+ assert(store.chargePropellant(propellantPath,"fill-001","company",100,77,fuelLedger).ok);
+ assert(fuelLedger.getBalance("company",balance)&&balance==900);
+ assert(store.chargePropellant(propellantPath,"fill-001","company",100,77,fuelLedger).ok);
+ assert(fuelLedger.getBalance("company",balance)&&balance==900);
+ oem::Ledger fuelRecovered;assert(fuelRecovered.createAccount("company",1000).ok);
+ std::map<std::string,oem::CargoServiceInventory> noStocks;
+ std::map<std::string,oem::CargoManifest> noManifests;
+ assert(store.load(propellantPath,cat,fuelRecovered,noStocks,noManifests).ok);
+ assert(fuelRecovered.getBalance("company",balance)&&balance==900);
+ assert(store.load(propellantPath,cat,fuelRecovered,noStocks,noManifests).ok);
+ assert(fuelRecovered.getBalance("company",balance)&&balance==900);
+ const std::string insufficientPath="OEMPropellantInsufficientTests.journal";std::remove(insufficientPath.c_str());
+ oem::Ledger poorLedger;assert(poorLedger.createAccount("company",50).ok);
+ assert(!store.chargePropellant(insufficientPath,"fill-poor","company",100,78,poorLedger).ok);
+ assert(poorLedger.getBalance("company",balance)&&balance==50);
+ {std::ifstream absent(insufficientPath.c_str(),std::ios::binary);assert(!absent.good());}
+ std::remove(insufficientPath.c_str());
+ std::remove(propellantPath.c_str());
  std::remove(contractPath.c_str());
  std::remove(path.c_str());return 0;
 }
