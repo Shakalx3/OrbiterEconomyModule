@@ -14,6 +14,7 @@ namespace oem {
 namespace {
 const char* kHeader = "OEM_MISSION_BOARDS|1";
 std::string hex(const std::string& value) {
+    if(value.empty()) return "-";
     static const char digits[] = "0123456789ABCDEF";
     std::string out;
     for (std::size_t i=0;i<value.size();++i) {
@@ -23,6 +24,7 @@ std::string hex(const std::string& value) {
     return out;
 }
 bool unhex(const std::string& value, std::string& out) {
+    if(value=="-"){out.clear();return true;}
     if (value.size()%2) return false;
     out.clear();
     for (std::size_t i=0;i<value.size();i+=2) {
