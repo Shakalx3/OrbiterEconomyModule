@@ -948,7 +948,7 @@ private:
             oapiWriteLog((char*)"OEM CONTRACT: could not create completion annotation.");
             return;
         }
-        oapiAnnotationSetPos(completionNote_, 0.28, 0.40, 0.72, 0.60);
+        oapiAnnotationSetPos(completionNote_, 0.42, 0.40, 0.86, 0.60);
         oapiAnnotationSetSize(completionNote_, 1.25);
         oapiAnnotationSetColour(completionNote_, _V(0.25, 1.0, 0.35));
         char buffer[512];
