@@ -35,6 +35,23 @@ Result createPreparedPropellantTransaction(
         return Result::failure("PROPELLANT_TX_PLAN",
             "The quote does not contain a complete fill plan for this resource snapshot.");
 
+    long double plannedDelta = 0.0L;
+    for (std::size_t i = 0; i < before.size(); ++i) {
+        const double target = quote.fillPlan.targetMassKg[i];
+        if (!std::isfinite(target) || target < before[i].currentMassKg ||
+            target > before[i].capacityKg)
+            return Result::failure("PROPELLANT_TX_TARGET",
+                "A planned resource target is outside its captured before/capacity range.");
+        plannedDelta += static_cast<long double>(target) -
+            static_cast<long double>(before[i].currentMassKg);
+    }
+    const long double requested = static_cast<long double>(quote.requestedMassKg);
+    if (!std::isfinite(plannedDelta) ||
+        std::fabs(plannedDelta - requested) >
+            1.0e-9L * (std::fabs(requested) > 1.0L ? std::fabs(requested) : 1.0L))
+        return Result::failure("PROPELLANT_TX_AMOUNT",
+            "The resource targets do not deliver exactly the quoted fuel quantity.");
+
     PropellantTransaction candidate;
     candidate.operationId = operationId;
     candidate.vesselId = vesselId;
@@ -42,10 +59,6 @@ Result createPreparedPropellantTransaction(
     candidate.state = PROPELLANT_TX_PREPARED;
     for (std::size_t i = 0; i < before.size(); ++i) {
         const double target = quote.fillPlan.targetMassKg[i];
-        if (!std::isfinite(target) || target < before[i].currentMassKg ||
-            target > before[i].capacityKg)
-            return Result::failure("PROPELLANT_TX_TARGET",
-                "A planned resource target is outside its captured before/capacity range.");
         PropellantResourceChange change;
         change.resourceIndex = i;
         change.capacityKg = before[i].capacityKg;
