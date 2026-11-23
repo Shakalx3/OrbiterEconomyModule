@@ -30,8 +30,12 @@ std::string encodeS(const std::string&id,const std::string&account,Credits rewar
 std::string encodeF(const std::string&id){std::ostringstream o;o<<"F|"<<hx("contract-expire:"+id)<<'|'<<hx(id)<<'\n';return o.str();}
 bool decode(const std::string&s,Entry&r){std::vector<std::string>f=split(s);long long a=0,b=0,c=0,d=0,e=0;
  if(f.size()==9&&f[0]=="X"){r.type='X';if(!unhx(f[1],r.transfer.transferId)||!num(f[2],a)||(a!=CARGO_LOAD&&a!=CARGO_UNLOAD)||!unhx(f[3],r.transfer.vesselId)||!unhx(f[4],r.transfer.locationId)||!unhx(f[5],r.transfer.cargoId)||!num(f[6],b)||!dbl(f[7],r.transfer.unitMassKg)||!num(f[8],c))return false;r.transfer.direction=(CargoTransferDirection)a;r.transfer.quantity=b;r.transfer.simulationTime=c;return true;}
- if(f.size()!=11||f[0]!="T"||!unhx(f[1],r.op)||!unhx(f[2],r.buyer)||!unhx(f[3],r.station)||!unhx(f[4],r.vessel)||!unhx(f[5],r.cargo)||!num(f[6],a)||!num(f[7],b)||!num(f[8],c)||!num(f[9],d)||!num(f[10],e)||(a!=MARKET_BUY_FROM_STATION&&a!=MARKET_SELL_TO_STATION))return false;
- r.type='T';r.side=(int)a;r.qty=b;r.unit=c;r.total=d;r.time=e;return true;}
+ if(f.size()==11&&f[0]=="T"&&unhx(f[1],r.op)&&unhx(f[2],r.buyer)&&unhx(f[3],r.station)&&unhx(f[4],r.vessel)&&unhx(f[5],r.cargo)&&num(f[6],a)&&num(f[7],b)&&num(f[8],c)&&num(f[9],d)&&num(f[10],e)&&(a==MARKET_BUY_FROM_STATION||a==MARKET_SELL_TO_STATION)){r.type='T';r.side=(int)a;r.qty=b;r.unit=c;r.total=d;r.time=e;return true;}
+ if(f.size()==11&&f[0]=="A"&&unhx(f[1],r.op)&&unhx(f[2],r.contract.contractId)&&unhx(f[3],r.contract.vesselId)&&unhx(f[4],r.contract.cargoId)&&num(f[5],a)&&unhx(f[6],r.contract.originLocationId)&&unhx(f[7],r.contract.destinationLocationId)&&num(f[8],b)&&num(f[9],c)&&num(f[10],d)){r.type='A';r.contract.quantity=a;r.contract.reward=b;r.contract.acceptedAt=c;r.contract.deadline=d;return true;}
+ if(f.size()==5&&f[0]=="C"&&unhx(f[1],r.op)&&unhx(f[2],r.contract.contractId)&&unhx(f[3],r.eventId)&&num(f[4],a)){r.type='C';r.time=a;return true;}
+ if(f.size()==6&&f[0]=="S"&&unhx(f[1],r.op)&&unhx(f[2],r.contract.contractId)&&unhx(f[3],r.account)&&num(f[4],a)&&num(f[5],b)){r.type='S';r.total=a;r.time=b;return true;}
+ if(f.size()==3&&f[0]=="F"&&unhx(f[1],r.op)&&unhx(f[2],r.contract.contractId)){r.type='F';return true;}
+ return false;}
 std::string opOf(const Entry&r){return r.type=='X'?r.transfer.transferId:r.op;}
 bool readJournal(const std::string&p,bool&exists,std::string&data){std::ifstream in(p.c_str(),std::ios::binary);if(!in){exists=false;data.clear();return true;}exists=true;data.assign(std::istreambuf_iterator<char>(in),std::istreambuf_iterator<char>());if(!in.good()&&!in.eof())return false;if(!data.empty()&&data[data.size()-1]!='\n'){std::string::size_type n=data.find_last_of('\n');std::size_t keep=n==std::string::npos?0:n+1;
 #ifdef _WIN32
