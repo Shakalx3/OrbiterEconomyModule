@@ -12,7 +12,7 @@
 
 namespace oem {
 namespace {
-const char* kHeader = "OEM_MISSION_BOARDS|1";
+const char* kHeader = "OEM_MISSION_BOARDS|2";
 std::string hex(const std::string& value) {
     if(value.empty()) return "-";
     static const char digits[] = "0123456789ABCDEF";
@@ -66,12 +66,12 @@ bool writeBoard(std::ostream& out, const MissionBoard& b) {
     return (bool)out;
 }
 }
-MissionCandidate::MissionCandidate():cargoId(),destinationLocationId(),destinationBodyId(),quantity(1),reward(0),allowanceSeconds(604800){}
-MissionBoard::MissionBoard():originLocationId(),simulationDay(-1),generation(0),offers(){}
+MissionCandidate::MissionCandidate():cargoId(),destinationLocationId(),destinationBodyId(),destinationCanonicalId(),quantity(1),reward(0),allowanceSeconds(604800){}
+MissionBoard::MissionBoard():originLocationId(),originCanonicalId(),simulationDay(-1),generation(0),offers(){}
 
-Result MissionBoardStore::generate(const std::string& origin,long long day,unsigned long generation,
+Result MissionBoardStore::generate(const std::string& originStorageId,const std::string& originCanonicalId,\n        long long day,unsigned long generation,
         const std::string& seed,const std::vector<MissionCandidate>& candidates,MissionBoard& board) const {
-    if(origin.empty()||day<0||seed.empty())
+    if(originStorageId.empty()||originCanonicalId.empty()||day<0||seed.empty())
         return Result::failure("MISSION_BOARD_IDENTITY","Origin, non-negative simulation day and generator seed are required.");
     std::vector<MissionCandidate> eligible;
     for(std::size_t i=0;i<candidates.size();++i){
@@ -85,7 +85,7 @@ Result MissionBoardStore::generate(const std::string& origin,long long day,unsig
         if(a.cargoId!=b.cargoId)return a.cargoId<b.cargoId;
         return a.quantity<b.quantity;
     });
-    MissionBoard next; next.originLocationId=origin; next.simulationDay=day; next.generation=generation;
+    MissionBoard next; next.originLocationId=originStorageId; next.originCanonicalId=originCanonicalId; next.simulationDay=day; next.generation=generation;
     if(!eligible.empty()){
         const unsigned long roll=score(seed+"|count");
         const std::size_t desired=(std::size_t)(roll%4UL); // zero to three missions; zero is intentional.
@@ -133,18 +133,33 @@ Result MissionBoardStore::save(const std::string& path,const std::map<std::strin
 Result MissionBoardStore::load(const std::string& path,std::map<std::string,MissionBoard>& boards) const {
     std::ifstream in(path.c_str(),std::ios::binary);
     if(!in)return Result::failure("MISSION_BOARD_READ","Could not open mission board file.");
-    std::string line; if(!std::getline(in,line)||line!=kHeader)
+    std::string line; if(!std::getline(in,line))
+        return Result::failure("MISSION_BOARD_HEADER","Mission board header/version is invalid.");
+    const bool versionOne = line == "OEM_MISSION_BOARDS|1";
+    const bool versionTwo = line == kHeader;
+    if(!versionOne && !versionTwo)
         return Result::failure("MISSION_BOARD_HEADER","Mission board header/version is invalid.");
     std::map<std::string,MissionBoard> parsed;
     while(std::getline(in,line)){
         if(!line.empty()&&line[line.size()-1]=='\r')line.erase(line.size()-1);
         if(line.empty())continue;
         std::vector<std::string> f=split(line);
-        if(f.size()!=5||f[0]!="B")return Result::failure("MISSION_BOARD_CORRUPT","Mission board header record is malformed.");
+        if(f[0]!="B" || (versionOne && f.size()!=5) || (versionTwo && f.size()!=6))
+            return Result::failure("MISSION_BOARD_CORRUPT","Mission board header record is malformed.");
         MissionBoard b; long long day=0,generation=0,count=0;
-        if(!unhex(f[1],b.originLocationId)||b.originLocationId.empty()||!number(f[2],day)||day<0||
-           !number(f[3],generation)||generation<0||!number(f[4],count)||count<0||count>3)
-            return Result::failure("MISSION_BOARD_CORRUPT","Mission board metadata is invalid.");
+        if(versionOne) {
+            if(!unhex(f[1],b.originLocationId) || b.originLocationId.empty() ||
+               !number(f[2],day)||day<0||!number(f[3],generation)||generation<0||
+               !number(f[4],count)||count<0||count>3)
+                return Result::failure("MISSION_BOARD_CORRUPT","Legacy mission board metadata is invalid.");
+            b.originCanonicalId="legacy:"+b.originLocationId;
+        } else {
+            if(!unhex(f[1],b.originCanonicalId)||b.originCanonicalId.empty()||
+               !unhex(f[2],b.originLocationId)||b.originLocationId.empty()||
+               !number(f[3],day)||day<0||!number(f[4],generation)||generation<0||
+               !number(f[5],count)||count<0||count>3)
+                return Result::failure("MISSION_BOARD_CORRUPT","Mission board metadata is invalid.");
+        }
         b.simulationDay=day;b.generation=(unsigned long)generation;
         for(long long i=0;i<count;++i){
             if(!std::getline(in,line))return Result::failure("MISSION_BOARD_CORRUPT","Mission board offer is missing.");
@@ -160,7 +175,7 @@ Result MissionBoardStore::load(const std::string& path,std::map<std::string,Miss
             c.quantity=qty;c.reward=reward;c.acceptedAt=accepted;c.deadline=deadline;
             b.offers.push_back(c);
         }
-        if(!parsed.insert(std::make_pair(b.originLocationId,b)).second)
+        if(!parsed.insert(std::make_pair(b.originCanonicalId,b)).second)
             return Result::failure("MISSION_BOARD_DUPLICATE","Mission board contains duplicate origins.");
     }
     if(in.bad())return Result::failure("MISSION_BOARD_READ","Error reading mission board file.");
