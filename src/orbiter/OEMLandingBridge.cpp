@@ -26,6 +26,9 @@
 #include "../core/EconomicLocationRegistry.h"
 #include "../core/EconomicStationRegistry.h"
 #include "../core/PropellantPlan.h"
+#include "../core/PropellantQuote.h"
+#include "../core/PropellantTransaction.h"
+#include "../core/PropellantTransactionJournal.h"
 
 namespace {
 
@@ -137,6 +140,7 @@ public:
           cargoTransferGate_(), cargoManifests_(), cargoManifestLoadAttempted_(),
           cargoStockConfigStore_(), cargoServiceInventories_(), cargoServiceInventoryLoadAttempted_(),
           economyJournalStore_(), contractBook_(), pendingContractOffers_(), contractOfferSequence_(0), economyJournalPath_(makeEconomyDataFilePath(hDLL, "economy.journal")),
+          propellantTransactionJournal_(), propellantTransactionJournalPath_(makeEconomyDataFilePath(hDLL, "propellant_transactions.journal")), propellantRecoveryReady_(false),
           ledgerConfigStore_(), cargoCatalogConfigStore_(), accountsPath_(makeEconomyDataFilePath(hDLL, "accounts.cfg")),
           cargoCatalogPath_(makeEconomyDataFilePath(hDLL, "cargo_catalog.cfg")),
           spaceportRegistryPath_(makeEconomyDataFilePath(hDLL, "spaceports.registry")),
@@ -1369,6 +1373,9 @@ private:
     std::map<std::string, oem::CargoServiceInventory> cargoServiceInventories_;
     std::set<std::string> cargoServiceInventoryLoadAttempted_;
     oem::EconomyJournalStore economyJournalStore_;
+    oem::PropellantTransactionJournal propellantTransactionJournal_;
+    std::string propellantTransactionJournalPath_;
+    bool propellantRecoveryReady_;
     oem::DeliveryContractBook contractBook_;
     std::map<std::string, oem::DeliveryContract> pendingContractOffers_;
     unsigned long contractOfferSequence_;
