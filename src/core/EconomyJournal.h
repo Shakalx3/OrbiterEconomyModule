@@ -31,6 +31,10 @@ public:
     Result settleContract(const std::string& path, DeliveryContractBook& contracts,
                           const std::string& contractId, const std::string& companyAccountId,
                           Ledger& ledger) const;
+    // Durable, idempotent debit for a completed physical propellant fill.
+    Result chargePropellant(const std::string& path, const std::string& operationId,
+                            const std::string& accountId, Credits cost,
+                            SimulationSeconds simulationTime, Ledger& ledger) const;
     Result expireContract(const std::string& path, DeliveryContractBook& contracts,
                           const std::string& contractId) const;
 };
