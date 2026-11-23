@@ -116,13 +116,15 @@
 
 ### Mission generation and contract system — planned
 
+Current route-quote defaults are centralized in `MissionEconomicsConfig`: nominal estimate speed 10 km/s, 1.5 deadline margin, six-hour base allowance, one credit per estimated kilometre, 100-credit minimum reward, 500,000-credit reward cap, and a one-year maximum allowance. These are economic tuning assumptions, not Orbiter flight-performance predictions.
+
 - [x] Replace first-match delivery destination selection with a complete eligible-location pool and a session-seeded pseudo-random choice, so registry/file order does not dictate every route; keep the selected destination stable while its pending offer is displayed.
 - [x] Refresh unaccepted delivery offers once per in-game day; accepted contracts retain their original terms.
 - [ ] Runtime-test destination distribution across several registered planetary bases and orbital stations, confirming that changing the order of `spaceports.registry` does not change the selection bias.
 - [x] Give each base/station a variable local mission board with zero to three offers, generated from eligible cargo stock and reachable registered cargo-service destinations; an empty board is a valid result.
-- [ ] Resolve and validate the exact canonical origin location (including celestial body for planetary bases) before generating each mission, then calculate the origin-to-destination distance using location-appropriate data.
-- [ ] Use a consistent route-distance model: surface distance for compatible same-body surface routes, and an explicit orbital/inter-body route estimate for other combinations; do not treat unrelated coordinates or a straight-line chord as a proven flight path.
-- [ ] Derive each mission's deadline/time allowance and reward from its estimated route distance, with configurable baseline rates, margins, and sensible minimum/maximum bounds; longer routes should generally allow more time and pay more.
+- [x] Resolve and validate the exact canonical origin location (including celestial body for planetary bases) before generating each mission; persist boards under canonical location keys while retaining legacy stock/journal storage IDs, with v1 board-file migration.
+- [x] Use a consistent route-distance model: great-circle surface distance for same-body spaceport routes; Orbiter global endpoint separation as an explicitly typed estimate for station/orbital/inter-body combinations. The latter is a straight-line estimate, never represented as a proven flight path.
+- [x] Derive each mission's deadline/time allowance and reward from its route distance through `MissionEconomicsConfig`, with configurable nominal speed, time margin, base allowance, per-kilometre reward, and minimum/maximum bounds; longer routes generally allow more time and pay more.
 - [x] Persist generated mission-board contents and per-location generation state in `OEMData/mission_boards.dat`; offers remain stable across MFD refresh and scenario reload, and acceptance removes an offer from the shared board. Accepted missions retain their quoted reward/deadline in the economy journal.
 - [ ] Expand the existing delivery-contract prototype into a durable mission system, initially offering standalone missions while keeping the data model extensible to future multi-stage chains and campaigns.
 - [ ] Generate mission offers procedurally from a curated pool of objective definitions and compatible templates; validate every generated offer against actual registered locations, cargo catalogue, available stock, and supported Orbiter observations before publishing it.
