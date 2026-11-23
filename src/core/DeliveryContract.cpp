@@ -152,6 +152,21 @@ Result DeliveryContractBook::restoreSettled(const std::string& id) {
     return Result::success();
 }
 
+Result DeliveryContractBook::cancel(const std::string& id) {
+    std::map<std::string, std::size_t>::iterator it = indexes_.find(id);
+    if (it == indexes_.end()) return Result::failure("CONTRACT_NOT_FOUND", "Contract does not exist.");
+    DeliveryContract& c = contracts_[it->second];
+    if (c.status == CONTRACT_CANCELLED) return Result::success();
+    if (c.status != CONTRACT_ACCEPTED)
+        return Result::failure("CONTRACT_STATE", "Only an active accepted contract can be cancelled.");
+    c.status = CONTRACT_CANCELLED;
+    return Result::success();
+}
+
+Result DeliveryContractBook::restoreCancelled(const std::string& id) {
+    return cancel(id);
+}
+
 Result DeliveryContractBook::restoreExpired(const std::string& id) {
     std::map<std::string, std::size_t>::iterator it = indexes_.find(id);
     if (it == indexes_.end())
