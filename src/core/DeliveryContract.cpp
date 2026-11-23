@@ -20,8 +20,18 @@ Result DeliveryContractBook::accept(const DeliveryContract& c) {
         return Result::failure("CONTRACT_AMOUNT", "Contract quantity and reward must be positive.");
     if (c.acceptedAt < 0 || (c.deadline > 0 && c.deadline < c.acceptedAt))
         return Result::failure("CONTRACT_TIME", "Contract deadline cannot precede acceptance.");
-    if (indexes_.find(c.contractId) != indexes_.end())
-        return Result::failure("CONTRACT_EXISTS", "Contract ID already exists.");
+    std::map<std::string, std::size_t>::const_iterator prior = indexes_.find(c.contractId);
+    if (prior != indexes_.end()) {
+        const DeliveryContract& existing = contracts_[prior->second];
+        const bool same = existing.vesselId == c.vesselId &&
+            existing.cargoId == c.cargoId && existing.quantity == c.quantity &&
+            existing.originLocationId == c.originLocationId &&
+            existing.destinationLocationId == c.destinationLocationId &&
+            existing.reward == c.reward && existing.acceptedAt == c.acceptedAt &&
+            existing.deadline == c.deadline;
+        return same ? Result::success() :
+            Result::failure("CONTRACT_CONFLICT", "Contract ID already belongs to different terms.");
+    }
 
     DeliveryContract stored = c;
     stored.status = CONTRACT_ACCEPTED;
