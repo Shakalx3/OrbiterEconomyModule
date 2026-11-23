@@ -117,6 +117,9 @@ Result MissionBoardStore::generate(const std::string& originStorageId,
             offer.originLocationId=originStorageId;
             offer.destinationLocationId=c.destinationLocationId;
             offer.destinationBodyId=c.destinationBodyId;
+            offer.missionType=c.missionType;
+            offer.missionTitle=c.missionTitle;
+            offer.missionBriefing=c.missionBriefing;
             offer.reward=c.reward;
             offer.acceptedAt=day*86400;
             offer.deadline=offer.acceptedAt+(c.allowanceSeconds>0?c.allowanceSeconds:604800);
@@ -162,8 +165,9 @@ Result MissionBoardStore::load(const std::string& path,
     std::string line;
     if(!std::getline(in,line)) return Result::failure("MISSION_BOARD_HEADER","Mission board header/version is invalid.");
     const bool versionOne=line=="OEM_MISSION_BOARDS|1";
-    const bool versionTwo=line==kHeader;
-    if(!versionOne&&!versionTwo) return Result::failure("MISSION_BOARD_HEADER","Mission board header/version is invalid.");
+    const bool versionTwo=line=="OEM_MISSION_BOARDS|2";
+    const bool versionThree=line==kHeader;
+    if(!versionOne&&!versionTwo&&!versionThree) return Result::failure("MISSION_BOARD_HEADER","Mission board header/version is invalid.");
     std::map<std::string,MissionBoard> parsed;
     while(std::getline(in,line)) {
         if(!line.empty()&&line[line.size()-1]=='\r') line.erase(line.size()-1);
@@ -198,7 +202,7 @@ Result MissionBoardStore::load(const std::string& path,
                c.contractId.empty()||c.cargoId.empty()||c.originLocationId!=b.originLocationId||
                c.destinationLocationId.empty()||c.destinationLocationId==c.originLocationId)
                 return Result::failure("MISSION_BOARD_CORRUPT","Mission board offer is invalid.");
-            if(!versionThree) { c.missionType="DELIVERY"; c.missionTitle="Cargo delivery"; c.missionBriefing="Deliver the contracted cargo to the named destination."; }\n            c.quantity=qty; c.reward=reward; c.acceptedAt=accepted; c.deadline=deadline;
+            if(!versionThree) { c.missionType="DELIVERY"; c.missionTitle="Cargo delivery"; c.missionBriefing="Deliver the contracted cargo to the named destination."; }
             b.offers.push_back(c);
         }
         if(!parsed.insert(std::make_pair(b.originCanonicalId,b)).second)
