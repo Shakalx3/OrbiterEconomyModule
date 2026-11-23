@@ -664,6 +664,18 @@ public:
         return saved;
     }
 
+    oem::Result cancelDeliveryContract(const std::string& contractId, const std::string& vesselId) {
+        if (!economyReady_ || economyJournalPath_.empty())
+            return oem::Result::failure("CONTRACT_ECONOMY_UNAVAILABLE", "Economy journal is unavailable.");
+        if (!isFocusedVessel(vesselId))
+            return oem::Result::failure("CONTRACT_FOCUS", "Cancel the contract from its assigned vessel.");
+        const oem::DeliveryContract *contract = contractBook_.find(contractId);
+        if (!contract) return oem::Result::failure("CONTRACT_NOT_FOUND", "Contract does not exist.");
+        if (contract->vesselId != vesselId)
+            return oem::Result::failure("CONTRACT_VESSEL", "This contract belongs to another vessel.");
+        return economyJournalStore_.cancelContract(economyJournalPath_, contractBook_, contractId);
+    }
+
     oem::Result settleDeliveryContract(const std::string& contractId) {
         if (!economyReady_ || economyJournalPath_.empty())
             return oem::Result::failure("CONTRACT_ECONOMY_UNAVAILABLE", "Economy journal is unavailable.");
@@ -2454,7 +2466,8 @@ public:
             if (c.vesselId != vesselId_) continue;
             const char *state = c.status == oem::CONTRACT_ACCEPTED ? "ACTIVE" :
                 c.status == oem::CONTRACT_COMPLETED ? "PAYMENT PENDING" :
-                c.status == oem::CONTRACT_SETTLED ? "PAID" : "EXPIRED";
+                c.status == oem::CONTRACT_SETTLED ? "PAID" :
+                c.status == oem::CONTRACT_CANCELLED ? "CANCELLED" : "EXPIRED";
             char line[256];
             sprintf(line, "%.14s %s", c.contractId.c_str(), state);
             DrawLine(hDC, y, line);
@@ -2464,6 +2477,7 @@ public:
             ++shown;
         }
         if (shown == 0) DrawLine(hDC, y, "No accepted contracts.");
+        DrawLine(hDC, y, "C: CANCEL LATEST ACTIVE CONTRACT");
         DrawLine(hDC, y, "PAYOUT IS AUTOMATIC ON ARRIVAL");
         DrawLine(hDC, y, status_.c_str());
     }
@@ -2484,6 +2498,17 @@ public:
                     break;
                 }
             }
+        } else if (key == OAPI_KEY_C) {
+            result = oem::Result::failure("CONTRACT_NOT_ACTIVE", "No active contract is available to cancel.");
+            const std::vector<oem::DeliveryContract>& contracts =
+                g_bridge->deliveryContractBook().contracts();
+            for (std::size_t i = contracts.size(); i > 0; --i) {
+                const oem::DeliveryContract& c = contracts[i - 1];
+                if (c.vesselId == vesselId_ && c.status == oem::CONTRACT_ACCEPTED) {
+                    result = g_bridge->cancelDeliveryContract(c.contractId, vesselId_);
+                    break;
+                }
+            }
         } else {
             return false;
         }
@@ -2499,17 +2524,18 @@ public:
     }
 
     char *ButtonLabel(int bt) override {
-        static char *labels[2] = { (char*)"ACCEPT", (char*)"RETRY" };
-        return bt >= 0 && bt < 2 ? labels[bt] : 0;
+        static char *labels[3] = { (char*)"ACCEPT", (char*)"RETRY", (char*)"CANCEL" };
+        return bt >= 0 && bt < 3 ? labels[bt] : 0;
     }
 
     int ButtonMenu(const MFDBUTTONMENU **menu) const override {
-        static const MFDBUTTONMENU items[2] = {
+        static const MFDBUTTONMENU items[3] = {
             { "Accept the current delivery offer", 0, 'A' },
-            { "Retry a pending automatic payout", 0, 'S' }
+            { "Retry a pending automatic payout", 0, 'S' },
+            { "Cancel the latest active contract without penalty", 0, 'C' }
         };
         if (menu) *menu = items;
-        return 2;
+        return 3;
     }
 
     static int MsgProc(UINT msg, UINT mfd, WPARAM wparam, LPARAM lparam) {
