@@ -24,6 +24,8 @@ struct DeliveryContract {
     long long quantity;
     std::string originLocationId;
     std::string destinationLocationId;
+    // Optional celestial-body constraint for planetary destination evidence.
+    std::string destinationBodyId;
     Credits reward;
     SimulationSeconds acceptedAt;
     SimulationSeconds deadline;
