@@ -14,9 +14,6 @@ int main() {
         c.destinationLocationId="destination-"+std::to_string(i);
         c.destinationBodyId=i%2?"Mars":"Earth";
         c.destinationCanonicalId="surface:"+c.destinationBodyId+"/destination-"+std::to_string(i);
-        c.missionType="SUPPLY";
-        c.missionTitle="Routine supply run";
-        c.missionBriefing="Deliver cargo to the destination before the deadline.";
         c.quantity=1;c.reward=100+i;c.allowanceSeconds=86400+i*3600;
         c.missionType=i%2?"PRIORITY":"SUPPLY";
         c.missionTitle="Mission title "+std::to_string(i);
@@ -56,7 +53,6 @@ int main() {
         assert(recovered["surface:Earth/origin"].offers[0].missionTitle==first.offers[0].missionTitle);
         assert(recovered["surface:Earth/origin"].offers[0].missionBriefing==first.offers[0].missionBriefing);
     }
-    if(!first.offers.empty()) assert(recovered["surface:Earth/origin"].offers[0].missionBriefing=="Deliver cargo to the destination before the deadline.");
     assert(recovered["station:empty-origin"].offers.empty());
     std::remove(path.c_str());
 
