@@ -576,7 +576,7 @@ public:
                 originLng, originLat, originRadius);
         if(!originResolved) return false;
         const long long day=(long long)currentSimulationTime_/86400;
-        std::map<std::string,oem::MissionBoard>::iterator existing=missionBoards_.find(origin);
+        std::map<std::string,oem::MissionBoard>::iterator existing=missionBoards_.find(originLocation.canonicalId);
         if(existing!=missionBoards_.end() && existing->second.simulationDay==day) {
             offers=existing->second.offers;
             return !offers.empty();
@@ -595,6 +595,7 @@ public:
                 candidate.cargoId=item.cargoId;
                 candidate.destinationLocationId=destination;
                 candidate.destinationBodyId=locations[d].celestialBody;
+                candidate.destinationCanonicalId=locations[d].canonicalId;
                 candidate.quantity=1;
                 VECTOR3 destinationGlobal = _V(0,0,0);
                 OBJHANDLE destinationBody = 0;
@@ -649,7 +650,7 @@ public:
             sessionId_+"|"+origin+"|"+gen,candidates,generated);
         if(!result.ok) return false;
         std::map<std::string,oem::MissionBoard> updated=missionBoards_;
-        updated[origin]=generated;
+        updated[originLocation.canonicalId]=generated;
         const oem::Result saved=missionBoardStore_.save(missionBoardPath_,updated);
         if(!saved.ok) {
             char message[512]; sprintf(message,"OEM Mission Board: save failed (%s): %s",
@@ -665,7 +666,10 @@ public:
         if(!isFocusedVessel(vesselId))
             return oem::Result::failure("CONTRACT_FOCUS","Accept a mission from its assigned vessel.");
         const std::string origin=currentMarketLocation(vesselId);
-        std::map<std::string,oem::MissionBoard>::iterator board=missionBoards_.find(origin);
+        oem::EconomicLocation originLocation;
+        if(origin.empty() || !resolveCurrentEconomicLocation(vesselId,origin,originLocation))
+            return oem::Result::failure("CONTRACT_ORIGIN","Could not resolve the canonical origin location.");
+        std::map<std::string,oem::MissionBoard>::iterator board=missionBoards_.find(originLocation.canonicalId);
         if(board==missionBoards_.end() || offerIndex>=board->second.offers.size())
             return oem::Result::failure("CONTRACT_OFFER_UNAVAILABLE","Selected mission is no longer on this location's board.");
         oem::DeliveryContract selected=board->second.offers[offerIndex];
