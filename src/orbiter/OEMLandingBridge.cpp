@@ -624,6 +624,30 @@ public:
                 if (!quote.valid) continue;
                 candidate.reward = quote.reward;
                 candidate.allowanceSeconds = quote.allowanceSeconds;
+                const unsigned long flavor = deliveryDestinationScore(
+                    sessionId_+"|"+originLocation.canonicalId+"|"+locations[d].canonicalId+"|"+item.cargoId,
+                    "mission-flavor") % 3UL;
+                if (flavor == 0) {
+                    candidate.missionType = "SUPPLY";
+                    candidate.missionTitle = "Routine supply run";
+                    candidate.missionBriefing = "The local operator requests a routine replenishment of "+item.cargoId+
+                        ". Load the specified cargo here and deliver it to "+destination+".";
+                } else if (flavor == 1) {
+                    candidate.missionType = "PRIORITY";
+                    candidate.missionTitle = "Priority cargo delivery";
+                    candidate.missionBriefing = "A reported shortage has made this shipment a priority. Deliver "+
+                        item.cargoId+" to "+destination+" before the quoted deadline.";
+                } else if (route.kind == oem::MISSION_ROUTE_SURFACE) {
+                    candidate.missionType = "REGIONAL";
+                    candidate.missionTitle = "Regional logistics";
+                    candidate.missionBriefing = "A nearby facility needs "+item.cargoId+
+                        ". Complete this regional surface transfer to "+destination+".";
+                } else {
+                    candidate.missionType = "REMOTE";
+                    candidate.missionTitle = "Long-range logistics";
+                    candidate.missionBriefing = "A remote facility has requested "+item.cargoId+
+                        ". Deliver the shipment to "+destination+"; the route allowance is an estimate, not a flight plan.";
+                }
                 candidates.push_back(candidate);
             }
         }
