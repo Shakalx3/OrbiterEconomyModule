@@ -140,7 +140,7 @@ public:
           cargoTransferGate_(), cargoManifests_(), cargoManifestLoadAttempted_(),
           cargoStockConfigStore_(), cargoServiceInventories_(), cargoServiceInventoryLoadAttempted_(),
           economyJournalStore_(), contractBook_(), pendingContractOffers_(), contractOfferSequence_(0), economyJournalPath_(makeEconomyDataFilePath(hDLL, "economy.journal")),
-          propellantTransactionJournal_(), propellantTransactionJournalPath_(makeEconomyDataFilePath(hDLL, "propellant_transactions.journal")), propellantRecoveryReady_(false),
+          propellantTransactionJournal_(), propellantTransactionJournalPath_(makeEconomyDataFilePath(hDLL, "propellant_transactions.journal")), propellantPricePath_(makeEconomyDataFilePath(hDLL, "propellant_prices.cfg")), propellantRecoveryReady_(false), propellantOperationSequence_(0),
           ledgerConfigStore_(), cargoCatalogConfigStore_(), accountsPath_(makeEconomyDataFilePath(hDLL, "accounts.cfg")),
           cargoCatalogPath_(makeEconomyDataFilePath(hDLL, "cargo_catalog.cfg")),
           spaceportRegistryPath_(makeEconomyDataFilePath(hDLL, "spaceports.registry")),
@@ -1467,7 +1467,9 @@ private:
     oem::EconomyJournalStore economyJournalStore_;
     oem::PropellantTransactionJournal propellantTransactionJournal_;
     std::string propellantTransactionJournalPath_;
+    std::string propellantPricePath_;
     bool propellantRecoveryReady_;
+    unsigned long propellantOperationSequence_;
     oem::DeliveryContractBook contractBook_;
     std::map<std::string, oem::DeliveryContract> pendingContractOffers_;
     unsigned long contractOfferSequence_;
