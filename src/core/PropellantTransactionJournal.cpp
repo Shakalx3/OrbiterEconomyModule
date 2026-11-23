@@ -45,7 +45,7 @@ std::string encode(const PropellantTransaction& t) {
      <<t.quote.totalCostCredits<<'|'<<t.quote.balanceAtQuote<<'|'
      <<t.quote.fillPlan.plannedMassKg<<'|'<<t.resources.size();
     for(std::size_t i=0;i<t.resources.size();++i)o<<'|'<<t.resources[i].capacityKg<<'|'<<t.resources[i].beforeMassKg<<'|'<<t.resources[i].afterMassKg;
-    o<<'\n';return o.str();
+    o<<'|'<<t.simulationTime<<'\n';return o.str();
 }
 bool decode(const std::string& line,PropellantTransaction& t) {
     std::vector<std::string> f=split(line);long long state=0,kind=0,cost=0,balance=0,count=0;
