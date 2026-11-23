@@ -157,7 +157,7 @@ public:
           cargoServices_(), cargoServicesPath_(makeCargoServicesPath(hDLL)),
           cargoTransferGate_(), cargoManifests_(), cargoManifestLoadAttempted_(),
           cargoStockConfigStore_(), cargoServiceInventories_(), cargoServiceInventoryLoadAttempted_(),
-          economyJournalStore_(), contractBook_(), pendingContractOffers_(), contractOfferSequence_(0), economyJournalPath_(makeEconomyDataFilePath(hDLL, "economy.journal")),
+          economyJournalStore_(), contractBook_(), pendingContractOffers_(), contractOfferSequence_(0), contractOfferDay_(-1), economyJournalPath_(makeEconomyDataFilePath(hDLL, "economy.journal")),
           propellantTransactionJournal_(), propellantTransactionJournalPath_(makeEconomyDataFilePath(hDLL, "propellant_transactions.journal")), propellantPricePath_(makeEconomyDataFilePath(hDLL, "propellant_prices.cfg")), propellantRecoveryReady_(false), propellantOperationSequence_(0),
           ledgerConfigStore_(), cargoCatalogConfigStore_(), accountsPath_(makeEconomyDataFilePath(hDLL, "accounts.cfg")),
           cargoCatalogPath_(makeEconomyDataFilePath(hDLL, "cargo_catalog.cfg")),
@@ -553,17 +553,28 @@ public:
         for (std::size_t i = 0; i < accepted.size(); ++i) {
             if (accepted[i].vesselId == vesselId &&
                 accepted[i].status != oem::CONTRACT_SETTLED &&
-                accepted[i].status != oem::CONTRACT_EXPIRED)
+                accepted[i].status != oem::CONTRACT_EXPIRED &&
+                accepted[i].status != oem::CONTRACT_CANCELLED)
                 return false;
+        }
+        // Unaccepted offers are valid only for the current in-game day.
+        // Refresh the complete pending-offer set once when Orbiter crosses midnight.
+        const long long simulationDay = (long long)currentSimulationTime_ / 86400;
+        if (simulationDay != contractOfferDay_) {
+            pendingContractOffers_.clear();
+            contractOfferDay_ = simulationDay;
         }
         std::map<std::string, oem::DeliveryContract>::iterator pending =
             pendingContractOffers_.find(vesselId);
         const std::string origin = currentMarketLocation(vesselId);
         if (origin.empty()) return false;
         if (pending != pendingContractOffers_.end()) {
-            if (pending->second.originLocationId != origin) return false;
-            offer = pending->second;
-            return true;
+            if (pending->second.originLocationId != origin) {
+                pendingContractOffers_.erase(pending);
+            } else {
+                offer = pending->second;
+                return true;
+            }
         }
         if (!ensureCargoServiceInventory(origin)) return false;
         std::map<std::string, oem::CargoServiceInventory>::const_iterator stock =
@@ -1866,6 +1877,7 @@ private:
     oem::DeliveryContractBook contractBook_;
     std::map<std::string, oem::DeliveryContract> pendingContractOffers_;
     unsigned long contractOfferSequence_;
+    long long contractOfferDay_;
     std::string economyJournalPath_;
     oem::LedgerConfigStore ledgerConfigStore_;
     oem::CargoCatalogConfigStore cargoCatalogConfigStore_;
