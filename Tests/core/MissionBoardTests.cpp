@@ -18,6 +18,9 @@ int main() {
         c.missionTitle="Routine supply run";
         c.missionBriefing="Deliver cargo to the destination before the deadline.";
         c.quantity=1;c.reward=100+i;c.allowanceSeconds=86400+i*3600;
+        c.missionType=i%2?"PRIORITY":"SUPPLY";
+        c.missionTitle="Mission title "+std::to_string(i);
+        c.missionBriefing="Briefing text for cargo "+std::to_string(i);
         candidates.push_back(c);
     }
     oem::MissionBoard first,repeat;
@@ -29,6 +32,9 @@ int main() {
         assert(first.offers[i].contractId==repeat.offers[i].contractId);
         assert(first.offers[i].destinationLocationId==repeat.offers[i].destinationLocationId);
         assert(first.offers[i].originLocationId=="origin");
+        assert(first.offers[i].missionType==repeat.offers[i].missionType);
+        assert(!first.offers[i].missionTitle.empty());
+        assert(!first.offers[i].missionBriefing.empty());
         assert(first.offers[i].missionType=="SUPPLY");
         assert(first.offers[i].missionTitle=="Routine supply run");
         assert(first.offers[i].deadline-first.offers[i].acceptedAt>=86400);
@@ -48,6 +54,10 @@ int main() {
     assert(store.load(path,recovered).ok);
     assert(recovered.size()==2);
     assert(recovered["surface:Earth/origin"].offers.size()==first.offers.size());
+    if(!first.offers.empty()) {
+        assert(recovered["surface:Earth/origin"].offers[0].missionTitle==first.offers[0].missionTitle);
+        assert(recovered["surface:Earth/origin"].offers[0].missionBriefing==first.offers[0].missionBriefing);
+    }
     if(!first.offers.empty()) assert(recovered["surface:Earth/origin"].offers[0].missionBriefing=="Deliver cargo to the destination before the deadline.");
     assert(recovered["station:empty-origin"].offers.empty());
     std::remove(path.c_str());
