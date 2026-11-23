@@ -149,6 +149,11 @@ std::string makeCargoServicesPath(HINSTANCE module) {
     return configPath;
 }
 
+
+std::string makeMissionBoardPath(HINSTANCE module) {
+    return makeEconomyDataFilePath(module, "mission_boards.dat");
+}
+
 class OEMLandingBridge : public oapi::Module {
 public:
     explicit OEMLandingBridge(HINSTANCE hDLL)
@@ -157,7 +162,7 @@ public:
           cargoServices_(), cargoServicesPath_(makeCargoServicesPath(hDLL)),
           cargoTransferGate_(), cargoManifests_(), cargoManifestLoadAttempted_(),
           cargoStockConfigStore_(), cargoServiceInventories_(), cargoServiceInventoryLoadAttempted_(),
-          economyJournalStore_(), contractBook_(), pendingContractOffers_(), contractOfferSequence_(0), contractOfferDay_(-1), economyJournalPath_(makeEconomyDataFilePath(hDLL, "economy.journal")),
+          economyJournalStore_(), contractBook_(), pendingContractOffers_(), contractOfferSequence_(0), contractOfferDay_(-1), missionBoardStore_(), missionBoards_(), missionBoardPath_(makeMissionBoardPath(hDLL)), missionBoardsReady_(false), economyJournalPath_(makeEconomyDataFilePath(hDLL, "economy.journal")),
           propellantTransactionJournal_(), propellantTransactionJournalPath_(makeEconomyDataFilePath(hDLL, "propellant_transactions.journal")), propellantPricePath_(makeEconomyDataFilePath(hDLL, "propellant_prices.cfg")), propellantRecoveryReady_(false), propellantOperationSequence_(0),
           ledgerConfigStore_(), cargoCatalogConfigStore_(), accountsPath_(makeEconomyDataFilePath(hDLL, "accounts.cfg")),
           cargoCatalogPath_(makeEconomyDataFilePath(hDLL, "cargo_catalog.cfg")),
@@ -545,134 +550,109 @@ public:
         return contractBook_;
     }
 
-    bool currentDeliveryOffer(const std::string& vesselId, oem::DeliveryContract& offer) {
-        if (!economyReady_ || sessionId_.empty() || currentSimulationTime_ <= 0 ||
-            vesselId.empty() || !isFocusedVessel(vesselId)) return false;
-        const std::vector<oem::DeliveryContract>& accepted =
-            contractBook_.contracts();
-        for (std::size_t i = 0; i < accepted.size(); ++i) {
-            if (accepted[i].vesselId == vesselId &&
-                accepted[i].status != oem::CONTRACT_SETTLED &&
-                accepted[i].status != oem::CONTRACT_EXPIRED &&
-                accepted[i].status != oem::CONTRACT_CANCELLED)
+    bool currentMissionOffers(const std::string& vesselId, std::vector<oem::DeliveryContract>& offers) {
+        offers.clear();
+        if (!economyReady_ || !missionBoardsReady_ || sessionId_.empty() ||
+            currentSimulationTime_ <= 0 || vesselId.empty() || !isFocusedVessel(vesselId))
+            return false;
+        const std::vector<oem::DeliveryContract>& accepted = contractBook_.contracts();
+        for (std::size_t i=0;i<accepted.size();++i) {
+            if (accepted[i].vesselId==vesselId &&
+                accepted[i].status!=oem::CONTRACT_SETTLED &&
+                accepted[i].status!=oem::CONTRACT_EXPIRED &&
+                accepted[i].status!=oem::CONTRACT_CANCELLED)
                 return false;
         }
-        // Unaccepted offers are valid only for the current in-game day.
-        // Refresh the complete pending-offer set once when Orbiter crosses midnight.
-        const long long simulationDay = (long long)currentSimulationTime_ / 86400;
-        if (simulationDay != contractOfferDay_) {
-            pendingContractOffers_.clear();
-            contractOfferDay_ = simulationDay;
+        const std::string origin=currentMarketLocation(vesselId);
+        if(origin.empty() || !ensureCargoServiceInventory(origin)) return false;
+        const long long day=(long long)currentSimulationTime_/86400;
+        std::map<std::string,oem::MissionBoard>::iterator existing=missionBoards_.find(origin);
+        if(existing!=missionBoards_.end() && existing->second.simulationDay==day) {
+            offers=existing->second.offers;
+            return !offers.empty();
         }
-        std::map<std::string, oem::DeliveryContract>::iterator pending =
-            pendingContractOffers_.find(vesselId);
-        const std::string origin = currentMarketLocation(vesselId);
-        if (origin.empty()) return false;
-        if (pending != pendingContractOffers_.end()) {
-            if (pending->second.originLocationId != origin) {
-                pendingContractOffers_.erase(pending);
-            } else {
-                offer = pending->second;
-                return true;
+        std::map<std::string,oem::CargoServiceInventory>::const_iterator stock=cargoServiceInventories_.find(origin);
+        if(stock==cargoServiceInventories_.end()) return false;
+        std::vector<oem::MissionCandidate> candidates;
+        const std::vector<oem::EconomicLocation>& locations=economicLocations_.entries();
+        for(std::size_t d=0;d<locations.size();++d) {
+            const std::string& destination=locations[d].storageId;
+            if(destination==origin || !ensureCargoServiceInventory(destination)) continue;
+            for(std::size_t c=0;c<cargoCatalog_.entries().size();++c) {
+                const oem::CargoDefinition& item=cargoCatalog_.entries()[c];
+                if(stock->second.quantity(item.cargoId)<=0 || item.buyPrice<=0) continue;
+                oem::MissionCandidate candidate;
+                candidate.cargoId=item.cargoId;
+                candidate.destinationLocationId=destination;
+                candidate.destinationBodyId=locations[d].celestialBody;
+                candidate.quantity=1;
+                candidate.reward=item.buyPrice;
+                candidates.push_back(candidate);
             }
         }
-        if (!ensureCargoServiceInventory(origin)) return false;
-        std::map<std::string, oem::CargoServiceInventory>::const_iterator stock =
-            cargoServiceInventories_.find(origin);
-        if (stock == cargoServiceInventories_.end()) return false;
-        std::string destination;
-        std::string destinationBody;
-        std::vector<std::string> destinationIds;
-        std::map<std::string, std::string> destinationBodies;
-        // Build the complete eligible destination pool first. Never let the
-        // order of spaceports.registry decide which location receives every offer.
-        const std::vector<oem::EconomicLocation>& locations = economicLocations_.entries();
-        for (std::size_t i = 0; i < locations.size(); ++i) {
-            const std::string& candidateId = locations[i].storageId;
-            if (candidateId == origin || !ensureCargoServiceInventory(candidateId))
-                continue;
-            destinationIds.push_back(candidateId);
-            destinationBodies[candidateId] = locations[i].celestialBody;
-        }
-        // Preserve support for cargo services not also registered as economic stations.
-        if (destinationIds.empty()) {
-            const std::set<std::string>& services = cargoServices_.vesselIds();
-            for (std::set<std::string>::const_iterator it = services.begin();
-                 it != services.end(); ++it) {
-                if (*it != origin && ensureCargoServiceInventory(*it)) {
-                    destinationIds.push_back(*it);
+        // Legacy cargo-service-only endpoints remain eligible when no registered
+        // economic-location destinations are available.
+        if(candidates.empty()) {
+            const std::set<std::string>& services=cargoServices_.vesselIds();
+            for(std::set<std::string>::const_iterator it=services.begin();it!=services.end();++it) {
+                if(*it==origin || !ensureCargoServiceInventory(*it)) continue;
+                for(std::size_t c=0;c<cargoCatalog_.entries().size();++c) {
+                    const oem::CargoDefinition& item=cargoCatalog_.entries()[c];
+                    if(stock->second.quantity(item.cargoId)<=0 || item.buyPrice<=0) continue;
+                    oem::MissionCandidate candidate;
+                    candidate.cargoId=item.cargoId; candidate.destinationLocationId=*it;
+                    candidate.quantity=1; candidate.reward=item.buyPrice;
+                    candidates.push_back(candidate);
                 }
             }
         }
-        if (destinationIds.empty()) return false;
-
-        // Stable-sort the pool, then choose its pseudo-random winner from a
-        // session/vessel/origin/offer seed. The result is independent of registry
-        // insertion order and remains fixed while this pending offer is displayed.
-        std::sort(destinationIds.begin(), destinationIds.end());
-        const unsigned long offerSequence = ++contractOfferSequence_;
-        char seedSequence[32];
-        sprintf(seedSequence, "%lu", offerSequence);
-        const std::string selectionSeed = sessionId_ + "|" + vesselId + "|" +
-            origin + "|" + seedSequence;
-        unsigned long bestScore = 0;
-        bool haveDestination = false;
-        for (std::size_t i = 0; i < destinationIds.size(); ++i) {
-            const unsigned long score = deliveryDestinationScore(
-                selectionSeed, destinationIds[i]);
-            if (!haveDestination || score < bestScore) {
-                bestScore = score;
-                destination = destinationIds[i];
-                haveDestination = true;
-            }
+        unsigned long generation=existing==missionBoards_.end()?1:existing->second.generation+1;
+        char gen[32]; sprintf(gen,"%lu",generation);
+        oem::MissionBoard generated;
+        const oem::Result result=missionBoardStore_.generate(origin,day,generation,
+            sessionId_+"|"+origin+"|"+gen,candidates,generated);
+        if(!result.ok) return false;
+        std::map<std::string,oem::MissionBoard> updated=missionBoards_;
+        updated[origin]=generated;
+        const oem::Result saved=missionBoardStore_.save(missionBoardPath_,updated);
+        if(!saved.ok) {
+            char message[512]; sprintf(message,"OEM Mission Board: save failed (%s): %s",
+                saved.code.c_str(),saved.message.c_str()); oapiWriteLog(message);
+            return false;
         }
-        if (!destination.empty()) {
-            std::map<std::string, std::string>::const_iterator body =
-                destinationBodies.find(destination);
-            if (body != destinationBodies.end()) destinationBody = body->second;
-        }
-        oem::Credits availableFunds = 0;
-        if (!ledger_.getBalance("company", availableFunds)) return false;
-        const std::vector<oem::CargoDefinition>& items = cargoCatalog_.entries();
-        const oem::CargoDefinition *selected = 0;
-        for (std::size_t i = 0; i < items.size(); ++i) {
-            if (stock->second.quantity(items[i].cargoId) > 0 &&
-                items[i].buyPrice > 0 && items[i].buyPrice <= availableFunds) {
-                selected = &items[i];
-                break;
-            }
-        }
-        if (!selected) return false;
-        oem::DeliveryContract generated;
-        char id[256];
-        sprintf(id, "OEMDELIVERY-%s-%lu", sessionId_.c_str(), offerSequence);
-        generated.contractId = id;
-        generated.vesselId = vesselId;
-        generated.cargoId = selected->cargoId;
-        generated.quantity = 1;
-        generated.originLocationId = origin;
-        generated.destinationLocationId = destination;
-        generated.destinationBodyId = destinationBody;
-        generated.reward = selected->buyPrice > 0 ? selected->buyPrice : 1;
-        generated.acceptedAt = currentSimulationTime_;
-        generated.deadline = currentSimulationTime_ + 7 * 86400;
-        pendingContractOffers_[vesselId] = generated;
-        offer = generated;
-        return true;
+        missionBoards_.swap(updated);
+        offers=generated.offers;
+        return !offers.empty();
     }
 
-    oem::Result acceptDeliveryOffer(const std::string& vesselId) {
-        if (!isFocusedVessel(vesselId))
-            return oem::Result::failure("CONTRACT_FOCUS", "Accept the offer from its assigned vessel.");
-        std::map<std::string, oem::DeliveryContract>::const_iterator it =
-            pendingContractOffers_.find(vesselId);
-        if (it == pendingContractOffers_.end() ||
-            currentMarketLocation(vesselId) != it->second.originLocationId)
-            return oem::Result::failure("CONTRACT_OFFER_UNAVAILABLE", "No delivery offer is available at this location.");
-        const oem::Result saved = economyJournalStore_.acceptContract(
-            economyJournalPath_, contractBook_, it->second);
-        if (saved.ok) pendingContractOffers_.erase(it);
-        return saved;
+    oem::Result acceptDeliveryOffer(const std::string& vesselId, std::size_t offerIndex) {
+        if(!isFocusedVessel(vesselId))
+            return oem::Result::failure("CONTRACT_FOCUS","Accept a mission from its assigned vessel.");
+        const std::string origin=currentMarketLocation(vesselId);
+        std::map<std::string,oem::MissionBoard>::iterator board=missionBoards_.find(origin);
+        if(board==missionBoards_.end() || offerIndex>=board->second.offers.size())
+            return oem::Result::failure("CONTRACT_OFFER_UNAVAILABLE","Selected mission is no longer on this location's board.");
+        oem::DeliveryContract selected=board->second.offers[offerIndex];
+        if(selected.originLocationId!=origin)
+            return oem::Result::failure("CONTRACT_ORIGIN","Selected mission belongs to another location.");
+        selected.vesselId=vesselId;
+        const oem::Result accepted=economyJournalStore_.acceptContract(
+            economyJournalPath_,contractBook_,selected);
+        if(!accepted.ok) return accepted;
+        oem::MissionBoard updated=board->second;
+        updated.offers.erase(updated.offers.begin()+offerIndex);
+        std::map<std::string,oem::MissionBoard> candidate=missionBoards_;
+        candidate[origin]=updated;
+        const oem::Result saved=missionBoardStore_.save(missionBoardPath_,candidate);
+        if(!saved.ok) {
+            // Acceptance is already durable in the economy journal. Keep the
+            // in-memory board consistent and report the persistence issue.
+            board->second=updated;
+            return oem::Result::failure("MISSION_BOARD_SAVE",
+                "Mission accepted, but the remaining board could not be saved; it will be reconciled on restart.");
+        }
+        missionBoards_.swap(candidate);
+        return oem::Result::success();
     }
 
     oem::Result cancelDeliveryContract(const std::string& contractId, const std::string& vesselId) {
@@ -1020,6 +1000,22 @@ public:
         contractBook_ = oem::DeliveryContractBook();
         pendingContractOffers_.clear();
         contractOfferSequence_ = 0;
+        missionBoards_.clear();
+        missionBoardsReady_ = false;
+        if (!missionBoardPath_.empty()) {
+            const DWORD boardAttributes = GetFileAttributesA(missionBoardPath_.c_str());
+            if (boardAttributes == INVALID_FILE_ATTRIBUTES &&
+                (GetLastError() == ERROR_FILE_NOT_FOUND || GetLastError() == ERROR_PATH_NOT_FOUND)) {
+                missionBoardsReady_ = true;
+            } else if (boardAttributes != INVALID_FILE_ATTRIBUTES) {
+                const oem::Result boardLoad = missionBoardStore_.load(missionBoardPath_, missionBoards_);
+                missionBoardsReady_ = boardLoad.ok;
+                if (!boardLoad.ok) {
+                    char boardError[512]; sprintf(boardError, "OEM Mission Board: load failed (%s): %s", boardLoad.code.c_str(), boardLoad.message.c_str());
+                    oapiWriteLog(boardError);
+                }
+            }
+        }
         cargoServiceInventories_.clear();
         cargoServiceInventoryLoadAttempted_.clear();
         ledger_ = oem::Ledger();
@@ -1878,6 +1874,10 @@ private:
     std::map<std::string, oem::DeliveryContract> pendingContractOffers_;
     unsigned long contractOfferSequence_;
     long long contractOfferDay_;
+    oem::MissionBoardStore missionBoardStore_;
+    std::map<std::string, oem::MissionBoard> missionBoards_;
+    std::string missionBoardPath_;
+    bool missionBoardsReady_;
     std::string economyJournalPath_;
     oem::LedgerConfigStore ledgerConfigStore_;
     oem::CargoCatalogConfigStore cargoCatalogConfigStore_;
@@ -2436,7 +2436,7 @@ public:
     OEMDeliveryContractsMFD(DWORD w, DWORD h, VESSEL *vessel)
         : MFD(w, h, vessel),
           vesselId_(vessel && vessel->GetName() ? vessel->GetName() : ""),
-          status_("Offers require two registered economic locations.") {}
+          status_("1/2/3: select mission  A: accept") , selectedOffer_(0) {}
 
     void Update(HDC hDC) override {
         Title(hDC, "OEM DELIVERY CONTRACTS");
@@ -2446,27 +2446,23 @@ public:
             DrawLine(hDC, y, "OEM bridge unavailable.");
             return;
         }
-        oem::DeliveryContract offer;
-        if (g_bridge->currentDeliveryOffer(vesselId_, offer)) {
+        std::vector<oem::DeliveryContract> offers;
+        if (g_bridge->currentMissionOffers(vesselId_, offers)) {
             char line[256];
-            DrawLine(hDC, y, "AVAILABLE CARGO DELIVERY");
-            sprintf(line, "CARGO: %.28s x %lld", offer.cargoId.c_str(), offer.quantity);
-            DrawLine(hDC, y, line);
-            sprintf(line, "FROM: %.34s", offer.originLocationId.c_str());
-            DrawLine(hDC, y, line);
-            if (!offer.destinationBodyId.empty())
-                sprintf(line, "TO:   %.24s (%s)", offer.destinationLocationId.c_str(),
-                        offer.destinationBodyId.c_str());
-            else
-                sprintf(line, "TO:   %.34s", offer.destinationLocationId.c_str());
-            DrawLine(hDC, y, line);
-            sprintf(line, "REWARD: %lld cr  DEADLINE: 7 days", (long long)offer.reward);
-            DrawLine(hDC, y, line);
-            DrawLine(hDC, y, "A: ACCEPT  |  Then BUY cargo at origin");
+            DrawLine(hDC, y, "LOCAL MISSION BOARD");
+            for (std::size_t i=0;i<offers.size() && i<3;++i) {
+                const oem::DeliveryContract& offer=offers[i];
+                sprintf(line,"%lu: %.16s x%lld  %lld cr",
+                    (unsigned long)(i+1),offer.cargoId.c_str(),offer.quantity,(long long)offer.reward);
+                DrawLine(hDC,y,line);
+                sprintf(line,"   TO: %.32s",offer.destinationLocationId.c_str());
+                DrawLine(hDC,y,line);
+            }
+            DrawLine(hDC,y,"1/2/3: SELECT  A: ACCEPT SELECTED");
         } else {
-            DrawLine(hDC, y, "No offer at this location.");
-            DrawLine(hDC, y, "Need stock here and another registered");
-            DrawLine(hDC, y, "station or planetary spaceport.");
+            DrawLine(hDC,y,"NO MISSIONS AVAILABLE HERE");
+            DrawLine(hDC,y,"Board may be empty or stock/location");
+            DrawLine(hDC,y,"requirements are not currently met.");
         }
         DrawLine(hDC, y, "------------------------------");
         DrawLine(hDC, y, "YOUR CONTRACTS");
@@ -2497,8 +2493,12 @@ public:
     bool ConsumeKeyBuffered(DWORD key) override {
         if (!g_bridge) return false;
         oem::Result result;
-        if (key == OAPI_KEY_A) {
-            result = g_bridge->acceptDeliveryOffer(vesselId_);
+        if (key == OAPI_KEY_1 || key == OAPI_KEY_2 || key == OAPI_KEY_3) {
+            selectedOffer_ = key == OAPI_KEY_1 ? 0 : key == OAPI_KEY_2 ? 1 : 2;
+            status_ = "Mission selection changed.";
+            return true;
+        } else if (key == OAPI_KEY_A) {
+            result = g_bridge->acceptDeliveryOffer(vesselId_, selectedOffer_);
         } else if (key == OAPI_KEY_S) {
             result = oem::Result::failure("CONTRACT_NOT_COMPLETE", "No completed contract is waiting for payment.");
             const std::vector<oem::DeliveryContract>& contracts =
@@ -2568,6 +2568,7 @@ private:
 
     std::string vesselId_;
     std::string status_;
+    std::size_t selectedOffer_;
 };
 
 class OEMCargoExchangeTestMFD : public MFD {
