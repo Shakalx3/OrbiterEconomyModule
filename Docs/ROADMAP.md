@@ -96,7 +96,7 @@
 - [x] In-memory idempotent payout through the company ledger.
 - [x] Durable contract acceptance/completion/payout history in the global economy journal; settlement and company payout are committed as one journal record and replay exactly once.
 - [x] Native bridge integration and Delivery Contracts MFD (key D), with offers derived from configured source stock and another registered cargo service.
-- [ ] Runtime-validate delivery and payout recovery after scenario restart in Orbiter 2010.
+- [x] Runtime-validate delivery and payout recovery after scenario restart in Orbiter 2010. (The user confirmed that the scenario reloads correctly and no duplicate payout occurs.)
 
 ### Mission generation and contract system — planned
 
