@@ -56,9 +56,11 @@ bool decode(const std::string& line,PropellantTransaction& t) {
        !unhex(f[7],t.quote.context.celestialBody)||!real(f[8],t.quote.requestedMassKg)||
        !real(f[9],t.quote.unitPriceCreditsPerKg)||!integer(f[10],cost)||!integer(f[11],balance)||
        !real(f[12],t.quote.fillPlan.plannedMassKg)||!integer(f[13],count)||count<=0||
-       count>(long long)((f.size()-14)/3)||f.size()!=14+(std::size_t)count*3)return false;
+       count>(long long)((f.size()-14)/3)||(f.size()!=14+(std::size_t)count*3&&f.size()!=15+(std::size_t)count*3))return false;
     t.state=(PropellantTransactionState)state;t.quote.context.locationKind=(PropellantLocationKind)kind;
     t.quote.totalCostCredits=cost;t.quote.balanceAtQuote=balance;
+    t.simulationTime=0;
+    if(f.size()==15+(std::size_t)count*3){long long sim=0;if(!integer(f.back(),sim))return false;t.simulationTime=sim;}
     t.quote.fillPlan.requestedMassKg=t.quote.requestedMassKg;
     t.quote.fillPlan.targetMassKg.clear();t.resources.clear();
     for(long long i=0;i<count;++i){double cap=0,before=0,after=0;std::size_t n=14+(std::size_t)i*3;
