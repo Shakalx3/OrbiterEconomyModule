@@ -660,6 +660,15 @@ public:
         if(selected.originLocationId!=origin)
             return oem::Result::failure("CONTRACT_ORIGIN","Selected mission belongs to another location.");
         selected.vesselId=vesselId;
+        if (currentSimulationTime_ < 0 || selected.deadline < selected.acceptedAt)
+            return oem::Result::failure("CONTRACT_TIME","Mission quote contains an invalid deadline window.");
+        const oem::SimulationSeconds allowance = selected.deadline - selected.acceptedAt;
+        if (allowance <= 0 || allowance > LLONG_MAX - currentSimulationTime_)
+            return oem::Result::failure("CONTRACT_TIME","Mission deadline allowance is outside the supported range.");
+        // The quote is generated at the start of the board day; the full quoted
+        // allowance begins when the player actually accepts it.
+        selected.acceptedAt = currentSimulationTime_;
+        selected.deadline = currentSimulationTime_ + allowance;
         const oem::Result accepted=economyJournalStore_.acceptContract(
             economyJournalPath_,contractBook_,selected);
         if(!accepted.ok) return accepted;
@@ -2547,6 +2556,10 @@ public:
                 DrawLine(hDC,y,line);
                 sprintf(line,"   TO: %.32s",offer.destinationLocationId.c_str());
                 DrawLine(hDC,y,line);
+                const long long allowance = offer.deadline - offer.acceptedAt;
+                if (allowance >= 86400) sprintf(line,"   ALLOW: %lld days",allowance/86400);
+                else sprintf(line,"   ALLOW: %lld hours",allowance/3600);
+                DrawLine(hDC,y,line);
             }
             DrawLine(hDC,y,"1/2/3: SELECT  A: ACCEPT SELECTED");
         } else {
@@ -2572,6 +2585,12 @@ public:
             sprintf(line, "  %.12s -> %.12s  x%lld",
                 c.originLocationId.c_str(), c.destinationLocationId.c_str(), c.quantity);
             DrawLine(hDC, y, line);
+            const long long allowance = c.deadline - c.acceptedAt;
+            if (allowance > 0) {
+                if (allowance >= 86400) sprintf(line,"  WINDOW: %lld days",allowance/86400);
+                else sprintf(line,"  WINDOW: %lld hours",allowance/3600);
+                DrawLine(hDC,y,line);
+            }
             ++shown;
         }
         if (shown == 0) DrawLine(hDC, y, "No accepted contracts.");
