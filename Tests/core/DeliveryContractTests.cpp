@@ -113,6 +113,14 @@ int main() {
     assert(replayBook.restoreSettled("replay-contract").ok);
     assert(replayBook.find("replay-contract")->status==oem::CONTRACT_SETTLED);
 
+    oem::DeliveryContractBook cancelBook;
+    oem::DeliveryContract cancellable=contract();cancellable.contractId="cancel-me";
+    assert(cancelBook.accept(cancellable).ok);
+    assert(cancelBook.cancel("cancel-me").ok);
+    assert(cancelBook.find("cancel-me")->status==oem::CONTRACT_CANCELLED);
+    assert(cancelBook.cancel("cancel-me").ok);
+    assert(!cancelBook.restoreCompleted("cancel-me","arrival-after-cancel",200).ok);
+
     oem::DeliveryContractBook clockBook;
     oem::DeliveryContract clockContract=contract();
     clockContract.contractId="clock-expiry";
