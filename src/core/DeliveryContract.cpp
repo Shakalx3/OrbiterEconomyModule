@@ -5,7 +5,7 @@ namespace oem {
 
 DeliveryContract::DeliveryContract()
     : contractId(), vesselId(), cargoId(), quantity(0), originLocationId(),
-      destinationLocationId(), reward(0), acceptedAt(0), deadline(0),
+      destinationLocationId(), destinationBodyId(), reward(0), acceptedAt(0), deadline(0),
       status(CONTRACT_ACCEPTED), completionEventId(), completedAt(0) {}
 
 DeliveryContractBook::DeliveryContractBook() : indexes_(), contracts_() {}
@@ -27,6 +27,7 @@ Result DeliveryContractBook::accept(const DeliveryContract& c) {
             existing.cargoId == c.cargoId && existing.quantity == c.quantity &&
             existing.originLocationId == c.originLocationId &&
             existing.destinationLocationId == c.destinationLocationId &&
+            existing.destinationBodyId == c.destinationBodyId &&
             existing.reward == c.reward && existing.acceptedAt == c.acceptedAt &&
             existing.deadline == c.deadline;
         return same ? Result::success() :
@@ -67,7 +68,8 @@ bool DeliveryContractBook::isDestinationEvent(const DeliveryContract& c,
                                                const SimulationEvent& e) const {
     if (e.type == SIM_EVENT_LANDING)
         return e.locationKnown && !e.baseId.empty() &&
-               e.baseId == c.destinationLocationId;
+               e.baseId == c.destinationLocationId &&
+               (c.destinationBodyId.empty() || e.bodyId == c.destinationBodyId);
     if (e.type == SIM_EVENT_DOCK)
         return !e.relatedVesselId.empty() &&
                e.relatedVesselId == c.destinationLocationId;
