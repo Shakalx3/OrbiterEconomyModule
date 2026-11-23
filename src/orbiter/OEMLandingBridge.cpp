@@ -430,8 +430,9 @@ public:
 
         std::vector<oem::PropellantResourceState> immediate;
         result = readPropellantSnapshot(vesselId, immediate);
+        std::vector<double> immediateRollback;
         if (!result.ok || oem::classifyPropellantRecovery(transaction, immediate,
-                std::vector<double>()) != oem::PROPELLANT_RECOVERY_ABORT_UNCHANGED) {
+                immediateRollback) != oem::PROPELLANT_RECOVERY_ABORT_UNCHANGED) {
             propellantRecoveryReady_ = false;
             return oem::Result::failure("PROPELLANT_SNAPSHOT_CHANGED",
                 "Tank state changed after PREPARED was recorded; automatic refuelling is stopped for recovery.");
