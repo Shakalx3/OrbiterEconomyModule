@@ -928,7 +928,7 @@ private:
         }
         char summary[256];
         sprintf(summary, "OEM Economic Locations: indexed %lu surface ports and %lu registered stations.",
-                surfaces, stations);
+                surfaces, stationCount);
         oapiWriteLog(summary);
     }
 
