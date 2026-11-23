@@ -112,7 +112,7 @@ int main(){
  assert(store.acceptContract(cancelPath,cancelBook,cancellable).ok);
  assert(store.cancelContract(cancelPath,cancelBook,cancellable.contractId).ok);
  assert(cancelBook.find(cancellable.contractId)->status==oem::CONTRACT_CANCELLED);
- assert(!store.cancelContract(cancelPath,cancelBook,cancellable.contractId).ok == false);
+ assert(store.cancelContract(cancelPath,cancelBook,cancellable.contractId).ok);
  oem::Ledger cancelLedger;assert(cancelLedger.createAccount("company",1000).ok);
  oem::DeliveryContractBook cancelRecovered;
  std::map<std::string,oem::CargoServiceInventory> cancelStocks;
