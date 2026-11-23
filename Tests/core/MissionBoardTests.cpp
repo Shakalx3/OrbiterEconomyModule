@@ -1,8 +1,6 @@
 #include "MissionBoard.h"
 #include <cassert>
 #include <cstdio>
-#include <iostream>
-#include <fstream>
 #include <map>
 #include <vector>
 
@@ -38,11 +36,9 @@ int main() {
     const std::string path="OEMMissionBoardTests.dat";
     std::remove(path.c_str());
     assert(store.save(path,boards).ok);
-    { std::ifstream debug(path.c_str()); std::string row; while(std::getline(debug,row)) std::cerr<<"BOARD:"<<row<<"\\n"; }
     std::map<std::string,oem::MissionBoard> recovered;
     assert(store.load(path,recovered).ok);
     assert(recovered.size()==2);
-    if(recovered["origin"].offers.size()!=first.offers.size()) std::cerr<<"expected "<<first.offers.size()<<" recovered "<<recovered["origin"].offers.size()<<"\\n";
     assert(recovered["origin"].offers.size()==first.offers.size());
     assert(recovered["empty-origin"].offers.empty());
     std::remove(path.c_str());
