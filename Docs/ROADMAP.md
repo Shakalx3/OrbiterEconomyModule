@@ -102,6 +102,7 @@
 - [x] Runtime-validate delivery, automatic handover, payout, and recovery after scenario restart between orbital stations. The user confirmed the scenario reloads correctly and no duplicate payout occurs.
 - [ ] Runtime-validate a delivery contract whose origin is a verified planetary spaceport and destination is a registered orbital station.
 - [ ] Runtime-validate a delivery contract whose origin is a registered orbital station and destination is a verified planetary spaceport.
+- [ ] Runtime-validate a delivery contract between two planetary spaceports and verify that a same-named base on another celestial body cannot satisfy the destination.
 - [ ] For both planetary directions, verify actual landing + ground contact + same-body spaceport proximity, automatic cargo handover, station/base stock accounting as applicable, contract completion, payout, and no duplicate payout after scenario restart.
 
 
@@ -110,7 +111,7 @@
 - [x] Evidence-based eligibility using post-acceptance origin loads and verified destination landing/docking events.
 - [x] In-memory idempotent payout through the company ledger.
 - [x] Durable contract acceptance/completion/payout history in the global economy journal; settlement and company payout are committed as one journal record and replay exactly once.
-- [x] Native bridge integration and Delivery Contracts MFD (key D), with offers derived from configured source stock and another registered cargo service.
+- [x] Native bridge integration and Delivery Contracts MFD (key D), with offers derived from configured source stock and other registered orbital stations or planetary spaceports; planetary destination inventories are available during journal recovery.
 - [x] Runtime-validate delivery and payout recovery after scenario restart in Orbiter 2010. (The user confirmed that the scenario reloads correctly and no duplicate payout occurs.)
 
 ### Mission generation and contract system — planned
