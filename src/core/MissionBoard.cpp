@@ -166,7 +166,7 @@ Result MissionBoardStore::load(const std::string& path,
     if(!versionOne&&!versionTwo) return Result::failure("MISSION_BOARD_HEADER","Mission board header/version is invalid.");
     std::map<std::string,MissionBoard> parsed;
     while(std::getline(in,line)) {
-        if(!line.empty()&&line[line.size()-1]=='\\r') line.erase(line.size()-1);
+        if(!line.empty()&&line[line.size()-1]=='\r') line.erase(line.size()-1);
         if(line.empty()) continue;
         std::vector<std::string> f=split(line);
         if(f.empty()||f[0]!="B"||(versionOne&&f.size()!=5)||(versionTwo&&f.size()!=6))
@@ -188,7 +188,7 @@ Result MissionBoardStore::load(const std::string& path,
         b.simulationDay=day; b.generation=(unsigned long)generation;
         for(long long i=0;i<count;++i) {
             if(!std::getline(in,line)) return Result::failure("MISSION_BOARD_CORRUPT","Mission board offer is missing.");
-            if(!line.empty()&&line[line.size()-1]=='\\r') line.erase(line.size()-1);
+            if(!line.empty()&&line[line.size()-1]=='\r') line.erase(line.size()-1);
             f=split(line); DeliveryContract c;
             long long qty=0,reward=0,accepted=0,deadline=0;
             if(f.size()!=11||f[0]!="O"||!unhex(f[1],c.contractId)||!unhex(f[2],c.vesselId)||
