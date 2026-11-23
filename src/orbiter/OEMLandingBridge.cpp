@@ -1199,6 +1199,95 @@ private:
         return true;
     }
 
+    bool recoverPropellantTransactions(oem::Ledger& recoveredLedger) {
+        if (propellantTransactionJournalPath_.empty()) return false;
+        std::map<std::string, oem::PropellantTransaction> transactions;
+        oem::Result loaded = propellantTransactionJournal_.load(
+            propellantTransactionJournalPath_, transactions);
+        if (!loaded.ok) {
+            char message[512];
+            sprintf(message, "OEM Propellant: transaction journal load failed (%s): %s",
+                loaded.code.c_str(), loaded.message.c_str());
+            oapiWriteLog(message);
+            return false;
+        }
+        for (std::map<std::string, oem::PropellantTransaction>::const_iterator it =
+                 transactions.begin(); it != transactions.end(); ++it) {
+            const oem::PropellantTransaction& tx = it->second;
+            const std::string chargeId = "propellant-charge:" + tx.operationId;
+            if (tx.state == oem::PROPELLANT_TX_ABORTED) continue;
+            if (tx.state == oem::PROPELLANT_TX_COMMITTED) {
+                oem::Result charge = economyJournalStore_.chargePropellant(
+                    economyJournalPath_, tx.operationId, "company",
+                    tx.quote.totalCostCredits, tx.simulationTime, recoveredLedger);
+                if (!charge.ok) return false;
+                continue;
+            }
+            char vesselName[128] = {};
+            strncpy(vesselName, tx.vesselId.c_str(), sizeof(vesselName) - 1);
+            OBJHANDLE vesselHandle = oapiGetVesselByName(vesselName);
+            if (!vesselHandle || !oapiIsVessel(vesselHandle)) return false;
+            VESSEL* vessel = oapiGetVesselInterface(vesselHandle);
+            if (!vessel) return false;
+            std::vector<oem::PropellantResourceState> observed;
+            const DWORD count = vessel->GetPropellantCount();
+            observed.reserve(count);
+            for (DWORD n = 0; n < count; ++n) {
+                PROPELLANT_HANDLE resource = vessel->GetPropellantHandleByIndex(n);
+                if (!resource) return false;
+                const double mass = vessel->GetPropellantMass(resource);
+                const double capacity = vessel->GetPropellantMaxMass(resource);
+                if (!_finite(mass) || !_finite(capacity) || mass < 0.0 ||
+                    capacity < 0.0 || mass > capacity) return false;
+                observed.push_back(oem::PropellantResourceState(mass, capacity));
+            }
+            std::vector<double> rollback;
+            const oem::PropellantRecoveryAction action =
+                oem::classifyPropellantRecovery(tx, observed, rollback);
+            if (action == oem::PROPELLANT_RECOVERY_FINALIZE_CHARGE) {
+                oem::Result charge = economyJournalStore_.chargePropellant(
+                    economyJournalPath_, tx.operationId, "company",
+                    tx.quote.totalCostCredits, tx.simulationTime, recoveredLedger);
+                if (!charge.ok) return false;
+                oem::Result terminal = propellantTransactionJournal_.setTerminalState(
+                    propellantTransactionJournalPath_, tx.operationId, oem::PROPELLANT_TX_COMMITTED);
+                if (!terminal.ok) return false;
+            } else if (action == oem::PROPELLANT_RECOVERY_ABORT_UNCHANGED) {
+                if (recoveredLedger.hasOperation(chargeId)) return false;
+                oem::Result terminal = propellantTransactionJournal_.setTerminalState(
+                    propellantTransactionJournalPath_, tx.operationId, oem::PROPELLANT_TX_ABORTED);
+                if (!terminal.ok) return false;
+            } else if (action == oem::PROPELLANT_RECOVERY_ROLLBACK_PARTIAL) {
+                if (recoveredLedger.hasOperation(chargeId)) return false;
+                for (DWORD n = 0; n < count; ++n) {
+                    PROPELLANT_HANDLE resource = vessel->GetPropellantHandleByIndex(n);
+                    if (!resource || n >= rollback.size()) return false;
+                    vessel->SetPropellantMass(resource, rollback[n]);
+                }
+                bool restored = true;
+                for (DWORD n = 0; n < count; ++n) {
+                    PROPELLANT_HANDLE resource = vessel->GetPropellantHandleByIndex(n);
+                    if (!resource) { restored = false; break; }
+                    const double mass = vessel->GetPropellantMass(resource);
+                    const double target = rollback[n];
+                    const double tolerance = 1.0e-9 * (fabs(target) > 1.0 ? fabs(target) : 1.0);
+                    if (!_finite(mass) || fabs(mass - target) > tolerance) restored = false;
+                }
+                if (!restored) return false;
+                oem::Result terminal = propellantTransactionJournal_.setTerminalState(
+                    propellantTransactionJournalPath_, tx.operationId, oem::PROPELLANT_TX_ABORTED);
+                if (!terminal.ok) return false;
+            } else {
+                char message[384];
+                sprintf(message, "OEM Propellant: recovery conflict for operation %s; no automatic mutation performed.",
+                    tx.operationId.c_str());
+                oapiWriteLog(message);
+                return false;
+            }
+        }
+        return true;
+    }
+
     bool initializeEconomyState() {
         if (economyJournalPath_.empty() || accountsPath_.empty() || cargoCatalogPath_.empty()) {
             oapiWriteLog((char*)"OEM Economy: could not resolve economy configuration paths.");
