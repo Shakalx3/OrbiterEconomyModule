@@ -2327,7 +2327,7 @@ public:
     OEMDeliveryContractsMFD(DWORD w, DWORD h, VESSEL *vessel)
         : MFD(w, h, vessel),
           vesselId_(vessel && vessel->GetName() ? vessel->GetName() : ""),
-          status_("Offers require two registered cargo services.") {}
+          status_("Offers require two registered economic locations.") {}
 
     void Update(HDC hDC) override {
         Title(hDC, "OEM DELIVERY CONTRACTS");
@@ -2345,7 +2345,11 @@ public:
             DrawLine(hDC, y, line);
             sprintf(line, "FROM: %.34s", offer.originLocationId.c_str());
             DrawLine(hDC, y, line);
-            sprintf(line, "TO:   %.34s", offer.destinationLocationId.c_str());
+            if (!offer.destinationBodyId.empty())
+                sprintf(line, "TO:   %.24s (%s)", offer.destinationLocationId.c_str(),
+                        offer.destinationBodyId.c_str());
+            else
+                sprintf(line, "TO:   %.34s", offer.destinationLocationId.c_str());
             DrawLine(hDC, y, line);
             sprintf(line, "REWARD: %lld cr  DEADLINE: 7 days", (long long)offer.reward);
             DrawLine(hDC, y, line);
@@ -2353,7 +2357,7 @@ public:
         } else {
             DrawLine(hDC, y, "No offer at this location.");
             DrawLine(hDC, y, "Need stock here and another registered");
-            DrawLine(hDC, y, "cargo service as destination.");
+            DrawLine(hDC, y, "station or planetary spaceport.");
         }
         DrawLine(hDC, y, "------------------------------");
         DrawLine(hDC, y, "YOUR CONTRACTS");
