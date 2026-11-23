@@ -27,6 +27,7 @@
 #include "../core/CargoTransferGate.h"
 #include "../core/CargoServiceInventoryConfig.h"
 #include "../core/EconomyJournal.h"
+#include "../core/MissionBoard.h"
 #include "../core/LedgerConfig.h"
 #include "../core/CargoCatalogConfig.h"
 #include "../core/EconomicLocationRegistry.h"
