@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cstdio>
 #include <iostream>
+#include <fstream>
 #include <map>
 #include <vector>
 
