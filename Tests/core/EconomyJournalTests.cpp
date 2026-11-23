@@ -104,6 +104,25 @@ int main(){
  assert(contractRecoveredLedger.getBalance("company",balance)&&balance==1250);
  assert(recoveredContractManifests["GL-01"].quantity("oxygen")==0);
  assert(recoveredContractStocks["MARS"].quantity("oxygen")==6);
+ // Cancellation is durable, idempotent, and does not affect funds or cargo.
+ const std::string cancelPath="OEMContractCancelJournalTests.journal";std::remove(cancelPath.c_str());
+ oem::DeliveryContractBook cancelBook;oem::DeliveryContract cancellable=contract;
+ cancellable.contractId="cancel-001";cancellable.vesselId="GL-01";cancellable.originLocationId="ISS";
+ cancellable.destinationLocationId="MARS";cancellable.reward=900;
+ assert(store.acceptContract(cancelPath,cancelBook,cancellable).ok);
+ assert(store.cancelContract(cancelPath,cancelBook,cancellable.contractId).ok);
+ assert(cancelBook.find(cancellable.contractId)->status==oem::CONTRACT_CANCELLED);
+ assert(!store.cancelContract(cancelPath,cancelBook,cancellable.contractId).ok == false);
+ oem::Ledger cancelLedger;assert(cancelLedger.createAccount("company",1000).ok);
+ oem::DeliveryContractBook cancelRecovered;
+ std::map<std::string,oem::CargoServiceInventory> cancelStocks;
+ cancelStocks.insert(std::make_pair("ISS",oem::CargoServiceInventory("ISS")));assert(cancelStocks["ISS"].setInitialStock("oxygen",5,10.0).ok);
+ cancelStocks.insert(std::make_pair("MARS",oem::CargoServiceInventory("MARS")));assert(cancelStocks["MARS"].setInitialStock("oxygen",4,10.0).ok);
+ std::map<std::string,oem::CargoManifest> cancelManifests;
+ assert(store.load(cancelPath,cat,cancelLedger,cancelStocks,cancelManifests,&cancelRecovered).ok);
+ assert(cancelRecovered.find(cancellable.contractId)->status==oem::CONTRACT_CANCELLED);
+ assert(cancelLedger.getBalance("company",balance)&&balance==1000);
+ assert(cancelStocks["ISS"].quantity("oxygen")==5&&cancelStocks["MARS"].quantity("oxygen")==4);
  // Propellant charges share the global journal and replay exactly once.
  const std::string propellantPath="OEMPropellantEconomyJournalTests.journal";std::remove(propellantPath.c_str());
  oem::Ledger fuelLedger;assert(fuelLedger.createAccount("company",1000).ok);
@@ -125,6 +144,7 @@ int main(){
  {std::ifstream absent(insufficientPath.c_str(),std::ios::binary);assert(!absent.good());}
  std::remove(insufficientPath.c_str());
  std::remove(propellantPath.c_str());
+ std::remove(cancelPath.c_str());
  std::remove(contractPath.c_str());
  std::remove(path.c_str());return 0;
 }
