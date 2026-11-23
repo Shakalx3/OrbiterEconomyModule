@@ -68,9 +68,13 @@ int main(){
  assert(store.acceptContract(contractPath,contractBook,contract).ok);
  assert(store.applyExchange(contractPath,contractStocks,contractManifest,
      transfer("contract-load","GL-01","ISS",oem::CARGO_LOAD,2,21)).ok);
- assert(store.completeContract(contractPath,contractBook,contract.contractId,"landing-event-50",50).ok);
+ assert(store.completeContract(contractPath,contractBook,contract.contractId,"landing-event-50",50,
+     contractStocks,contractManifest).ok);
+ // Cargo is already gone before the player claims the reward.
+ assert(contractManifest.quantity("oxygen")==0);
+ assert(contractStocks["MARS"].quantity("oxygen")==6);
  assert(store.settleContract(contractPath,contractBook,contract.contractId,"company",
-     contractLedger,contractStocks,contractManifest).ok);
+     contractLedger).ok);
  assert(contractBook.find(contract.contractId)->status==oem::CONTRACT_SETTLED);
  assert(contractLedger.getBalance("company",balance)&&balance==1250);
  assert(contractManifest.quantity("oxygen")==0);
