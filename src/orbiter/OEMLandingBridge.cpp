@@ -46,6 +46,7 @@ int g_marketMode = -1;
 int g_deliveryContractsMode = -1;
 int g_economicAdminMode = -1;
 int g_propellantMonitorMode = -1;
+int g_propellantRefuelMode = -1;
 
 std::string makeJournalPath(HINSTANCE module) {
     char modulePath[MAX_PATH] = {};
@@ -2032,6 +2033,128 @@ private:
         y += (int)ch;
     }
     std::string vesselId_;
+};
+
+class OEMPropellantRefuelMFD : public MFD {
+public:
+    OEMPropellantRefuelMFD(DWORD w, DWORD h, VESSEL *vessel)
+        : MFD(w, h, vessel),
+          vesselId_(vessel && vessel->GetName() ? vessel->GetName() : ""),
+          status_("B: buy up to 100 kg   F: fill all tanks") {}
+
+    void Update(HDC hDC) override {
+        Title(hDC, "OEM REFUELLING");
+        SelectDefaultFont(hDC, 0);
+        int y = (int)ch + 3;
+        if (!g_bridge) {
+            DrawLine(hDC, y, "OEM bridge unavailable.");
+            return;
+        }
+        oem::PropellantPriceContext context;
+        std::string location;
+        oem::Result result = g_bridge->resolvePropellantContext(vesselId_, context, location);
+        if (!result.ok) {
+            DrawLine(hDC, y, "NO ELIGIBLE REFUELLING LOCATION");
+            DrawLine(hDC, y, result.message.c_str());
+            DrawLine(hDC, y, status_.c_str());
+            return;
+        }
+        char line[256];
+        sprintf(line, "LOCATION: %.36s", location.c_str());
+        DrawLine(hDC, y, line);
+        sprintf(line, "BODY: %.40s", context.celestialBody.c_str());
+        DrawLine(hDC, y, line);
+        double unitPrice = 0.0;
+        result = g_bridge->resolvePropellantUnitPrice(context, unitPrice);
+        if (!result.ok) {
+            DrawLine(hDC, y, "PRICE CONFIGURATION ERROR");
+            DrawLine(hDC, y, result.message.c_str());
+            DrawLine(hDC, y, status_.c_str());
+            return;
+        }
+        sprintf(line, "PRICE: %.3f CR / KG", unitPrice);
+        DrawLine(hDC, y, line);
+        std::vector<oem::PropellantResourceState> resources;
+        result = g_bridge->readPropellantSnapshot(vesselId_, resources);
+        if (!result.ok) {
+            DrawLine(hDC, y, result.message.c_str());
+            DrawLine(hDC, y, status_.c_str());
+            return;
+        }
+        oem::PropellantTotals totals;
+        result = oem::inspectPropellantResources(resources, totals);
+        if (!result.ok) {
+            DrawLine(hDC, y, result.message.c_str());
+            return;
+        }
+        sprintf(line, "FUEL: %.3f / %.3f KG", totals.currentMassKg, totals.capacityKg);
+        DrawLine(hDC, y, line);
+        sprintf(line, "FREE CAPACITY: %.3f KG", totals.freeCapacityKg);
+        DrawLine(hDC, y, line);
+        oem::Credits balance = 0;
+        if (g_bridge->companyBalance(balance)) {
+            sprintf(line, "COMPANY BALANCE: %lld CR", (long long)balance);
+            DrawLine(hDC, y, line);
+        } else {
+            DrawLine(hDC, y, "COMPANY ACCOUNT UNAVAILABLE");
+        }
+        DrawLine(hDC, y, "B: BUY UP TO 100 KG");
+        DrawLine(hDC, y, "F: FILL ALL AVAILABLE CAPACITY");
+        DrawLine(hDC, y, status_.c_str());
+    }
+
+    bool ConsumeKeyBuffered(DWORD key) override {
+        if (!g_bridge) return false;
+        oem::Result result;
+        if (key == OAPI_KEY_B) {
+            result = g_bridge->performPropellantPurchase(vesselId_, false);
+        } else if (key == OAPI_KEY_F) {
+            result = g_bridge->performPropellantPurchase(vesselId_, true);
+        } else {
+            return false;
+        }
+        status_ = result.ok ? "Purchase and physical fill committed."
+            : result.code + ": " + result.message;
+        return true;
+    }
+
+    bool ConsumeButton(int bt, int event) override {
+        if (!(event & PANEL_MOUSE_LBDOWN)) return false;
+        if (bt == 0) return ConsumeKeyBuffered(OAPI_KEY_B);
+        if (bt == 1) return ConsumeKeyBuffered(OAPI_KEY_F);
+        return false;
+    }
+
+    char *ButtonLabel(int bt) override {
+        static char *labels[2] = { (char*)"100 KG", (char*)"FILL" };
+        return bt >= 0 && bt < 2 ? labels[bt] : 0;
+    }
+
+    int ButtonMenu(const MFDBUTTONMENU **menu) const override {
+        static const MFDBUTTONMENU items[2] = {
+            { "Buy up to 100 kg of fuel", 0, 'B' },
+            { "Fill all available tank capacity", 0, 'F' }
+        };
+        if (menu) *menu = items;
+        return 2;
+    }
+
+    static int MsgProc(UINT msg, UINT mfd, WPARAM wparam, LPARAM lparam) {
+        if (msg == OAPI_MSG_MFD_OPENEDEX && g_bridge) {
+            MFDMODEOPENSPEC *spec = (MFDMODEOPENSPEC*)wparam;
+            return (int)(new OEMPropellantRefuelMFD(
+                spec->w, spec->h, (VESSEL*)lparam));
+        }
+        return 0;
+    }
+
+private:
+    void DrawLine(HDC hDC, int &y, const char *text) {
+        TextOutA(hDC, 4, y, text, (int)strlen(text));
+        y += (int)ch;
+    }
+    std::string vesselId_;
+    std::string status_;
 };
 
 // Market operations are committed through EconomyJournalStore; the MFD never changes Orbiter physical cargo.
