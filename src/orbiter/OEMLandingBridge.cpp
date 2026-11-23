@@ -1626,6 +1626,51 @@ private:
             oapiWriteLog((char*)"OEM Economy: cargo_catalog.cfg missing; market trading remains unavailable until explicitly configured.");
         }
 
+        // Give every planetary spaceport a small, usable opening stock so a
+        // delivery contract can be generated with that base as its origin.
+        // This is a one-time bootstrap only: any non-empty configured inventory
+        // is preserved, and the resulting stock is persisted before journal
+        // replay so recovery sees the same opening state on every launch.
+        if (!openingCatalog.entries().empty()) {
+            const std::vector<oem::EconomicLocation>& locations = economicLocations_.entries();
+            for (std::size_t i = 0; i < locations.size(); ++i) {
+                if (locations[i].kind != oem::ECONOMIC_LOCATION_SPACEPORT) continue;
+                if (!ensureCargoServiceInventory(locations[i].storageId)) {
+                    char message[512];
+                    sprintf(message, "OEM Economy: cannot bootstrap planetary stock for %s.",
+                            locations[i].canonicalId.c_str());
+                    oapiWriteLog(message);
+                    return false;
+                }
+                std::map<std::string, oem::CargoServiceInventory>::iterator stock =
+                    cargoServiceInventories_.find(locations[i].storageId);
+                if (stock == cargoServiceInventories_.end() ||
+                    !stock->second.lines().empty() || !stock->second.history().empty())
+                    continue;
+                const oem::CargoDefinition& starter = openingCatalog.entries()[0];
+                const oem::Result seeded = stock->second.setInitialStock(
+                    starter.cargoId, 1, starter.unitMassKg);
+                if (!seeded.ok) return false;
+                const std::string stockPath =
+                    makeCargoStockConfigPath(module_, locations[i].storageId);
+                if (stockPath.empty()) return false;
+                const oem::Result saved = cargoStockConfigStore_.save(stockPath, stock->second);
+                if (!saved.ok) {
+                    char message[512];
+                    sprintf(message, "OEM Economy: could not persist starter stock for %s (%s): %s",
+                            locations[i].canonicalId.c_str(), saved.code.c_str(),
+                            saved.message.c_str());
+                    oapiWriteLog(message);
+                    return false;
+                }
+                char message[512];
+                sprintf(message, "OEM Economy: seeded 1 unit of %s at planetary base %s (%s).",
+                        starter.cargoId.c_str(), locations[i].displayName.c_str(),
+                        locations[i].celestialBody.c_str());
+                oapiWriteLog(message);
+            }
+        }
+
         // Recovery must start from the opening inventory of every registered
         // cargo service. Loading only the currently encountered location makes
         // valid older journal entries fail when their service is not yet docked.
