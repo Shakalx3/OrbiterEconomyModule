@@ -24,7 +24,9 @@ static oem::DeliveryContract contract() {
 int main() {
     oem::DeliveryContractBook book;oem::DeliveryContract c=contract();
     assert(book.accept(c).ok);
-    assert(!book.accept(c).ok);
+    assert(book.accept(c).ok); // exact acceptance replay is idempotent
+    oem::DeliveryContract conflict=c;conflict.reward++;
+    assert(!book.accept(conflict).ok);
     oem::CargoManifest manifest("GL-NT");
     assert(manifest.load(transfer("too-early",oem::CARGO_LOAD,"ISS",3,99)).ok);
     oem::SimulationEvent e=arrival(oem::SIM_EVENT_LANDING,"arrival-1",200);
