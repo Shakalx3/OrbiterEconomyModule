@@ -24,6 +24,7 @@ struct PropellantTransaction {
     std::string operationId;
     std::string vesselId;
     PropellantQuote quote;
+    SimulationSeconds simulationTime;
     PropellantTransactionState state;
     std::vector<PropellantResourceChange> resources;
     PropellantTransaction();
@@ -43,7 +44,8 @@ enum PropellantRecoveryAction {
 Result createPreparedPropellantTransaction(
     const std::string& operationId, const std::string& vesselId,
     const std::vector<PropellantResourceState>& before,
-    const PropellantQuote& quote, PropellantTransaction& transaction);
+    const PropellantQuote& quote, PropellantTransaction& transaction,
+    SimulationSeconds simulationTime = 0);
 
 // Classifies restart state without mutating Orbiter. An all-after snapshot may
 // be charged exactly once; all-before means no physical change; mixed before/
