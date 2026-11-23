@@ -5,7 +5,7 @@ namespace oem {
 
 DeliveryContract::DeliveryContract()
     : contractId(), vesselId(), cargoId(), quantity(0), originLocationId(),
-      destinationLocationId(), destinationBodyId(), reward(0), acceptedAt(0), deadline(0),
+      destinationLocationId(), destinationBodyId(), missionType(), missionTitle(), missionBriefing(), reward(0), acceptedAt(0), deadline(0),
       status(CONTRACT_ACCEPTED), completionEventId(), completedAt(0) {}
 
 DeliveryContractBook::DeliveryContractBook() : indexes_(), contracts_() {}
@@ -28,6 +28,9 @@ Result DeliveryContractBook::accept(const DeliveryContract& c) {
             existing.originLocationId == c.originLocationId &&
             existing.destinationLocationId == c.destinationLocationId &&
             existing.destinationBodyId == c.destinationBodyId &&
+            existing.missionType == c.missionType &&
+            existing.missionTitle == c.missionTitle &&
+            existing.missionBriefing == c.missionBriefing &&
             existing.reward == c.reward && existing.acceptedAt == c.acceptedAt &&
             existing.deadline == c.deadline;
         return same ? Result::success() :
