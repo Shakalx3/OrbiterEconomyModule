@@ -902,7 +902,7 @@ private:
     void rebuildEconomicLocationRegistry(const oem::SpaceportRegistry& spaceports) {
         economicLocations_.clear();
         unsigned long surfaces = 0;
-        unsigned long stations = 0;
+        unsigned long stationCount = 0;
         for (std::size_t i = 0; i < spaceports.entries().size(); ++i) {
             const oem::SpaceportRecord& p = spaceports.entries()[i];
             const oem::Result added = economicLocations_.addSpaceport(
@@ -915,10 +915,10 @@ private:
                 oapiWriteLog(message);
             }
         }
-        const std::set<std::string>& stations = economicStations_.vesselIds();
-        for (std::set<std::string>::const_iterator it = stations.begin(); it != stations.end(); ++it) {
+        const std::set<std::string>& registeredStationIds = economicStations_.vesselIds();
+        for (std::set<std::string>::const_iterator it = registeredStationIds.begin(); it != registeredStationIds.end(); ++it) {
             const oem::Result added = economicLocations_.addStation(*it);
-            if (added.ok) ++stations;
+            if (added.ok) ++stationCount;
             else {
                 char message[384];
                 sprintf(message, "OEM Economic Locations: skipped station:%s (%s).",
