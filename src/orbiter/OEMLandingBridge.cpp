@@ -2587,6 +2587,12 @@ public:
                 DrawLine(hDC,y,line);
                 sprintf(line,"   TO: %.32s",offer.destinationLocationId.c_str());
                 DrawLine(hDC,y,line);
+                sprintf(line,"   %.36s",offer.missionTitle.empty()?"Cargo delivery":offer.missionTitle.c_str());
+                DrawLine(hDC,y,line);
+                if (!offer.missionBriefing.empty()) {
+                    sprintf(line,"   %.48s",offer.missionBriefing.c_str());
+                    DrawLine(hDC,y,line);
+                }
             }
             DrawLine(hDC,y,"1/2/3: SELECT  A: ACCEPT SELECTED");
         } else {
