@@ -25,12 +25,12 @@ public:
                           const DeliveryContract& contract) const;
     Result completeContract(const std::string& path, DeliveryContractBook& contracts,
                             const std::string& contractId, const std::string& eventId,
-                            SimulationSeconds completedAt) const;
+                            SimulationSeconds completedAt,
+                            std::map<std::string, CargoServiceInventory>& inventories,
+                            CargoManifest& manifest) const;
     Result settleContract(const std::string& path, DeliveryContractBook& contracts,
                           const std::string& contractId, const std::string& companyAccountId,
-                          Ledger& ledger,
-                          std::map<std::string, CargoServiceInventory>& inventories,
-                          CargoManifest& manifest) const;
+                          Ledger& ledger) const;
     Result expireContract(const std::string& path, DeliveryContractBook& contracts,
                           const std::string& contractId) const;
 };
