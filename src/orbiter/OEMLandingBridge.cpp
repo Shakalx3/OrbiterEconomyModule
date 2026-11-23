@@ -2573,26 +2573,24 @@ public:
         if (g_bridge->currentMissionOffers(vesselId_, offers)) {
             char line[256];
             DrawLine(hDC, y, "LOCAL MISSION BOARD");
+            if (selectedOffer_ >= offers.size()) selectedOffer_ = 0;
             for (std::size_t i=0;i<offers.size() && i<3;++i) {
                 const oem::DeliveryContract& offer=offers[i];
-                const long long allowance = offer.deadline - offer.acceptedAt;
-                if (allowance >= 86400)
-                    sprintf(line,"%lu: %.8s x%lld %lldcr %lldd",
-                        (unsigned long)(i+1),offer.cargoId.c_str(),offer.quantity,
-                        (long long)offer.reward,allowance/86400);
+                const long long allowance=offer.deadline-offer.acceptedAt;
+                const char* title=offer.missionTitle.empty()?"Cargo delivery":offer.missionTitle.c_str();
+                if (allowance>=86400)
+                    sprintf(line,"%lu: %.12s %lldcr %lldd",(unsigned long)(i+1),
+                        title,(long long)offer.reward,allowance/86400);
                 else
-                    sprintf(line,"%lu: %.8s x%lld %lldcr %lldh",
-                        (unsigned long)(i+1),offer.cargoId.c_str(),offer.quantity,
-                        (long long)offer.reward,allowance/3600);
+                    sprintf(line,"%lu: %.12s %lldcr %lldh",(unsigned long)(i+1),
+                        title,(long long)offer.reward,allowance/3600);
                 DrawLine(hDC,y,line);
-                sprintf(line,"   TO: %.32s",offer.destinationLocationId.c_str());
+                sprintf(line,"   TO: %.22s  x%lld",offer.destinationLocationId.c_str(),offer.quantity);
                 DrawLine(hDC,y,line);
-                sprintf(line,"   %.36s",offer.missionTitle.empty()?"Cargo delivery":offer.missionTitle.c_str());
+            }
+            if (!offers.empty() && !offers[selectedOffer_].missionBriefing.empty()) {
+                sprintf(line,"BRIEF: %.46s",offers[selectedOffer_].missionBriefing.c_str());
                 DrawLine(hDC,y,line);
-                if (!offer.missionBriefing.empty()) {
-                    sprintf(line,"   %.48s",offer.missionBriefing.c_str());
-                    DrawLine(hDC,y,line);
-                }
             }
             DrawLine(hDC,y,"1/2/3: SELECT  A: ACCEPT SELECTED");
         } else {
@@ -2605,7 +2603,7 @@ public:
         const std::vector<oem::DeliveryContract>& contracts =
             g_bridge->deliveryContractBook().contracts();
         int shown = 0;
-        for (std::size_t n = contracts.size(); n > 0 && shown < 5; --n) {
+        for (std::size_t n = contracts.size(); n > 0 && shown < 3; --n) {
             const oem::DeliveryContract& c = contracts[n - 1];
             if (c.vesselId != vesselId_) continue;
             const char *state = c.status == oem::CONTRACT_ACCEPTED ? "ACTIVE" :
@@ -2614,10 +2612,11 @@ public:
                 c.status == oem::CONTRACT_CANCELLED ? "CANCELLED" : "EXPIRED";
             char line[256];
             const long long allowance = c.deadline - c.acceptedAt;
+            const char* title = c.missionTitle.empty()?c.contractId.c_str():c.missionTitle.c_str();
             if (allowance >= 86400)
-                sprintf(line, "%.10s %s %lldd", c.contractId.c_str(), state, allowance/86400);
+                sprintf(line, "%.10s %s %lldd", title, state, allowance/86400);
             else
-                sprintf(line, "%.10s %s %lldh", c.contractId.c_str(), state, allowance/3600);
+                sprintf(line, "%.10s %s %lldh", title, state, allowance/3600);
             DrawLine(hDC, y, line);
             sprintf(line, "  %.12s -> %.12s  x%lld",
                 c.originLocationId.c_str(), c.destinationLocationId.c_str(), c.quantity);
