@@ -247,10 +247,13 @@ public:
             if (*it != origin) { destination = *it; break; }
         }
         if (destination.empty()) return false;
+        oem::Credits availableFunds = 0;
+        if (!ledger_.getBalance("company", availableFunds)) return false;
         const std::vector<oem::CargoDefinition>& items = cargoCatalog_.entries();
         const oem::CargoDefinition *selected = 0;
         for (std::size_t i = 0; i < items.size(); ++i) {
-            if (stock->second.quantity(items[i].cargoId) > 0) {
+            if (stock->second.quantity(items[i].cargoId) > 0 &&
+                items[i].buyPrice > 0 && items[i].buyPrice <= availableFunds) {
                 selected = &items[i];
                 break;
             }
