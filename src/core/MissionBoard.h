@@ -13,6 +13,9 @@ struct MissionCandidate {
     std::string destinationLocationId;
     std::string destinationBodyId;
     std::string destinationCanonicalId;
+    std::string missionType;
+    std::string missionTitle;
+    std::string missionBriefing;
     long long quantity;
     Credits reward;
     SimulationSeconds allowanceSeconds;
