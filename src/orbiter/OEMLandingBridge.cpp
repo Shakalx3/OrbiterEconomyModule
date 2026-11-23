@@ -587,7 +587,7 @@ public:
         const std::vector<oem::EconomicLocation>& locations=economicLocations_.entries();
         for(std::size_t d=0;d<locations.size();++d) {
             const std::string& destination=locations[d].storageId;
-            if(destination==origin || !ensureCargoServiceInventory(destination)) continue;
+            if(locations[d].canonicalId==originLocation.canonicalId || destination==origin || !ensureCargoServiceInventory(destination)) continue;
             for(std::size_t c=0;c<cargoCatalog_.entries().size();++c) {
                 const oem::CargoDefinition& item=cargoCatalog_.entries()[c];
                 if(stock->second.quantity(item.cargoId)<=0 || item.buyPrice<=0) continue;
@@ -625,22 +625,6 @@ public:
                 candidate.reward = quote.reward;
                 candidate.allowanceSeconds = quote.allowanceSeconds;
                 candidates.push_back(candidate);
-            }
-        }
-        // Legacy cargo-service-only endpoints remain eligible when no registered
-        // economic-location destinations are available.
-        if(candidates.empty()) {
-            const std::set<std::string>& services=cargoServices_.vesselIds();
-            for(std::set<std::string>::const_iterator it=services.begin();it!=services.end();++it) {
-                if(*it==origin || !ensureCargoServiceInventory(*it)) continue;
-                for(std::size_t c=0;c<cargoCatalog_.entries().size();++c) {
-                    const oem::CargoDefinition& item=cargoCatalog_.entries()[c];
-                    if(stock->second.quantity(item.cargoId)<=0 || item.buyPrice<=0) continue;
-                    oem::MissionCandidate candidate;
-                    candidate.cargoId=item.cargoId; candidate.destinationLocationId=*it;
-                    candidate.quantity=1; candidate.reward=item.buyPrice;
-                    candidates.push_back(candidate);
-                }
             }
         }
         unsigned long generation=existing==missionBoards_.end()?1:existing->second.generation+1;
@@ -682,7 +666,7 @@ public:
         oem::MissionBoard updated=board->second;
         updated.offers.erase(updated.offers.begin()+offerIndex);
         std::map<std::string,oem::MissionBoard> candidate=missionBoards_;
-        candidate[origin]=updated;
+        candidate[originLocation.canonicalId]=updated;
         const oem::Result saved=missionBoardStore_.save(missionBoardPath_,candidate);
         if(!saved.ok) {
             // Acceptance is already durable in the economy journal. Keep the
