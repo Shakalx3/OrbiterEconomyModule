@@ -24,16 +24,21 @@ std::string hex(const std::string& value) {
     }
     return out;
 }
+int hexDigit(char c) {
+    if(c>='0'&&c<='9') return c-'0';
+    if(c>='A'&&c<='F') return c-'A'+10;
+    if(c>='a'&&c<='f') return c-'a'+10;
+    return -1;
+}
 bool unhex(const std::string& value, std::string& out) {
     if(value=="-"){out.clear();return true;}
-    if (value.size()%2) return false;
+    if(value.size()%2) return false;
     out.clear();
-    for (std::size_t i=0;i<value.size();i+=2) {
-        const char a=value[i], b=value[i+1];
-        const int x=a>='0'&&a<='9'?a-'0':a>='A'&&a<='F'?a-'A'+10:a>='a'&&a<='f'?a-'a'+10:-1;
-        const int y=b>='0'&&b<='9'?b-'0':b>='A'&&b<='F'?b-'0'+10:b>='a'&&b<='f'?b-'a'+10:-1;
-        if(x<0||y<0) return false;
-        out.push_back((char)((x<<4)|y));
+    for(std::size_t i=0;i<value.size();i+=2) {
+        const int high=hexDigit(value[i]);
+        const int low=hexDigit(value[i+1]);
+        if(high<0||low<0) return false;
+        out.push_back(static_cast<char>((high<<4)|low));
     }
     return true;
 }
