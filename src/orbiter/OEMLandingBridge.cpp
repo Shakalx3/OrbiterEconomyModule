@@ -2111,6 +2111,7 @@ public:
             sprintf(line, "F: %.3f KG  /  %lld CR", totals.freeCapacityKg, (long long)fullCost);
             DrawLine(hDC, y, line);
         } else DrawLine(hDC, y, "F: FULL QUOTE OVERFLOW");
+        DrawLine(hDC, y, "Y: CONFIRM SELECTED PURCHASE   X: CANCEL");
         DrawLine(hDC, y, status_.c_str());
     }
 
