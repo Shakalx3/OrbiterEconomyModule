@@ -9,6 +9,7 @@
 #include <sstream>
 #include <set>
 #include <locale>
+#include <iostream>
 
 namespace oem {
 namespace {
@@ -155,10 +156,12 @@ Result MissionBoardStore::load(const std::string& path,std::map<std::string,Miss
             c.quantity=qty;c.reward=reward;c.acceptedAt=accepted;c.deadline=deadline;
             b.offers.push_back(c);
         }
+        std::cerr<<"LOAD BOARD origin="<<b.originLocationId<<" count="<<b.offers.size()<<" declared="<<count<<"\\n";
         if(!parsed.insert(std::make_pair(b.originLocationId,b)).second)
             return Result::failure("MISSION_BOARD_DUPLICATE","Mission board contains duplicate origins.");
     }
     if(in.bad())return Result::failure("MISSION_BOARD_READ","Error reading mission board file.");
+    std::cerr<<"LOAD TOTAL "<<parsed.size()<<"\\n";
     boards.swap(parsed); return Result::success();
 }
 }
