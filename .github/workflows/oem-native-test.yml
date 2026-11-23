@@ -58,6 +58,8 @@ on:
       - "src/core/EconomyJournal.cpp"
       - "src/core/DeliveryContract.h"
       - "src/core/DeliveryContract.cpp"
+      - "src/core/MissionBoard.h"
+      - "src/core/MissionBoard.cpp"
       - "OEMData/cargo_services.cfg"
       - "OEMData/cargo_stock_495353.cfg"
       - "OEMData/accounts.cfg"
