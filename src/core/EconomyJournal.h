@@ -28,7 +28,9 @@ public:
                             SimulationSeconds completedAt) const;
     Result settleContract(const std::string& path, DeliveryContractBook& contracts,
                           const std::string& contractId, const std::string& companyAccountId,
-                          Ledger& ledger) const;
+                          Ledger& ledger,
+                          std::map<std::string, CargoServiceInventory>& inventories,
+                          CargoManifest& manifest) const;
     Result expireContract(const std::string& path, DeliveryContractBook& contracts,
                           const std::string& contractId) const;
 };
