@@ -301,8 +301,7 @@ public:
         if (manifest == cargoManifests_.end())
             return oem::Result::failure("CONTRACT_CARGO_MISSING", "Contract vessel cargo manifest is unavailable.");
         return economyJournalStore_.settleContract(
-            economyJournalPath_, contractBook_, contractId, "company", ledger_,
-            cargoServiceInventories_, manifest->second);
+            economyJournalPath_, contractBook_, contractId, "company", ledger_);
     }
 
     bool companyBalance(oem::Credits& balance) const {
@@ -1208,10 +1207,19 @@ private:
                     const oem::DeliveryContract *before = contractBook_.find(updated[i].contractId);
                     if (!before || before->status != oem::CONTRACT_ACCEPTED) continue;
                     oem::Result committed = oem::Result::success();
-                    if (updated[i].status == oem::CONTRACT_COMPLETED)
-                        committed = economyJournalStore_.completeContract(
-                            economyJournalPath_, contractBook_, updated[i].contractId,
-                            updated[i].completionEventId, updated[i].completedAt);
+                    if (updated[i].status == oem::CONTRACT_COMPLETED) {
+                        std::map<std::string, oem::CargoManifest>::iterator arrivalManifest =
+                            cargoManifests_.find(updated[i].vesselId);
+                        if (arrivalManifest == cargoManifests_.end()) {
+                            committed = oem::Result::failure("CONTRACT_CARGO_MISSING",
+                                "Contract vessel manifest is unavailable at destination.");
+                        } else {
+                            committed = economyJournalStore_.completeContract(
+                                economyJournalPath_, contractBook_, updated[i].contractId,
+                                updated[i].completionEventId, updated[i].completedAt,
+                                cargoServiceInventories_, arrivalManifest->second);
+                        }
+                    }
                     else if (updated[i].status == oem::CONTRACT_EXPIRED)
                         committed = economyJournalStore_.expireContract(
                             economyJournalPath_, contractBook_, updated[i].contractId);
