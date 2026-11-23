@@ -1086,6 +1086,37 @@ private:
         }
         eventQueue_ = candidate;
 
+        // Contract completion is derived from the same verified Orbiter event
+        // and the vessel's durable OEM cargo manifest; no MFD button can fake it.
+        if (economyReady_) {
+            std::map<std::string, oem::CargoManifest>::const_iterator manifest =
+                cargoManifests_.find(event.vesselId);
+            if (manifest != cargoManifests_.end()) {
+                oem::DeliveryContractBook observed = contractBook_;
+                observed.observe(event, manifest->second);
+                const std::vector<oem::DeliveryContract>& updated = observed.contracts();
+                for (std::size_t i = 0; i < updated.size(); ++i) {
+                    const oem::DeliveryContract *before = contractBook_.find(updated[i].contractId);
+                    if (!before || before->status != oem::CONTRACT_ACCEPTED) continue;
+                    oem::Result committed = oem::Result::success();
+                    if (updated[i].status == oem::CONTRACT_COMPLETED)
+                        committed = economyJournalStore_.completeContract(
+                            economyJournalPath_, contractBook_, updated[i].contractId,
+                            updated[i].completionEventId, updated[i].completedAt);
+                    else if (updated[i].status == oem::CONTRACT_EXPIRED)
+                        committed = economyJournalStore_.expireContract(
+                            economyJournalPath_, contractBook_, updated[i].contractId);
+                    if (!committed.ok) {
+                        char contractError[512];
+                        sprintf(contractError, "OEM CONTRACT: journal commit failed id=%s (%s): %s",
+                            updated[i].contractId.c_str(), committed.code.c_str(),
+                            committed.message.c_str());
+                        oapiWriteLog(contractError);
+                    }
+                }
+            }
+        }
+
         char message[768];
         sprintf(message,
             "OEM EVENT QUEUED: id=%s type=%s vessel=%s body=%s base=%s simt=%lld",
