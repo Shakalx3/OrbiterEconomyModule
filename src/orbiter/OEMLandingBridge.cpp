@@ -25,6 +25,7 @@
 #include "../core/CargoCatalogConfig.h"
 #include "../core/EconomicLocationRegistry.h"
 #include "../core/EconomicStationRegistry.h"
+#include "../core/PropellantPlan.h"
 
 namespace {
 
@@ -37,6 +38,7 @@ int g_cargoExchangeTestMode = -1;
 int g_marketMode = -1;
 int g_deliveryContractsMode = -1;
 int g_economicAdminMode = -1;
+int g_propellantMonitorMode = -1;
 
 std::string makeJournalPath(HINSTANCE module) {
     char modulePath[MAX_PATH] = {};
@@ -208,6 +210,43 @@ public:
         char name[128] = {};
         oapiGetObjectName(focus, name, sizeof(name));
         return vesselId == name;
+    }
+
+    oem::Result readPropellantSnapshot(const std::string& vesselId,
+            std::vector<oem::PropellantResourceState>& resources) const {
+        OBJHANDLE focus = oapiGetFocusObject();
+        if (!focus || !oapiIsVessel(focus))
+            return oem::Result::failure("PROPELLANT_NO_FOCUS",
+                "No focused vessel is available.");
+        VESSEL *vessel = oapiGetVesselInterface(focus);
+        if (!vessel || !vessel->GetName() || vesselId != vessel->GetName())
+            return oem::Result::failure("PROPELLANT_VESSEL_MISMATCH",
+                "The MFD vessel is not the current Orbiter focus vessel.");
+
+        std::vector<oem::PropellantResourceState> snapshot;
+        const DWORD count = vessel->GetPropellantCount();
+        snapshot.reserve(count);
+        for (DWORD i = 0; i < count; ++i) {
+            PROPELLANT_HANDLE handle = vessel->GetPropellantHandleByIndex(i);
+            if (!handle)
+                return oem::Result::failure("PROPELLANT_INVALID_HANDLE",
+                    "Orbiter returned an invalid propellant resource handle.");
+            const double current = vessel->GetPropellantMass(handle);
+            const double capacity = vessel->GetPropellantMaxMass(handle);
+            if (!_finite(current) || !_finite(capacity) ||
+                current < 0.0 || capacity < 0.0 || current > capacity)
+                return oem::Result::failure("PROPELLANT_INVALID_RESOURCE",
+                    "Orbiter returned invalid propellant mass or capacity.");
+            snapshot.push_back(oem::PropellantResourceState(current, capacity));
+        }
+        if (!snapshot.empty()) {
+            oem::PropellantTotals totals;
+            const oem::Result checked =
+                oem::inspectPropellantResources(snapshot, totals);
+            if (!checked.ok) return checked;
+        }
+        resources.swap(snapshot);
+        return oem::Result::success();
     }
 
     const oem::CargoCatalog* marketCatalog() const {
@@ -1553,6 +1592,77 @@ private:
     std::string vesselId_;
 };
 
+// Read-only view of Orbiter's real propellant resources. No resource is modified here.
+class OEMPropellantMonitorMFD : public MFD {
+public:
+    OEMPropellantMonitorMFD(DWORD w, DWORD h, VESSEL *vessel)
+        : MFD(w, h, vessel),
+          vesselId_(vessel && vessel->GetName() ? vessel->GetName() : "") {}
+
+    void Update(HDC hDC) override {
+        Title(hDC, "OEM PROPELLANT MONITOR");
+        SelectDefaultFont(hDC, 0);
+        int y = (int)ch + 3;
+        char line[256];
+        sprintf(line, "VESSEL: %.36s", vesselId_.c_str());
+        DrawLine(hDC, y, line);
+        DrawLine(hDC, y, "READ ONLY - ORBITER RESOURCE DATA");
+        if (!g_bridge) {
+            DrawLine(hDC, y, "OEM bridge unavailable.");
+            return;
+        }
+        std::vector<oem::PropellantResourceState> resources;
+        const oem::Result result = g_bridge->readPropellantSnapshot(vesselId_, resources);
+        if (!result.ok) {
+            sprintf(line, "%.30s: %.150s", result.code.c_str(), result.message.c_str());
+            DrawLine(hDC, y, line);
+            return;
+        }
+        double current = 0.0, capacity = 0.0;
+        for (std::size_t i = 0; i < resources.size(); ++i) {
+            current += resources[i].currentMassKg;
+            capacity += resources[i].capacityKg;
+        }
+        sprintf(line, "RESOURCES: %lu", (unsigned long)resources.size());
+        DrawLine(hDC, y, line);
+        sprintf(line, "TOTAL MASS: %.3f kg", current);
+        DrawLine(hDC, y, line);
+        sprintf(line, "TOTAL CAPACITY: %.3f kg", capacity);
+        DrawLine(hDC, y, line);
+        sprintf(line, "FREE CAPACITY: %.3f kg", capacity - current);
+        DrawLine(hDC, y, line);
+        DrawLine(hDC, y, "------------------------------");
+        if (resources.empty()) {
+            DrawLine(hDC, y, "NO PROPELLANT RESOURCES");
+            DrawLine(hDC, y, "Totals are zero; nothing to refuel.");
+            return;
+        }
+        const int available = ((int)H - y - (int)ch) / (int)ch;
+        for (std::size_t i = 0; i < resources.size() && (int)i < available; ++i) {
+            sprintf(line, "TANK %lu: %.3f / %.3f kg",
+                (unsigned long)(i + 1),
+                resources[i].currentMassKg, resources[i].capacityKg);
+            DrawLine(hDC, y, line);
+        }
+    }
+
+    static int MsgProc(UINT msg, UINT mfd, WPARAM wparam, LPARAM lparam) {
+        if (msg == OAPI_MSG_MFD_OPENEDEX && g_bridge) {
+            MFDMODEOPENSPEC *spec = (MFDMODEOPENSPEC*)wparam;
+            return (int)(new OEMPropellantMonitorMFD(
+                spec->w, spec->h, (VESSEL*)lparam));
+        }
+        return 0;
+    }
+
+private:
+    void DrawLine(HDC hDC, int &y, const char *text) {
+        TextOutA(hDC, 4, y, text, (int)strlen(text));
+        y += (int)ch;
+    }
+    std::string vesselId_;
+};
+
 // Market operations are committed through EconomyJournalStore; the MFD never changes Orbiter physical cargo.
 class OEMMarketMFD : public MFD {
 public:
@@ -2021,6 +2131,11 @@ DLLCLBK void InitModule(HINSTANCE hDLL) {
     spec.key = OAPI_KEY_A;
     spec.msgproc = OEMEconomicAdminMFD::MsgProc;
     g_economicAdminMode = oapiRegisterMFDMode(spec);
+
+    spec.name = "OEM Propellant Monitor";
+    spec.key = OAPI_KEY_P;
+    spec.msgproc = OEMPropellantMonitorMFD::MsgProc;
+    g_propellantMonitorMode = oapiRegisterMFDMode(spec);
 }
 
 DLLCLBK void ExitModule(HINSTANCE hDLL) {
@@ -2030,12 +2145,14 @@ DLLCLBK void ExitModule(HINSTANCE hDLL) {
     if (g_marketMode >= 0) oapiUnregisterMFDMode(g_marketMode);
     if (g_deliveryContractsMode >= 0) oapiUnregisterMFDMode(g_deliveryContractsMode);
     if (g_economicAdminMode >= 0) oapiUnregisterMFDMode(g_economicAdminMode);
+    if (g_propellantMonitorMode >= 0) oapiUnregisterMFDMode(g_propellantMonitorMode);
     g_flightLogMode = -1;
     g_cargoManifestMode = -1;
     g_cargoExchangeTestMode = -1;
     g_marketMode = -1;
     g_deliveryContractsMode = -1;
     g_economicAdminMode = -1;
+    g_propellantMonitorMode = -1;
     g_bridge = 0;
     // Orbiter owns and destroys registered oapi::Module instances.
 }
