@@ -58,6 +58,34 @@ int main() {
     oem::SimulationEvent dockEvent=arrival(oem::SIM_EVENT_DOCK,"dock-arrival",250);
     assert(dockBook.observe(dockEvent,dockManifest).ok);
 
+    // Planetary origin -> orbital station destination.
+    oem::DeliveryContractBook surfaceOriginBook;
+    oem::DeliveryContract surfaceOrigin=contract();
+    surfaceOrigin.contractId="surface-origin";
+    surfaceOrigin.originLocationId="MoonBase";
+    surfaceOrigin.destinationLocationId="MoonStation";
+    assert(surfaceOriginBook.accept(surfaceOrigin).ok);
+    oem::CargoManifest surfaceManifest("GL-NT");
+    assert(surfaceManifest.load(transfer("surface-load",oem::CARGO_LOAD,"MoonBase",3,150)).ok);
+    oem::SimulationEvent stationArrival=arrival(oem::SIM_EVENT_DOCK,"station-arrival",250);
+    assert(surfaceOriginBook.observe(stationArrival,surfaceManifest).ok);
+
+    // A same-named base on another body cannot satisfy a body-bound destination.
+    oem::DeliveryContractBook bodyBook;
+    oem::DeliveryContract bodyContract=contract();
+    bodyContract.contractId="body-bound";
+    bodyContract.destinationBodyId="Moon";
+    assert(bodyBook.accept(bodyContract).ok);
+    oem::CargoManifest bodyManifest("GL-NT");
+    assert(bodyManifest.load(transfer("body-load",oem::CARGO_LOAD,"ISS",3,150)).ok);
+    oem::SimulationEvent wrongBody=arrival(oem::SIM_EVENT_LANDING,"wrong-body",250);
+    wrongBody.bodyId="Mars";
+    assert(!bodyBook.observe(wrongBody,bodyManifest).ok);
+    oem::SimulationEvent rightBody=wrongBody;
+    rightBody.eventId="right-body";
+    rightBody.bodyId="Moon";
+    assert(bodyBook.observe(rightBody,bodyManifest).ok);
+
     oem::DeliveryContractBook expiryBook;oem::DeliveryContract expired=contract();
     expired.contractId="expired";expired.deadline=180;
     assert(expiryBook.accept(expired).ok);
