@@ -553,13 +553,31 @@ public:
             offer = pending->second;
             return true;
         }
+        if (!ensureCargoServiceInventory(origin)) return false;
         std::map<std::string, oem::CargoServiceInventory>::const_iterator stock =
             cargoServiceInventories_.find(origin);
         if (stock == cargoServiceInventories_.end()) return false;
         std::string destination;
-        const std::set<std::string>& services = cargoServices_.vesselIds();
-        for (std::set<std::string>::const_iterator it = services.begin(); it != services.end(); ++it) {
-            if (*it != origin) { destination = *it; break; }
+        std::string destinationBody;
+        // Offers can target any registered economic location, including a
+        // planetary spaceport. Load its stock projection before publishing.
+        const std::vector<oem::EconomicLocation>& locations = economicLocations_.entries();
+        for (std::size_t i = 0; i < locations.size(); ++i) {
+            if (locations[i].storageId == origin) continue;
+            if (!ensureCargoServiceInventory(locations[i].storageId)) continue;
+            destination = locations[i].storageId;
+            destinationBody = locations[i].celestialBody;
+            break;
+        }
+        // Keep support for cargo services not also registered as economic stations.
+        if (destination.empty()) {
+            const std::set<std::string>& services = cargoServices_.vesselIds();
+            for (std::set<std::string>::const_iterator it = services.begin(); it != services.end(); ++it) {
+                if (*it != origin && ensureCargoServiceInventory(*it)) {
+                    destination = *it;
+                    break;
+                }
+            }
         }
         if (destination.empty()) return false;
         oem::Credits availableFunds = 0;
@@ -583,6 +601,7 @@ public:
         generated.quantity = 1;
         generated.originLocationId = origin;
         generated.destinationLocationId = destination;
+        generated.destinationBodyId = destinationBody;
         generated.reward = selected->buyPrice > 0 ? selected->buyPrice : 1;
         generated.acceptedAt = currentSimulationTime_;
         generated.deadline = currentSimulationTime_ + 7 * 86400;
@@ -998,12 +1017,18 @@ public:
                     (unsigned long)economicStations_.size());
             oapiWriteLog(message);
         }
+        // Build the economic-location index before journal recovery: replay may
+        // need a planetary destination inventory even when the player is elsewhere.
+        rebuildSpaceportRegistry();
         if (servicesLoaded.ok) {
             const std::set<std::string>& serviceIds = cargoServices_.vesselIds();
             for (std::set<std::string>::const_iterator it = serviceIds.begin(); it != serviceIds.end(); ++it)
                 ensureCargoServiceInventory(*it);
-            // Restore explicit opening stock for previously visited surface bases
-            // before replaying economy.journal, just as for registered stations.
+            const std::vector<oem::EconomicLocation>& locations = economicLocations_.entries();
+            for (std::size_t i = 0; i < locations.size(); ++i)
+                ensureCargoServiceInventory(locations[i].storageId);
+            // Restore opening stock for legacy surface locations already referenced
+            // by the event journal before replaying the global economy journal.
             const std::vector<oem::SimulationEvent>& priorEvents = eventQueue_.events();
             for (std::size_t i = 0; i < priorEvents.size(); ++i)
                 if (priorEvents[i].type == oem::SIM_EVENT_LANDING &&
@@ -1011,7 +1036,6 @@ public:
                     ensureCargoServiceInventory(priorEvents[i].baseId);
             initializeEconomyState();
         }
-        rebuildSpaceportRegistry();
         oapiWriteLog((char*)"OEM Landing Bridge: simulation monitoring started.");
     }
 
