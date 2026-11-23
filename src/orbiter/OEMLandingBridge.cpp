@@ -133,7 +133,7 @@ public:
           cargoServices_(), cargoServicesPath_(makeCargoServicesPath(hDLL)),
           cargoTransferGate_(), cargoManifests_(), cargoManifestLoadAttempted_(),
           cargoStockConfigStore_(), cargoServiceInventories_(), cargoServiceInventoryLoadAttempted_(),
-          economyJournalStore_(), contractBook_(), economyJournalPath_(makeEconomyDataFilePath(hDLL, "economy.journal")),
+          economyJournalStore_(), contractBook_(), pendingContractOffers_(), contractOfferSequence_(0), economyJournalPath_(makeEconomyDataFilePath(hDLL, "economy.journal")),
           ledgerConfigStore_(), cargoCatalogConfigStore_(), accountsPath_(makeEconomyDataFilePath(hDLL, "accounts.cfg")),
           cargoCatalogPath_(makeEconomyDataFilePath(hDLL, "cargo_catalog.cfg")),
           spaceportRegistryPath_(makeEconomyDataFilePath(hDLL, "spaceports.registry")),
@@ -211,6 +211,78 @@ public:
 
     const oem::CargoCatalog* marketCatalog() const {
         return economyReady_ ? &cargoCatalog_ : 0;
+    }
+
+    const oem::DeliveryContractBook& deliveryContractBook() const {
+        return contractBook_;
+    }
+
+    bool currentDeliveryOffer(const std::string& vesselId, oem::DeliveryContract& offer) {
+        if (!economyReady_ || sessionId_.empty() || currentSimulationTime_ <= 0 ||
+            vesselId.empty() || !isFocusedVessel(vesselId)) return false;
+        std::map<std::string, oem::DeliveryContract>::iterator pending =
+            pendingContractOffers_.find(vesselId);
+        const std::string origin = currentMarketLocation(vesselId);
+        if (origin.empty()) return false;
+        if (pending != pendingContractOffers_.end()) {
+            if (pending->second.originLocationId != origin) return false;
+            offer = pending->second;
+            return true;
+        }
+        std::map<std::string, oem::CargoServiceInventory>::const_iterator stock =
+            cargoServiceInventories_.find(origin);
+        if (stock == cargoServiceInventories_.end()) return false;
+        std::string destination;
+        const std::set<std::string>& services = cargoServices_.vesselIds();
+        for (std::set<std::string>::const_iterator it = services.begin(); it != services.end(); ++it) {
+            if (*it != origin) { destination = *it; break; }
+        }
+        if (destination.empty()) return false;
+        const std::vector<oem::CargoDefinition>& items = cargoCatalog_.entries();
+        const oem::CargoDefinition *selected = 0;
+        for (std::size_t i = 0; i < items.size(); ++i) {
+            if (stock->second.quantity(items[i].cargoId) > 0) {
+                selected = &items[i];
+                break;
+            }
+        }
+        if (!selected) return false;
+        oem::DeliveryContract generated;
+        char id[256];
+        sprintf(id, "OEMDELIVERY-%s-%lu", sessionId_.c_str(), ++contractOfferSequence_);
+        generated.contractId = id;
+        generated.vesselId = vesselId;
+        generated.cargoId = selected->cargoId;
+        generated.quantity = 1;
+        generated.originLocationId = origin;
+        generated.destinationLocationId = destination;
+        generated.reward = selected->buyPrice > 0 ? selected->buyPrice : 1;
+        generated.acceptedAt = currentSimulationTime_;
+        generated.deadline = currentSimulationTime_ + 7 * 86400;
+        pendingContractOffers_[vesselId] = generated;
+        offer = generated;
+        return true;
+    }
+
+    oem::Result acceptDeliveryOffer(const std::string& vesselId) {
+        if (!isFocusedVessel(vesselId))
+            return oem::Result::failure("CONTRACT_FOCUS", "Accept the offer from its assigned vessel.");
+        std::map<std::string, oem::DeliveryContract>::const_iterator it =
+            pendingContractOffers_.find(vesselId);
+        if (it == pendingContractOffers_.end() ||
+            currentMarketLocation(vesselId) != it->second.originLocationId)
+            return oem::Result::failure("CONTRACT_OFFER_UNAVAILABLE", "No delivery offer is available at this location.");
+        const oem::Result saved = economyJournalStore_.acceptContract(
+            economyJournalPath_, contractBook_, it->second);
+        if (saved.ok) pendingContractOffers_.erase(it);
+        return saved;
+    }
+
+    oem::Result settleDeliveryContract(const std::string& contractId) {
+        if (!economyReady_ || economyJournalPath_.empty())
+            return oem::Result::failure("CONTRACT_ECONOMY_UNAVAILABLE", "Economy journal is unavailable.");
+        return economyJournalStore_.settleContract(
+            economyJournalPath_, contractBook_, contractId, "company", ledger_);
     }
 
     bool companyBalance(oem::Credits& balance) const {
@@ -515,6 +587,8 @@ public:
         cargoManifests_.clear();
         cargoManifestLoadAttempted_.clear();
         contractBook_ = oem::DeliveryContractBook();
+        pendingContractOffers_.clear();
+        contractOfferSequence_ = 0;
         cargoServiceInventories_.clear();
         cargoServiceInventoryLoadAttempted_.clear();
         ledger_ = oem::Ledger();
@@ -1162,6 +1236,8 @@ private:
     std::set<std::string> cargoServiceInventoryLoadAttempted_;
     oem::EconomyJournalStore economyJournalStore_;
     oem::DeliveryContractBook contractBook_;
+    std::map<std::string, oem::DeliveryContract> pendingContractOffers_;
+    unsigned long contractOfferSequence_;
     std::string economyJournalPath_;
     oem::LedgerConfigStore ledgerConfigStore_;
     oem::CargoCatalogConfigStore cargoCatalogConfigStore_;
