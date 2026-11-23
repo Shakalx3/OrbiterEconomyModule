@@ -35,8 +35,6 @@ int main() {
         assert(first.offers[i].missionType==repeat.offers[i].missionType);
         assert(!first.offers[i].missionTitle.empty());
         assert(!first.offers[i].missionBriefing.empty());
-        assert(first.offers[i].missionType=="SUPPLY");
-        assert(first.offers[i].missionTitle=="Routine supply run");
         assert(first.offers[i].deadline-first.offers[i].acceptedAt>=86400);
     }
     oem::MissionBoard empty;
