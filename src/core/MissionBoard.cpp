@@ -61,7 +61,7 @@ bool writeBoard(std::ostream& out,const MissionBoard& b) {
         const DeliveryContract& c=b.offers[i];
         out<<"O|"<<hex(c.contractId)<<"|"<<hex(c.vesselId)<<"|"<<hex(c.cargoId)<<"|"<<c.quantity
            <<"|"<<hex(c.originLocationId)<<"|"<<hex(c.destinationLocationId)<<"|"<<hex(c.destinationBodyId)
-           <<"|"<<c.reward<<"|"<<c.acceptedAt<<"|"<<c.deadline<<"\n";
+           <<"|"<<c.reward<<"|"<<c.acceptedAt<<"|"<<c.deadline<<"|"<<hex(c.missionType)<<"|"<<hex(c.missionTitle)<<"|"<<hex(c.missionBriefing)<<"\\n";
     }
     return (bool)out;
 }
@@ -200,9 +200,10 @@ Result MissionBoardStore::load(const std::string& path,
                !unhex(f[6],c.destinationLocationId)||!unhex(f[7],c.destinationBodyId)||
                !number(f[8],reward)||reward<=0||!number(f[9],accepted)||!number(f[10],deadline)||
                c.contractId.empty()||c.cargoId.empty()||c.originLocationId!=b.originLocationId||
-               c.destinationLocationId.empty()||c.destinationLocationId==c.originLocationId)
+               c.destinationLocationId.empty()||c.destinationLocationId==c.originLocationId||\n               (versionThree&&(!unhex(f[11],c.missionType)||!unhex(f[12],c.missionTitle)||!unhex(f[13],c.missionBriefing))))
                 return Result::failure("MISSION_BOARD_CORRUPT","Mission board offer is invalid.");
             if(!versionThree) { c.missionType="DELIVERY"; c.missionTitle="Cargo delivery"; c.missionBriefing="Deliver the contracted cargo to the named destination."; }
+            c.quantity=qty; c.reward=reward; c.acceptedAt=accepted; c.deadline=deadline;
             b.offers.push_back(c);
         }
         if(!parsed.insert(std::make_pair(b.originCanonicalId,b)).second)
