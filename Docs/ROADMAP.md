@@ -94,9 +94,9 @@
 - [x] Portable delivery contract model with vessel, cargo, quantity, origin, destination, reward and deadline.
 - [x] Evidence-based eligibility using post-acceptance origin loads and verified destination landing/docking events.
 - [x] In-memory idempotent payout through the company ledger.
-- [ ] Durable contract acceptance/completion/payout history in the global economy journal, with station and planetary-base destinations treated equally.
-- [ ] Native bridge integration and contract MFD.
-- [ ] Runtime-validate delivery and payout recovery after scenario restart.
+- [x] Durable contract acceptance/completion/payout history in the global economy journal; settlement and company payout are committed as one journal record and replay exactly once.
+- [x] Native bridge integration and Delivery Contracts MFD (key D), with offers derived from configured source stock and another registered cargo service.
+- [ ] Runtime-validate delivery and payout recovery after scenario restart in Orbiter 2010.
 
 ### Mission generation and contract system — planned
 
