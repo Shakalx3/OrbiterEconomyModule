@@ -17,7 +17,8 @@ int main() {
 
     oem::PropellantTransaction tx;
     assert(oem::createPreparedPropellantTransaction(
-        "REFUEL-OP-1", "TestShip", before, quote, tx).ok);
+        "REFUEL-OP-1", "TestShip", before, quote, tx, 1234).ok);
+    assert(tx.simulationTime == 1234);
     assert(tx.state == oem::PROPELLANT_TX_PREPARED);
     assert(tx.resources.size() == 2);
     assert(std::fabs(tx.resources[0].afterMassKg - 70.0) < 1e-9);
