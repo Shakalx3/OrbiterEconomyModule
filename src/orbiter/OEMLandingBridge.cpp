@@ -12,6 +12,7 @@
 #include <sstream>
 #include <locale>
 #include <stdlib.h>
+#include <limits.h>
 #include "orbitersdk.h"
 #include "../core/SpaceportLanding.h"
 #include "../core/FlightTransition.h"
@@ -2098,8 +2099,17 @@ public:
         } else {
             DrawLine(hDC, y, "COMPANY ACCOUNT UNAVAILABLE");
         }
-        DrawLine(hDC, y, "B: BUY UP TO 100 KG");
-        DrawLine(hDC, y, "F: FILL ALL AVAILABLE CAPACITY");
+        const double partialMass = totals.freeCapacityKg < 100.0 ? totals.freeCapacityKg : 100.0;
+        const long double partialCost = ceil((long double)partialMass * (long double)unitPrice);
+        const long double fullCost = ceil((long double)totals.freeCapacityKg * (long double)unitPrice);
+        if (partialMass > 0.0 && partialCost <= (long double)LLONG_MAX) {
+            sprintf(line, "B: %.3f KG  /  %lld CR", partialMass, (long long)partialCost);
+            DrawLine(hDC, y, line);
+        } else DrawLine(hDC, y, "B: PARTIAL QUOTE OVERFLOW");
+        if (totals.freeCapacityKg > 0.0 && fullCost <= (long double)LLONG_MAX) {
+            sprintf(line, "F: %.3f KG  /  %lld CR", totals.freeCapacityKg, (long long)fullCost);
+            DrawLine(hDC, y, line);
+        } else DrawLine(hDC, y, "F: FULL QUOTE OVERFLOW");
         DrawLine(hDC, y, status_.c_str());
     }
 
