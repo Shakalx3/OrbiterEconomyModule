@@ -630,8 +630,8 @@ public:
         unsigned long generation=existing==missionBoards_.end()?1:existing->second.generation+1;
         char gen[32]; sprintf(gen,"%lu",generation);
         oem::MissionBoard generated;
-        const oem::Result result=missionBoardStore_.generate(origin,day,generation,
-            sessionId_+"|"+origin+"|"+gen,candidates,generated);
+        const oem::Result result=missionBoardStore_.generate(origin,originLocation.canonicalId,day,generation,
+            sessionId_+"|"+originLocation.canonicalId+"|"+gen,candidates,generated);
         if(!result.ok) return false;
         std::map<std::string,oem::MissionBoard> updated=missionBoards_;
         updated[originLocation.canonicalId]=generated;
