@@ -37,6 +37,8 @@ public:
                             SimulationSeconds simulationTime, Ledger& ledger) const;
     Result expireContract(const std::string& path, DeliveryContractBook& contracts,
                           const std::string& contractId) const;
+    Result cancelContract(const std::string& path, DeliveryContractBook& contracts,
+                          const std::string& contractId) const;
 };
 }
 #endif
