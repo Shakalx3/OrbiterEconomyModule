@@ -8,6 +8,10 @@
 #include <vector>
 #include <string>
 #include <math.h>
+#include <fstream>
+#include <sstream>
+#include <locale>
+#include <stdlib.h>
 #include "orbitersdk.h"
 #include "../core/SpaceportLanding.h"
 #include "../core/FlightTransition.h"
@@ -214,6 +218,120 @@ public:
         char name[128] = {};
         oapiGetObjectName(focus, name, sizeof(name));
         return vesselId == name;
+    }
+
+    oem::Result resolvePropellantContext(const std::string& vesselId,
+            oem::PropellantPriceContext& context, std::string& displayLocation) const {
+        OBJHANDLE focus = oapiGetFocusObject();
+        if (!focus || !oapiIsVessel(focus))
+            return oem::Result::failure("PROPELLANT_NO_FOCUS", "No focused vessel is available.");
+        VESSEL* vessel = oapiGetVesselInterface(focus);
+        if (!vessel || !vessel->GetName() || vesselId != vessel->GetName())
+            return oem::Result::failure("PROPELLANT_VESSEL_MISMATCH", "Refuelling requires the focused vessel.");
+
+        for (UINT i = 0; i < vessel->DockCount(); ++i) {
+            DOCKHANDLE dock = vessel->GetDockHandle(i);
+            if (!dock) continue;
+            OBJHANDLE other = vessel->GetDockStatus(dock);
+            if (!other || !oapiIsVessel(other)) continue;
+            char stationName[128] = {};
+            oapiGetObjectName(other, stationName, sizeof(stationName));
+            if (!stationName[0] || !economicStations_.isStation(stationName)) continue;
+            VESSEL* station = oapiGetVesselInterface(other);
+            if (!station) continue;
+            OBJHANDLE body = station->GetGravityRef();
+            if (!body) continue;
+            char bodyName[128] = {};
+            oapiGetObjectName(body, bodyName, sizeof(bodyName));
+            const oem::EconomicLocation* location =
+                economicLocations_.find(std::string("station:") + stationName);
+            if (!location || location->kind != oem::ECONOMIC_LOCATION_STATION || !bodyName[0])
+                return oem::Result::failure("PROPELLANT_LOCATION_UNKNOWN",
+                    "The registered station has no resolvable celestial-body context.");
+            context.locationId = location->canonicalId;
+            context.locationKind = oem::PROPELLANT_LOCATION_ORBITAL_STATION;
+            context.celestialBody = bodyName;
+            displayLocation = stationName;
+            return oem::Result::success();
+        }
+
+        if (!(vessel->GetFlightStatus() & 1u) || !vessel->GroundContact())
+            return oem::Result::failure("PROPELLANT_NOT_AT_SERVICE",
+                "Dock to a registered economic station or land at a registered planetary spaceport.");
+        OBJHANDLE body = vessel->GetSurfaceRef();
+        if (!body) return oem::Result::failure("PROPELLANT_BODY_UNKNOWN", "Could not resolve the surface body.");
+        char bodyName[128] = {};
+        oapiGetObjectName(body, bodyName, sizeof(bodyName));
+        const std::string baseId = currentMarketLocation(vesselId);
+        if (!bodyName[0] || baseId.empty())
+            return oem::Result::failure("PROPELLANT_NOT_AT_SPACEPORT",
+                "The landed vessel is not within the registered spaceport service radius.");
+        const std::string canonical = std::string("surface:") + bodyName + "/" + baseId;
+        const oem::EconomicLocation* location = economicLocations_.find(canonical);
+        if (!location || location->kind != oem::ECONOMIC_LOCATION_SPACEPORT)
+            return oem::Result::failure("PROPELLANT_LOCATION_UNKNOWN",
+                "The planetary base is not present in the economic spaceport registry.");
+        context.locationId = location->canonicalId;
+        context.locationKind = oem::PROPELLANT_LOCATION_PLANETARY_SPACEPORT;
+        context.celestialBody = bodyName;
+        displayLocation = baseId;
+        return oem::Result::success();
+    }
+
+    oem::Result resolvePropellantUnitPrice(const oem::PropellantPriceContext& context,
+                                            double& unitPrice) const {
+        if (propellantPricePath_.empty())
+            return oem::Result::failure("PROPELLANT_PRICE_PATH", "Could not resolve propellant_prices.cfg.");
+        DWORD attributes = GetFileAttributesA(propellantPricePath_.c_str());
+        if (attributes == INVALID_FILE_ATTRIBUTES) {
+            const DWORD error = GetLastError();
+            if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND)
+                return oem::Result::failure("PROPELLANT_PRICE_ACCESS", "Could not inspect propellant price configuration.");
+            std::ofstream defaults(propellantPricePath_.c_str(), std::ios::out | std::ios::trunc);
+            if (!defaults) return oem::Result::failure("PROPELLANT_PRICE_CREATE", "Could not create default propellant price configuration.");
+            defaults.imbue(std::locale::classic());
+            defaults << "OEM_PROPELLANT_PRICES|1\n"
+                     << "# Optional exact-body rows override the wildcard rate for that location type.\n"
+                     << "ORBITAL|*|2.0\n"
+                     << "PLANETARY|*|3.0\n";
+            defaults.close();
+            if (!defaults) return oem::Result::failure("PROPELLANT_PRICE_CREATE", "Could not finish writing default propellant prices.");
+        }
+        std::ifstream input(propellantPricePath_.c_str());
+        if (!input) return oem::Result::failure("PROPELLANT_PRICE_READ", "Could not read propellant price configuration.");
+        std::string line;
+        if (!std::getline(input, line) || line != "OEM_PROPELLANT_PRICES|1")
+            return oem::Result::failure("PROPELLANT_PRICE_HEADER", "Propellant price configuration header/version is invalid.");
+        const std::string wantedKind = context.locationKind == oem::PROPELLANT_LOCATION_ORBITAL_STATION
+            ? "ORBITAL" : "PLANETARY";
+        bool haveDefault = false, haveExact = false;
+        double defaultPrice = 0.0, exactPrice = 0.0;
+        std::set<std::string> seen;
+        while (std::getline(input, line)) {
+            if (!line.empty() && line[line.size() - 1] == '\r') line.erase(line.size() - 1);
+            if (line.empty() || line[0] == '#') continue;
+            std::istringstream row(line);
+            std::string kind, body, value, extra;
+            if (!std::getline(row, kind, '|') || !std::getline(row, body, '|') ||
+                !std::getline(row, value, '|') || std::getline(row, extra, '|'))
+                return oem::Result::failure("PROPELLANT_PRICE_RECORD", "A propellant price row is malformed.");
+            char* end = 0;
+            const double price = strtod(value.c_str(), &end);
+            if (!end || *end || !_finite(price) || price <= 0.0 ||
+                (kind != "ORBITAL" && kind != "PLANETARY") || body.empty())
+                return oem::Result::failure("PROPELLANT_PRICE_VALUE", "A propellant price row contains an invalid kind, body, or positive rate.");
+            const std::string key = kind + "|" + body;
+            if (!seen.insert(key).second)
+                return oem::Result::failure("PROPELLANT_PRICE_DUPLICATE", "Propellant price configuration contains a duplicate rule.");
+            if (kind != wantedKind) continue;
+            if (body == "*") { haveDefault = true; defaultPrice = price; }
+            else if (body == context.celestialBody) { haveExact = true; exactPrice = price; }
+        }
+        if (input.bad()) return oem::Result::failure("PROPELLANT_PRICE_READ", "An error occurred while reading propellant price configuration.");
+        if (haveExact) unitPrice = exactPrice;
+        else if (haveDefault) unitPrice = defaultPrice;
+        else return oem::Result::failure("PROPELLANT_PRICE_MISSING", "No default or body-specific propellant rate exists for this location type.");
+        return oem::Result::success();
     }
 
     oem::Result readPropellantSnapshot(const std::string& vesselId,
