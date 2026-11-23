@@ -1,4 +1,4 @@
-#include "../src/core/MissionBoard.h"
+#include "MissionBoard.h"
 #include <cassert>
 #include <cstdio>
 #include <map>
