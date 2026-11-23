@@ -2041,7 +2041,8 @@ public:
     OEMPropellantRefuelMFD(DWORD w, DWORD h, VESSEL *vessel)
         : MFD(w, h, vessel),
           vesselId_(vessel && vessel->GetName() ? vessel->GetName() : ""),
-          status_("B: buy up to 100 kg   F: fill all tanks") {}
+          status_("B/F: select purchase   Y: confirm   X: cancel"),
+          pendingAction_(0) {}
 
     void Update(HDC hDC) override {
         Title(hDC, "OEM REFUELLING");
@@ -2115,17 +2116,35 @@ public:
 
     bool ConsumeKeyBuffered(DWORD key) override {
         if (!g_bridge) return false;
-        oem::Result result;
         if (key == OAPI_KEY_B) {
-            result = g_bridge->performPropellantPurchase(vesselId_, false);
-        } else if (key == OAPI_KEY_F) {
-            result = g_bridge->performPropellantPurchase(vesselId_, true);
-        } else {
-            return false;
+            pendingAction_ = 1;
+            status_ = "Selected: up to 100 kg. Press Y to confirm or X to cancel.";
+            return true;
         }
-        status_ = result.ok ? "Purchase and physical fill committed."
-            : result.code + ": " + result.message;
-        return true;
+        if (key == OAPI_KEY_F) {
+            pendingAction_ = 2;
+            status_ = "Selected: fill all tanks. Press Y to confirm or X to cancel.";
+            return true;
+        }
+        if (key == OAPI_KEY_X) {
+            pendingAction_ = 0;
+            status_ = "Purchase cancelled. Select B or F to prepare another quote.";
+            return true;
+        }
+        if (key == OAPI_KEY_Y) {
+            if (pendingAction_ == 0) {
+                status_ = "No purchase selected. Press B or F first.";
+                return true;
+            }
+            const bool fillAll = pendingAction_ == 2;
+            pendingAction_ = 0;
+            const oem::Result result =
+                g_bridge->performPropellantPurchase(vesselId_, fillAll);
+            status_ = result.ok ? "Purchase and physical fill committed."
+                : result.code + ": " + result.message;
+            return true;
+        }
+        return false;
     }
 
     bool ConsumeButton(int bt, int event) override {
@@ -2165,6 +2184,7 @@ private:
     }
     std::string vesselId_;
     std::string status_;
+    int pendingAction_;
 };
 
 // Market operations are committed through EconomyJournalStore; the MFD never changes Orbiter physical cargo.
