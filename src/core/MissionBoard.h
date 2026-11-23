@@ -14,6 +14,7 @@ struct MissionCandidate {
     std::string destinationBodyId;
     long long quantity;
     Credits reward;
+    SimulationSeconds allowanceSeconds;
     MissionCandidate();
 };
 
