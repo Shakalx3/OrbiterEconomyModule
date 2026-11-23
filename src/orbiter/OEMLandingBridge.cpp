@@ -221,6 +221,14 @@ public:
     bool currentDeliveryOffer(const std::string& vesselId, oem::DeliveryContract& offer) {
         if (!economyReady_ || sessionId_.empty() || currentSimulationTime_ <= 0 ||
             vesselId.empty() || !isFocusedVessel(vesselId)) return false;
+        const std::vector<oem::DeliveryContract>& accepted =
+            contractBook_.contracts();
+        for (std::size_t i = 0; i < accepted.size(); ++i) {
+            if (accepted[i].vesselId == vesselId &&
+                accepted[i].status != oem::CONTRACT_SETTLED &&
+                accepted[i].status != oem::CONTRACT_EXPIRED)
+                return false;
+        }
         std::map<std::string, oem::DeliveryContract>::iterator pending =
             pendingContractOffers_.find(vesselId);
         const std::string origin = currentMarketLocation(vesselId);
