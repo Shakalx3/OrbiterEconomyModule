@@ -28,6 +28,7 @@
 #include "../core/CargoServiceInventoryConfig.h"
 #include "../core/EconomyJournal.h"
 #include "../core/MissionBoard.h"
+#include "../core/MissionEconomics.h"
 #include "../core/LedgerConfig.h"
 #include "../core/CargoCatalogConfig.h"
 #include "../core/EconomicLocationRegistry.h"
@@ -566,6 +567,14 @@ public:
         }
         const std::string origin=currentMarketLocation(vesselId);
         if(origin.empty() || !ensureCargoServiceInventory(origin)) return false;
+        oem::EconomicLocation originLocation;
+        VECTOR3 originGlobal = _V(0,0,0);
+        OBJHANDLE originBody = 0;
+        double originLng=0.0, originLat=0.0, originRadius=0.0;
+        const bool originResolved = resolveCurrentEconomicLocation(vesselId, origin, originLocation) &&
+            resolveEconomicLocationPosition(originLocation, originGlobal, originBody,
+                originLng, originLat, originRadius);
+        if(!originResolved) return false;
         const long long day=(long long)currentSimulationTime_/86400;
         std::map<std::string,oem::MissionBoard>::iterator existing=missionBoards_.find(origin);
         if(existing!=missionBoards_.end() && existing->second.simulationDay==day) {
@@ -587,7 +596,33 @@ public:
                 candidate.destinationLocationId=destination;
                 candidate.destinationBodyId=locations[d].celestialBody;
                 candidate.quantity=1;
-                candidate.reward=item.buyPrice;
+                VECTOR3 destinationGlobal = _V(0,0,0);
+                OBJHANDLE destinationBody = 0;
+                double destinationLng=0.0, destinationLat=0.0, destinationRadius=0.0;
+                if (!resolveEconomicLocationPosition(locations[d], destinationGlobal,
+                        destinationBody, destinationLng, destinationLat, destinationRadius))
+                    continue;
+                oem::MissionRouteDistance route;
+                if (locations[d].kind == oem::ECONOMIC_LOCATION_SPACEPORT &&
+                    originLocation.kind == oem::ECONOMIC_LOCATION_SPACEPORT &&
+                    destinationBody == originBody && originRadius > 0.0) {
+                    route.metres = oem::surfaceDistanceMetres(originLat, originLng,
+                        destinationLat, destinationLng, originRadius);
+                    route.kind = oem::MISSION_ROUTE_SURFACE;
+                } else {
+                    const double dx = destinationGlobal.x - originGlobal.x;
+                    const double dy = destinationGlobal.y - originGlobal.y;
+                    const double dz = destinationGlobal.z - originGlobal.z;
+                    route.metres = sqrt(dx*dx + dy*dy + dz*dz);
+                    route.kind = oem::MISSION_ROUTE_ESTIMATE;
+                }
+                route.valid = _finite(route.metres) && route.metres >= 0.0;
+                const oem::MissionEconomicsConfig economicsConfig;
+                const oem::MissionQuote quote = oem::quoteMission(
+                    item.buyPrice, candidate.quantity, route, economicsConfig);
+                if (!quote.valid) continue;
+                candidate.reward = quote.reward;
+                candidate.allowanceSeconds = quote.allowanceSeconds;
                 candidates.push_back(candidate);
             }
         }
@@ -758,6 +793,72 @@ public:
             }
         }
         return nearest >= 0.0 && nearest <= 5000.0 ? baseId : std::string();
+    }
+
+    bool resolveEconomicLocationPosition(const oem::EconomicLocation& location,
+            VECTOR3& globalPosition, OBJHANDLE& bodyHandle,
+            double& longitude, double& latitude, double& bodyRadius) const {
+        bodyHandle = 0;
+        longitude = latitude = bodyRadius = 0.0;
+        if (location.kind == oem::ECONOMIC_LOCATION_SPACEPORT) {
+            char bodyName[256] = {};
+            char baseName[256] = {};
+            strncpy(bodyName, location.celestialBody.c_str(), sizeof(bodyName)-1);
+            strncpy(baseName, location.storageId.c_str(), sizeof(baseName)-1);
+            bodyHandle = oapiGetObjectByName(bodyName);
+            if (!bodyHandle || oapiGetObjectType(bodyHandle) != OBJTP_PLANET) return false;
+            OBJHANDLE base = oapiGetBaseByName(bodyHandle, baseName);
+            if (!base) return false;
+            double radius = 0.0;
+            oapiGetBaseEquPos(base, &longitude, &latitude, &radius);
+            bodyRadius = oapiGetSize(bodyHandle);
+            if (!(bodyRadius > 0.0) || !_finite(bodyRadius) ||
+                !_finite(longitude) || !_finite(latitude)) return false;
+            oapiEquToGlobal(bodyHandle, longitude, latitude, radius, &globalPosition);
+            return true;
+        }
+        if (location.kind == oem::ECONOMIC_LOCATION_STATION) {
+            char stationName[256] = {};
+            strncpy(stationName, location.storageId.c_str(), sizeof(stationName)-1);
+            OBJHANDLE stationHandle = oapiGetObjectByName(stationName);
+            if (!stationHandle || !oapiIsVessel(stationHandle)) return false;
+            VESSEL* station = oapiGetVesselInterface(stationHandle);
+            if (!station) return false;
+            bodyHandle = station->GetGravityRef();
+            station->GetGlobalPos(globalPosition);
+            if (bodyHandle) {
+                double radius = 0.0;
+                OBJHANDLE coordinateBody = station->GetEquPos(longitude, latitude, radius);
+                if (coordinateBody == bodyHandle) bodyRadius = oapiGetSize(bodyHandle);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    bool resolveCurrentEconomicLocation(const std::string& vesselId,
+            const std::string& storageId, oem::EconomicLocation& location) const {
+        const std::string docked = dockedCargoService(vesselId);
+        if (!docked.empty()) {
+            const oem::EconomicLocation* found =
+                economicLocations_.find(std::string("station:") + docked);
+            if (!found) return false;
+            location = *found;
+            return location.storageId == storageId;
+        }
+        OBJHANDLE focus = oapiGetFocusObject();
+        if (!focus || !oapiIsVessel(focus)) return false;
+        VESSEL* vessel = oapiGetVesselInterface(focus);
+        if (!vessel || !vessel->GetName() || vesselId != vessel->GetName()) return false;
+        OBJHANDLE body = vessel->GetSurfaceRef();
+        if (!body) return false;
+        char bodyName[256] = {};
+        oapiGetObjectName(body, bodyName, sizeof(bodyName));
+        const oem::EconomicLocation* found = economicLocations_.find(
+            std::string("surface:") + bodyName + "/" + storageId);
+        if (!found || found->kind != oem::ECONOMIC_LOCATION_SPACEPORT) return false;
+        location = *found;
+        return true;
     }
 
     oem::Result performCargoExchangeTest(const std::string& vesselId,
