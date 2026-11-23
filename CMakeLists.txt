@@ -28,6 +28,7 @@ add_library(OEMCore
     src/core/EconomicStationRegistry.cpp
     src/core/PropellantPlan.cpp
     src/core/PropellantQuote.cpp
+    src/core/PropellantTransaction.cpp
 )
 target_include_directories(OEMCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
 add_executable(OEMCoreTests Tests/core/LedgerTests.cpp)
@@ -78,6 +79,8 @@ add_executable(OEMPropellantPlanTests Tests/core/PropellantPlanTests.cpp)
 target_link_libraries(OEMPropellantPlanTests PRIVATE OEMCore)
 add_executable(OEMPropellantQuoteTests Tests/core/PropellantQuoteTests.cpp)
 target_link_libraries(OEMPropellantQuoteTests PRIVATE OEMCore)
+add_executable(OEMPropellantTransactionTests Tests/core/PropellantTransactionTests.cpp)
+target_link_libraries(OEMPropellantTransactionTests PRIVATE OEMCore)
 target_link_libraries(OEMEconomicLocationRegistryTests PRIVATE OEMCore)
 target_link_libraries(OEMCampaignResetTests PRIVATE OEMCore)
 target_link_libraries(OEMEconomicStationRegistryTests PRIVATE OEMCore)
@@ -110,3 +113,4 @@ add_test(NAME OEMCampaignResetTests COMMAND OEMCampaignResetTests)
 add_test(NAME OEMEconomicStationRegistryTests COMMAND OEMEconomicStationRegistryTests)
 add_test(NAME OEMPropellantPlanTests COMMAND OEMPropellantPlanTests)
 add_test(NAME OEMPropellantQuoteTests COMMAND OEMPropellantQuoteTests)
+add_test(NAME OEMPropellantTransactionTests COMMAND OEMPropellantTransactionTests)
