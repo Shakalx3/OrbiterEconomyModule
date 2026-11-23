@@ -133,7 +133,7 @@ public:
           cargoServices_(), cargoServicesPath_(makeCargoServicesPath(hDLL)),
           cargoTransferGate_(), cargoManifests_(), cargoManifestLoadAttempted_(),
           cargoStockConfigStore_(), cargoServiceInventories_(), cargoServiceInventoryLoadAttempted_(),
-          economyJournalStore_(), economyJournalPath_(makeEconomyDataFilePath(hDLL, "economy.journal")),
+          economyJournalStore_(), contractBook_(), economyJournalPath_(makeEconomyDataFilePath(hDLL, "economy.journal")),
           ledgerConfigStore_(), cargoCatalogConfigStore_(), accountsPath_(makeEconomyDataFilePath(hDLL, "accounts.cfg")),
           cargoCatalogPath_(makeEconomyDataFilePath(hDLL, "cargo_catalog.cfg")),
           spaceportRegistryPath_(makeEconomyDataFilePath(hDLL, "spaceports.registry")),
@@ -514,6 +514,7 @@ public:
         dockingMonitors_.clear();
         cargoManifests_.clear();
         cargoManifestLoadAttempted_.clear();
+        contractBook_ = oem::DeliveryContractBook();
         cargoServiceInventories_.clear();
         cargoServiceInventoryLoadAttempted_.clear();
         ledger_ = oem::Ledger();
@@ -1042,7 +1043,7 @@ private:
         std::map<std::string, oem::CargoManifest> openingManifests;
         const oem::Result recovered = economyJournalStore_.load(
             economyJournalPath_, openingCatalog, openingLedger,
-            cargoServiceInventories_, openingManifests);
+            cargoServiceInventories_, openingManifests, &contractBook_);
         if (!recovered.ok) {
             char message[512];
             sprintf(message, "OEM Economy: global journal recovery failed (%s): %s",
@@ -1114,6 +1115,7 @@ private:
     std::map<std::string, oem::CargoServiceInventory> cargoServiceInventories_;
     std::set<std::string> cargoServiceInventoryLoadAttempted_;
     oem::EconomyJournalStore economyJournalStore_;
+    oem::DeliveryContractBook contractBook_;
     std::string economyJournalPath_;
     oem::LedgerConfigStore ledgerConfigStore_;
     oem::CargoCatalogConfigStore cargoCatalogConfigStore_;
