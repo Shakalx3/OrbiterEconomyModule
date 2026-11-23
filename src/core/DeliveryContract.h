@@ -51,6 +51,7 @@ public:
                             SimulationSeconds completedAt);
     Result restoreSettled(const std::string& contractId);
     Result restoreExpired(const std::string& contractId);
+    std::vector<std::string> expireDue(SimulationSeconds now);
 
     const DeliveryContract* find(const std::string& contractId) const;
     const std::vector<DeliveryContract>& contracts() const;
