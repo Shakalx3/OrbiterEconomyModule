@@ -64,6 +64,7 @@ int main(){
  oem::DeliveryContractBook contractBook;oem::DeliveryContract contract;
  contract.contractId="delivery-001";contract.vesselId="GL-01";contract.cargoId="oxygen";
  contract.quantity=2;contract.originLocationId="ISS";contract.destinationLocationId="MARS";
+ contract.destinationBodyId="Mars";
  contract.reward=250;contract.acceptedAt=20;contract.deadline=100;
  assert(store.acceptContract(contractPath,contractBook,contract).ok);
  assert(store.applyExchange(contractPath,contractStocks,contractManifest,
@@ -94,6 +95,7 @@ int main(){
  assert(contractReplay.ok);
  assert(recoveredContracts.find(contract.contractId)!=0);
  assert(recoveredContracts.find(contract.contractId)->status==oem::CONTRACT_SETTLED);
+ assert(recoveredContracts.find(contract.contractId)->destinationBodyId=="Mars");
  assert(contractRecoveredLedger.getBalance("company",balance)&&balance==1250);
  assert(recoveredContractManifests["GL-01"].quantity("oxygen")==0);
  assert(recoveredContractStocks["MARS"].quantity("oxygen")==6);
