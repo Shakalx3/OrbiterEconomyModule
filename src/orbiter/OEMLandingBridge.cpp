@@ -1705,7 +1705,7 @@ public:
             const oem::DeliveryContract& c = contracts[n - 1];
             if (c.vesselId != vesselId_) continue;
             const char *state = c.status == oem::CONTRACT_ACCEPTED ? "ACTIVE" :
-                c.status == oem::CONTRACT_COMPLETED ? "READY TO PAY" :
+                c.status == oem::CONTRACT_COMPLETED ? "PAYMENT PENDING" :
                 c.status == oem::CONTRACT_SETTLED ? "PAID" : "EXPIRED";
             char line[256];
             sprintf(line, "%.14s %s", c.contractId.c_str(), state);
@@ -1716,7 +1716,7 @@ public:
             ++shown;
         }
         if (shown == 0) DrawLine(hDC, y, "No accepted contracts.");
-        DrawLine(hDC, y, "S: SETTLE COMPLETED CONTRACT");
+        DrawLine(hDC, y, "PAYOUT IS AUTOMATIC ON ARRIVAL");
         DrawLine(hDC, y, status_.c_str());
     }
 
@@ -1751,14 +1751,14 @@ public:
     }
 
     char *ButtonLabel(int bt) override {
-        static char *labels[2] = { (char*)"ACCEPT", (char*)"PAY" };
+        static char *labels[2] = { (char*)"ACCEPT", (char*)"RETRY" };
         return bt >= 0 && bt < 2 ? labels[bt] : 0;
     }
 
     int ButtonMenu(const MFDBUTTONMENU **menu) const override {
         static const MFDBUTTONMENU items[2] = {
             { "Accept the current delivery offer", 0, 'A' },
-            { "Settle the first completed contract", 0, 'S' }
+            { "Retry a pending automatic payout", 0, 'S' }
         };
         if (menu) *menu = items;
         return 2;
