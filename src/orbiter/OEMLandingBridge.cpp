@@ -140,7 +140,7 @@ public:
           spaceportRegistryPath_(makeEconomyDataFilePath(hDLL, "spaceports.registry")),
           economicStations_(), economicStationsPath_(makeEconomyDataFilePath(hDLL, "economic_stations.registry")),
           spaceportRegistry_(), economicLocations_(), economicStationsReady_(false), cargoServicesReady_(false), ledger_(), cargoCatalog_(), economyReady_(false), journalReady_(false), sessionId_(),
-          currentSimulationTime_(0), cargoTransferSequence_(0), lastFocus_(0) {
+          currentSimulationTime_(0), cargoTransferSequence_(0), lastFocus_(0), completionNote_(0), notificationUntil_(0) {
         g_bridge = this;
     }
 
@@ -300,8 +300,22 @@ public:
             cargoManifests_.find(contract->vesselId);
         if (manifest == cargoManifests_.end())
             return oem::Result::failure("CONTRACT_CARGO_MISSING", "Contract vessel cargo manifest is unavailable.");
-        return economyJournalStore_.settleContract(
+        const bool wasSettled = contract->status == oem::CONTRACT_SETTLED;
+        const oem::Credits reward = contract->reward;
+        const std::string vesselId = contract->vesselId;
+        const oem::Result result = economyJournalStore_.settleContract(
             economyJournalPath_, contractBook_, contractId, "company", ledger_);
+        if (result.ok && !wasSettled) {
+            char notice[512];
+            sprintf(notice, "CONTRACT COMPLETED\\nDelivery received\\n+ %lld CR",
+                    (long long)reward);
+            showCompletionNotice(notice);
+            char log[512];
+            sprintf(log, "OEM CONTRACT SETTLED: id=%s vessel=%s reward=%lld",
+                    contractId.c_str(), vesselId.c_str(), (long long)reward);
+            oapiWriteLog(log);
+        }
+        return result;
     }
 
     bool companyBalance(oem::Credits& balance) const {
@@ -600,6 +614,7 @@ public:
     }
 
     void clbkSimulationStart(RenderMode mode) override {
+        clearCompletionNotice();
         landingMonitors_.clear();
         flightMonitors_.clear();
         dockingMonitors_.clear();
@@ -686,6 +701,7 @@ public:
     }
 
     void clbkSimulationEnd() override {
+        clearCompletionNotice();
         landingMonitors_.clear();
         flightMonitors_.clear();
         dockingMonitors_.clear();
@@ -712,8 +728,10 @@ public:
         const long long simMilliseconds = (long long)(simt * 1000.0 + 0.5);
         const oem::SimulationSeconds simSeconds =
             (oem::SimulationSeconds)(simt >= 0.0 ? simt : 0.0);
+        updateCompletionNotice(simSeconds);
 
         if (economyReady_) {
+            settleCompletedContracts();
             oem::DeliveryContractBook due = contractBook_;
             const std::vector<std::string> expired = due.expireDue(simSeconds);
             for (std::size_t i = 0; i < expired.size(); ++i) {
@@ -922,6 +940,53 @@ public:
     }
 
 private:
+    void showCompletionNotice(const char *text) {
+        if (!text || !*text) return;
+        if (!completionNote_)
+            completionNote_ = oapiCreateAnnotation(false, 1.25, _V(0.25, 1.0, 0.35));
+        if (!completionNote_) {
+            oapiWriteLog((char*)"OEM CONTRACT: could not create completion annotation.");
+            return;
+        }
+        oapiAnnotationSetPos(completionNote_, 0.28, 0.40, 0.72, 0.60);
+        oapiAnnotationSetSize(completionNote_, 1.25);
+        oapiAnnotationSetColour(completionNote_, _V(0.25, 1.0, 0.35));
+        char buffer[512];
+        strncpy(buffer, text, sizeof(buffer) - 1);
+        buffer[sizeof(buffer) - 1] = '\\0';
+        oapiAnnotationSetText(completionNote_, buffer);
+        notificationUntil_ = currentSimulationTime_ + 7;
+    }
+
+    void updateCompletionNotice(oem::SimulationSeconds now) {
+        if (completionNote_ && notificationUntil_ > 0 && now >= notificationUntil_)
+            clearCompletionNotice();
+    }
+
+    void clearCompletionNotice() {
+        if (completionNote_) {
+            oapiDelAnnotation(completionNote_);
+            completionNote_ = 0;
+        }
+        notificationUntil_ = 0;
+    }
+
+    void settleCompletedContracts() {
+        std::vector<std::string> pending;
+        const std::vector<oem::DeliveryContract>& contracts = contractBook_.contracts();
+        for (std::size_t i = 0; i < contracts.size(); ++i)
+            if (contracts[i].status == oem::CONTRACT_COMPLETED)
+                pending.push_back(contracts[i].contractId);
+        for (std::size_t i = 0; i < pending.size(); ++i) {
+            const oem::Result settled = settleDeliveryContract(pending[i]);
+            if (!settled.ok) {
+                char error[512];
+                sprintf(error, "OEM CONTRACT: automatic settlement retry failed id=%s (%s): %s",
+                    pending[i].c_str(), settled.code.c_str(), settled.message.c_str());
+                oapiWriteLog(error);
+            }
+        }
+    }
 
     // Rebuild from Orbiter handles every scenario start; the saved registry is a derived snapshot.
     void rebuildSpaceportRegistry() {
@@ -1218,6 +1283,8 @@ private:
                                 economyJournalPath_, contractBook_, updated[i].contractId,
                                 updated[i].completionEventId, updated[i].completedAt,
                                 cargoServiceInventories_, arrivalManifest->second);
+                            if (committed.ok)
+                                committed = settleDeliveryContract(updated[i].contractId);
                         }
                     }
                     else if (updated[i].status == oem::CONTRACT_EXPIRED)
@@ -1286,6 +1353,8 @@ private:
     oem::SimulationSeconds currentSimulationTime_;
     unsigned long cargoTransferSequence_;
     OBJHANDLE lastFocus_;
+    NOTEHANDLE completionNote_;
+    oem::SimulationSeconds notificationUntil_;
 };
 
 class OEMFlightLogMFD : public MFD {
