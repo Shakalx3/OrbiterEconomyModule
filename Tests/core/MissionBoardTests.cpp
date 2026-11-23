@@ -1,6 +1,7 @@
 #include "MissionBoard.h"
 #include <cassert>
 #include <cstdio>
+#include <fstream>
 #include <map>
 #include <vector>
 
@@ -43,6 +44,32 @@ int main() {
     assert(recovered.size()==2);
     assert(recovered["surface:Earth/origin"].offers.size()==first.offers.size());
     assert(recovered["station:empty-origin"].offers.empty());
+    std::remove(path.c_str());
+
+    // Canonical origins with identical legacy storage IDs remain distinct.
+    oem::MissionBoard earth, mars;
+    assert(store.generate("TwinBase","surface:Earth/TwinBase",5,1,"earth-seed",none,earth).ok);
+    assert(store.generate("TwinBase","surface:Mars/TwinBase",5,1,"mars-seed",none,mars).ok);
+    std::map<std::string,oem::MissionBoard> twinBoards;
+    twinBoards[earth.originCanonicalId]=earth;
+    twinBoards[mars.originCanonicalId]=mars;
+    assert(store.save(path,twinBoards).ok);
+    recovered.clear();
+    assert(store.load(path,recovered).ok);
+    assert(recovered.size()==2);
+    assert(recovered["surface:Earth/TwinBase"].originLocationId=="TwinBase");
+    assert(recovered["surface:Mars/TwinBase"].originLocationId=="TwinBase");
+    std::remove(path.c_str());
+
+    // Existing v1 mission-board files are migrated to a namespaced legacy key.
+    {
+        std::ofstream legacy(path.c_str(),std::ios::binary|std::ios::trunc);
+        legacy<<"OEM_MISSION_BOARDS|1\nB|6F6C6462617365|3|7|0\n";
+    }
+    recovered.clear();
+    assert(store.load(path,recovered).ok);
+    assert(recovered.size()==1);
+    assert(recovered["legacy:oldbase"].originLocationId=="oldbase");
     std::remove(path.c_str());
     return 0;
 }
