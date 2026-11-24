@@ -9,6 +9,7 @@
 
 static oem::MissionObjectiveCandidate visit(const char* target,const char* canonical,const char* body) {
     oem::MissionObjectiveCandidate c;
+    c.issuerId="issuer:regional-authority";
     c.kind=oem::MISSION_OBJECTIVE_VISIT_SPACEPORT;
     c.targetLocationId=target; c.targetCanonicalId=canonical; c.targetBodyId=body;
     c.missionType="VISIT"; c.missionTitle="Spaceport visit";
@@ -18,6 +19,7 @@ static oem::MissionObjectiveCandidate visit(const char* target,const char* canon
 }
 static oem::MissionObjectiveCandidate dock(const char* target,const char* canonical) {
     oem::MissionObjectiveCandidate c;
+    c.issuerId="issuer:orbital-operator";
     c.kind=oem::MISSION_OBJECTIVE_DOCK_STATION;
     c.targetLocationId=target; c.targetCanonicalId=canonical;
     c.missionType="DOCK"; c.missionTitle="Station docking";
@@ -42,6 +44,7 @@ int main() {
     for(std::size_t i=0;i<a.offers.size();++i) {
         assert(a.offers[i].missionId==b.offers[i].missionId);
         assert(a.offers[i].targetCanonicalId==b.offers[i].targetCanonicalId);
+        assert(a.offers[i].issuerId==b.offers[i].issuerId);
     }
     const std::string path="OEMMissionObjectiveBoardTests.dat";
     std::remove(path.c_str());
@@ -56,6 +59,7 @@ int main() {
         assert(restored.begin()->second.offers[i].missionId==a.offers[i].missionId);
         assert(restored.begin()->second.offers[i].missionBriefing==a.offers[i].missionBriefing);
         assert(restored.begin()->second.offers[i].targetBodyId==a.offers[i].targetBodyId);
+        assert(restored.begin()->second.offers[i].issuerId==a.offers[i].issuerId);
     }
     oem::MissionObjectiveBoard empty;
     std::vector<oem::MissionObjectiveCandidate> invalid(1,visit("EarthBase","surface:Earth/EarthBase","Earth"));

@@ -193,6 +193,7 @@ int main(){
  assert(store.acceptContract(failurePath,failureBook,failedContract).ok);
  oem::Ledger failureLedger;assert(failureLedger.createAccount("company",500).ok);
  assert(store.expireContract(failurePath,failureBook,failedContract.contractId,failureLedger,"company",21).ok);
+ { std::ifstream journal(failurePath.c_str(),std::ios::binary); std::string contents((std::istreambuf_iterator<char>(journal)),std::istreambuf_iterator<char>()); assert(contents.find("|"+hex("issuer:station:ISS")+"\n")!=std::string::npos); }
  assert(failureBook.find(failedContract.contractId)->status==oem::CONTRACT_EXPIRED);
  assert(failureLedger.getBalance("company",balance)&&balance==475);
  int failureReputation=0;assert(failureLedger.getReputation("issuer:station:ISS",failureReputation)&&failureReputation==45);assert(!failureLedger.getReputation("company",failureReputation));

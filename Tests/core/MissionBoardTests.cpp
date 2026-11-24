@@ -11,6 +11,7 @@ int main() {
     for(int i=0;i<8;++i){
         oem::MissionCandidate c;
         c.cargoId="cargo-"+std::to_string(i);
+        c.issuerId="issuer:company:"+std::to_string(i%2);
         c.destinationLocationId="destination-"+std::to_string(i);
         c.destinationBodyId=i%2?"Mars":"Earth";
         c.destinationCanonicalId="surface:"+c.destinationBodyId+"/destination-"+std::to_string(i);
@@ -29,6 +30,7 @@ int main() {
         assert(first.offers[i].contractId==repeat.offers[i].contractId);
         assert(first.offers[i].destinationLocationId==repeat.offers[i].destinationLocationId);
         assert(first.offers[i].originLocationId=="origin");
+        assert(first.offers[i].issuerId==candidates[0].issuerId || !first.offers[i].issuerId.empty());
         assert(first.offers[i].missionType==repeat.offers[i].missionType);
         assert(!first.offers[i].missionTitle.empty());
         assert(!first.offers[i].missionBriefing.empty());
@@ -52,6 +54,7 @@ int main() {
     if(!first.offers.empty()) {
         assert(recovered["surface:Earth/origin"].offers[0].missionTitle==first.offers[0].missionTitle);
         assert(recovered["surface:Earth/origin"].offers[0].missionBriefing==first.offers[0].missionBriefing);
+        assert(recovered["surface:Earth/origin"].offers[0].issuerId==first.offers[0].issuerId);
     }
     assert(recovered["station:empty-origin"].offers.empty());
     std::remove(path.c_str());
