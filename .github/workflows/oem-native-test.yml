@@ -147,6 +147,16 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify checked-out source revision for PR DLL
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        env:
+          BUILD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:BUILD_SHA) { throw "Checked-out source $actual does not match PR head $env:BUILD_SHA" }
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x86
@@ -167,20 +177,29 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          BUILD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           $ErrorActionPreference = "Stop"
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:BUILD_SHA) { throw "DLL source revision mismatch: expected $env:BUILD_SHA, got $actual" }
           $tag = "oem-delivery-contracts-test"
           $title = "OEM Delivery Contracts Test (pre-release)"
-          $notes = "Experimental Win32 Orbiter 2010 DLL for testing delivery contracts and independent visit/docking missions. Built from the delivery-contracts pull request. Keep the existing OEMData directory and configuration files; replace only OEMLandingBridge.dll. All OEM cargo is accounting-manifest data and does not change Orbiter physical cargo or vessel mass. DELIVERY TEST: open OEM Delivery Contracts (MFD key D) at a stocked origin and accept an offer; the required quantity is loaded automatically into the OEM vessel manifest and debited from origin stock. Reach the offered destination; on verified arrival the manifest cargo is transferred to destination stock and the reward is paid automatically. No market purchase or manual payout is required. OBJECTIVE TEST: open OEM Independent Missions (MFD key I) while at a registered spaceport or economic station. Accept a VISIT offer and land at the exact named base/body, or accept a DOCK offer and dock with the exact registered station. Completion is based on Orbiter landing/docking events and pays automatically. Orbital target stations must first be registered with OEM Economic Admin (key A). Objective offers range from zero to three and refresh each simulation day. Objective acceptance, completion evidence, payout, cancellation and expiry are stored in economy.journal; objective_mission_boards.dat stores the generated offers. Test restart recovery by saving/reloading after a paid objective and verifying there is no second payout. Cancellation has no penalty. Do not delete OEMData or existing journals when updating the DLL."
+          $notes = "Experimental Win32 Orbiter 2010 DLL built from commit $($env:BUILD_SHA) for testing delivery contracts and independent VISIT/DOCK missions. Keep the existing OEMData directory and configuration files; replace only OEMLandingBridge.dll. All OEM cargo is accounting-manifest data and does not change Orbiter physical cargo or vessel mass. DELIVERY TEST: open OEM Delivery Contracts (MFD key D) at a stocked origin and accept an offer; the required quantity is loaded automatically into the OEM vessel manifest and debited from origin stock. Reach the offered destination; on verified arrival the manifest cargo is transferred to destination stock and the reward is paid automatically. OBJECTIVE TEST: open OEM Independent Missions (MFD key I), accept a VISIT offer and land at its exact named base/body, or accept a DOCK offer and dock with its exact registered station. Orbital target stations must first be registered with OEM Economic Admin (key A). FAILURE TEST: OEMData/mission_failure.cfg defaults to P|1000|-5 (10% of reward and -5 reputation); adjust it while Orbiter is stopped, let an accepted delivery/VISIT/DOCK mission pass its deadline, then verify the capped fee and reputation decrease. Cancel another accepted mission and verify that no penalty is applied. Expiry, completion, cancellation and payouts are stored in economy.journal; objective_mission_boards.dat stores generated offers. Test restart recovery and verify no duplicate fee or payout. Do not delete OEMData or existing journals when updating the DLL. CI success verifies compilation and automated core tests, not behaviour in the Orbiter simulator."
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release edit $tag --repo $env:GITHUB_REPOSITORY --title $title --notes $notes --target $env:GITHUB_SHA --prerelease
+            gh release edit $tag --repo $env:GITHUB_REPOSITORY --title $title --notes $notes --target $env:BUILD_SHA --prerelease
             if ($LASTEXITCODE -ne 0) { throw "Could not update delivery-contracts test release metadata" }
             gh release upload $tag OEMLandingBridge.dll --repo $env:GITHUB_REPOSITORY --clobber
           } else {
             gh release create $tag OEMLandingBridge.dll --repo $env:GITHUB_REPOSITORY --title $title --notes $notes --target $env:GITHUB_SHA --prerelease
           }
           if ($LASTEXITCODE -ne 0) { throw "Could not publish delivery-contracts test DLL" }
+          $published = gh release view $tag --repo $env:GITHUB_REPOSITORY --json targetCommitish,assets | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw "Could not verify the published delivery-contracts release" }
+          if ($published.targetCommitish -ne $env:BUILD_SHA) { throw "Release target $($published.targetCommitish) does not match build commit $env:BUILD_SHA" }
+          $asset = $published.assets | Where-Object { $_.name -eq "OEMLandingBridge.dll" } | Select-Object -First 1
+          if ($null -eq $asset -or [long]$asset.size -le 0) { throw "Published OEMLandingBridge.dll is missing or empty" }
+          Write-Host "Verified OEMLandingBridge.dll ($($asset.size) bytes) for commit $env:BUILD_SHA"
       - name: Replace the rolling release
         if: github.event_name == 'push'
         shell: pwsh
