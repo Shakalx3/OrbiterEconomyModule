@@ -107,6 +107,54 @@ int main(){
  assert(contractRecoveredLedger.getBalance("company",balance)&&balance==1250);
  assert(recoveredContractManifests["GL-01"].quantity("oxygen")==0);
  assert(recoveredContractStocks["MARS"].quantity("oxygen")==6);
+ // Delivery acceptance atomically loads the contracted cargo from origin stock.
+ const std::string autoLoadPath="OEMContractAutoLoadTests.journal";std::remove(autoLoadPath.c_str());
+ oem::DeliveryContractBook autoLoadBook;
+ std::map<std::string,oem::CargoServiceInventory> autoLoadStocks;
+ autoLoadStocks.insert(std::make_pair("ISS",oem::CargoServiceInventory("ISS")));
+ assert(autoLoadStocks["ISS"].setInitialStock("oxygen",5,10.0).ok);
+ oem::CargoManifest autoLoadManifest("GL-AUTO");
+ oem::DeliveryContract autoLoadContract=contract;
+ autoLoadContract.contractId="auto-load-001";autoLoadContract.vesselId="GL-AUTO";
+ autoLoadContract.originLocationId="ISS";autoLoadContract.destinationLocationId="MARS";
+ autoLoadContract.quantity=2;autoLoadContract.acceptedAt=30;autoLoadContract.deadline=200;
+ assert(store.acceptContractWithCargo(autoLoadPath,autoLoadBook,autoLoadStocks,
+     autoLoadManifest,autoLoadContract,10.0).ok);
+ assert(autoLoadStocks["ISS"].quantity("oxygen")==3);
+ assert(autoLoadManifest.quantity("oxygen")==2);
+ assert(autoLoadManifest.history().size()==1);
+ assert(store.acceptContractWithCargo(autoLoadPath,autoLoadBook,autoLoadStocks,
+     autoLoadManifest,autoLoadContract,10.0).ok);
+ assert(autoLoadStocks["ISS"].quantity("oxygen")==3);
+ assert(autoLoadManifest.quantity("oxygen")==2);
+ oem::Ledger autoLoadLedger;assert(autoLoadLedger.createAccount("company",1000).ok);
+ oem::DeliveryContractBook autoLoadRecoveredBook;
+ std::map<std::string,oem::CargoServiceInventory> autoLoadRecoveredStocks;
+ autoLoadRecoveredStocks.insert(std::make_pair("ISS",oem::CargoServiceInventory("ISS")));
+ assert(autoLoadRecoveredStocks["ISS"].setInitialStock("oxygen",5,10.0).ok);
+ std::map<std::string,oem::CargoManifest> autoLoadRecoveredManifests;
+ assert(store.load(autoLoadPath,cat,autoLoadLedger,autoLoadRecoveredStocks,
+     autoLoadRecoveredManifests,&autoLoadRecoveredBook).ok);
+ assert(autoLoadRecoveredBook.find("auto-load-001")!=0);
+ assert(autoLoadRecoveredStocks["ISS"].quantity("oxygen")==3);
+ assert(autoLoadRecoveredManifests["GL-AUTO"].quantity("oxygen")==2);
+ assert(store.load(autoLoadPath,cat,autoLoadLedger,autoLoadRecoveredStocks,
+     autoLoadRecoveredManifests,&autoLoadRecoveredBook).ok);
+ assert(autoLoadRecoveredStocks["ISS"].quantity("oxygen")==3);
+ assert(autoLoadRecoveredManifests["GL-AUTO"].quantity("oxygen")==2);
+ const std::string noStockPath="OEMContractAutoLoadNoStockTests.journal";std::remove(noStockPath.c_str());
+ oem::DeliveryContractBook noStockBook;
+ std::map<std::string,oem::CargoServiceInventory> noStock;
+ noStock.insert(std::make_pair("ISS",oem::CargoServiceInventory("ISS")));
+ assert(noStock["ISS"].setInitialStock("oxygen",1,10.0).ok);
+ oem::CargoManifest noStockManifest("GL-POOR");
+ oem::DeliveryContract tooLarge=autoLoadContract;tooLarge.contractId="auto-load-too-large";
+ tooLarge.vesselId="GL-POOR";tooLarge.quantity=2;
+ assert(!store.acceptContractWithCargo(noStockPath,noStockBook,noStock,
+     noStockManifest,tooLarge,10.0).ok);
+ assert(noStockBook.find("auto-load-too-large")==0);
+ assert(noStock["ISS"].quantity("oxygen")==1&&noStockManifest.quantity("oxygen")==0);
+ std::remove(noStockPath.c_str());std::remove(autoLoadPath.c_str());
  // Cancellation is durable, idempotent, and does not affect funds or cargo.
  const std::string cancelPath="OEMContractCancelJournalTests.journal";std::remove(cancelPath.c_str());
  oem::DeliveryContractBook cancelBook;oem::DeliveryContract cancellable=contract;
