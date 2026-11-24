@@ -1,5 +1,6 @@
 #include "EconomyJournal.h"
 #include <cstdio>
+#include <cerrno>
 #include <cstdlib>
 #include <cmath>
 #include <fstream>
@@ -75,20 +76,32 @@ Result appendUnique(const std::string&p,const std::string&record,const std::stri
 
 Result MissionFailurePolicyStore::loadOrCreate(const std::string& path, MissionFailurePolicy& policy) const {
     if (path.empty()) return Result::failure("MISSION_FAILURE_POLICY_PATH", "Policy path is empty.");
-    std::ifstream in(path.c_str(), std::ios::binary);
-    if (!in) {
-        std::ofstream out(path.c_str(), std::ios::binary | std::ios::out);
+    std::FILE* probe = std::fopen(path.c_str(), "rb");
+    if (!probe) {
+        if (errno != ENOENT)
+            return Result::failure("MISSION_FAILURE_POLICY_OPEN", "Could not inspect existing mission failure policy.");
+        std::ofstream out(path.c_str(), std::ios::binary | std::ios::out | std::ios::app);
         if (!out) return Result::failure("MISSION_FAILURE_POLICY_CREATE", "Could not create mission failure policy.");
-        out << "OEM_MISSION_FAILURE|1\nP|" << policy.penaltyBasisPoints << "|" << policy.reputationDelta << "\n";
-        out.flush();
-        if (!out.good()) return Result::failure("MISSION_FAILURE_POLICY_WRITE", "Could not write mission failure policy.");
-        return Result::success();
+        out.seekp(0, std::ios::end);
+        if (out.tellp() == std::streampos(0)) {
+            out << "OEM_MISSION_FAILURE|1\\nP|" << policy.penaltyBasisPoints << "|" << policy.reputationDelta << "\\n";
+            out.flush();
+            if (!out.good()) return Result::failure("MISSION_FAILURE_POLICY_WRITE", "Could not write mission failure policy.");
+            return Result::success();
+        }
+        out.close();
+    } else {
+        std::fclose(probe);
     }
+    std::ifstream in(path.c_str(), std::ios::binary);
+    if (!in) return Result::failure("MISSION_FAILURE_POLICY_OPEN", "Could not read mission failure policy.");
     std::string line;
-    if (!std::getline(in, line) || line != "OEM_MISSION_FAILURE|1")
+    if (!std::getline(in, line)) return Result::failure("MISSION_FAILURE_POLICY_HEADER", "Mission failure policy is empty.");
+    if (!line.empty() && line[line.size()-1] == '\\r') line.erase(line.size()-1);
+    if (line != "OEM_MISSION_FAILURE|1")
         return Result::failure("MISSION_FAILURE_POLICY_HEADER", "Mission failure policy header or version is invalid.");
     if (!std::getline(in, line)) return Result::failure("MISSION_FAILURE_POLICY_RECORD", "Mission failure policy record is missing.");
-    if (!line.empty() && line[line.size()-1] == '\r') line.erase(line.size()-1);
+    if (!line.empty() && line[line.size()-1] == '\\r') line.erase(line.size()-1);
     const std::vector<std::string> fields = split(line);
     long long basisPoints = 0, reputation = 0;
     if (fields.size() != 3 || fields[0] != "P" ||
@@ -96,7 +109,7 @@ Result MissionFailurePolicyStore::loadOrCreate(const std::string& path, MissionF
         basisPoints < 0 || basisPoints > 10000 || reputation >= 0 || reputation < -100)
         return Result::failure("MISSION_FAILURE_POLICY_RECORD", "Mission failure policy values are invalid.");
     std::string extra;
-    while (std::getline(in, extra)) if (!extra.empty())
+    while (std::getline(in, extra)) if (!extra.empty() && extra != "\\r")
         return Result::failure("MISSION_FAILURE_POLICY_TRAILING", "Unexpected data follows the mission failure policy.");
     policy.penaltyBasisPoints = (unsigned int)basisPoints;
     policy.reputationDelta = (int)reputation;
