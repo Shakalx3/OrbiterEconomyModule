@@ -6,6 +6,13 @@
 #include <map>
 #include <string>
 namespace oem {
+struct MissionFailurePolicy {
+    unsigned int penaltyBasisPoints;
+    int reputationDelta;
+    MissionFailurePolicy() : penaltyBasisPoints(1000), reputationDelta(-5) {}
+    bool valid() const { return penaltyBasisPoints <= 10000 && reputationDelta < 0; }
+};
+
 class EconomyJournalStore {
 public:
     // Inputs are explicit opening-state projections. Recovery is transactional across all stations.
@@ -44,7 +51,9 @@ public:
                             const std::string& accountId, Credits cost,
                             SimulationSeconds simulationTime, Ledger& ledger) const;
     Result expireContract(const std::string& path, DeliveryContractBook& contracts,
-                          const std::string& contractId) const;
+                          const std::string& contractId, Ledger& ledger,
+                          const std::string& accountId, SimulationSeconds expiredAt,
+                          const MissionFailurePolicy& policy = MissionFailurePolicy()) const;
     Result cancelContract(const std::string& path, DeliveryContractBook& contracts,
                           const std::string& contractId) const;
     Result acceptMissionObjective(const std::string& path, MissionObjectiveBook& objectives,
@@ -57,7 +66,9 @@ public:
                           const std::string& missionId, const std::string& accountId,
                           Ledger& ledger) const;
     Result expireMissionObjective(const std::string& path, MissionObjectiveBook& objectives,
-                          const std::string& missionId) const;
+                          const std::string& missionId, Ledger& ledger,
+                          const std::string& accountId, SimulationSeconds expiredAt,
+                          const MissionFailurePolicy& policy = MissionFailurePolicy()) const;
     Result cancelMissionObjective(const std::string& path, MissionObjectiveBook& objectives,
                           const std::string& missionId) const;
 };
