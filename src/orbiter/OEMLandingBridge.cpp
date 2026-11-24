@@ -3051,9 +3051,10 @@ public:
         const oem::SimulationSeconds now=g_bridge->missionSimulationTime();
         const oem::DeliveryContract* delivery=activeDelivery();
         const oem::MissionObjectiveContract* objective=activeObjective();
+        const bool showDelivery=delivery&&(!objective||delivery->acceptedAt>=objective->objective.acceptedAt);
         if(delivery||objective) {
             DrawLine(hDC,y,"CURRENT MISSION");
-            if(delivery) {
+            if(showDelivery) {
                 DrawWrappedText(hDC,y,delivery->missionTitle.empty()?"Cargo delivery":delivery->missionTitle,35);
                 DrawWrappedText(hDC,y,delivery->missionBriefing.empty()?
                     "Deliver the contracted cargo to the destination.":delivery->missionBriefing,35);
@@ -3154,11 +3155,10 @@ public:
         }
         if(key==OAPI_KEY_C) {
             const oem::DeliveryContract* d=activeDelivery();
-            if(d) g_bridge->cancelDeliveryContract(d->contractId,vesselId_);
-            else {
-                const oem::MissionObjectiveContract* o=activeObjective();
-                if(o) g_bridge->cancelMissionObjective(o->objective.missionId,vesselId_);
-            }
+            const oem::MissionObjectiveContract* o=activeObjective();
+            if(d&&(!o||d->acceptedAt>=o->objective.acceptedAt))
+                g_bridge->cancelDeliveryContract(d->contractId,vesselId_);
+            else if(o) g_bridge->cancelMissionObjective(o->objective.missionId,vesselId_);
             return true;
         }
         return false;
