@@ -3536,6 +3536,11 @@ DLLCLBK void InitModule(HINSTANCE hDLL) {
     spec.msgproc = OEMDeliveryContractsMFD::MsgProc;
     g_deliveryContractsMode = oapiRegisterMFDMode(spec);
 
+    spec.name = "OEM Independent Missions";
+    spec.key = OAPI_KEY_I;
+    spec.msgproc = OEMIndependentMissionsMFD::MsgProc;
+    g_independentMissionsMode = oapiRegisterMFDMode(spec);
+
     spec.name = "OEM Economic Admin";
     spec.key = OAPI_KEY_A;
     spec.msgproc = OEMEconomicAdminMFD::MsgProc;
@@ -3558,6 +3563,7 @@ DLLCLBK void ExitModule(HINSTANCE hDLL) {
     if (g_cargoExchangeTestMode >= 0) oapiUnregisterMFDMode(g_cargoExchangeTestMode);
     if (g_marketMode >= 0) oapiUnregisterMFDMode(g_marketMode);
     if (g_deliveryContractsMode >= 0) oapiUnregisterMFDMode(g_deliveryContractsMode);
+    if (g_independentMissionsMode >= 0) oapiUnregisterMFDMode(g_independentMissionsMode);
     if (g_economicAdminMode >= 0) oapiUnregisterMFDMode(g_economicAdminMode);
     if (g_propellantMonitorMode >= 0) oapiUnregisterMFDMode(g_propellantMonitorMode);
     if (g_propellantRefuelMode >= 0) oapiUnregisterMFDMode(g_propellantRefuelMode);
@@ -3566,6 +3572,7 @@ DLLCLBK void ExitModule(HINSTANCE hDLL) {
     g_cargoExchangeTestMode = -1;
     g_marketMode = -1;
     g_deliveryContractsMode = -1;
+    g_independentMissionsMode = -1;
     g_economicAdminMode = -1;
     g_propellantMonitorMode = -1;
     g_propellantRefuelMode = -1;
