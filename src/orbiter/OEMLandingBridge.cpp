@@ -3120,6 +3120,188 @@ private:
     std::size_t selectedOffer_;
 };
 
+class OEMIndependentMissionsMFD : public MFD {
+public:
+    OEMIndependentMissionsMFD(DWORD w, DWORD h, VESSEL *vessel)
+        : MFD(w, h, vessel),
+          vesselId_(vessel && vessel->GetName() ? vessel->GetName() : ""),
+          status_("UP/DOWN: SELECT  A: ACCEPT  C: CANCEL"),
+          selectedOffer_(0) {}
+
+    void Update(HDC hDC) override {
+        Title(hDC, "OEM INDEPENDENT MISSIONS");
+        SelectDefaultFont(hDC, 0);
+        int y = (int)ch + 3;
+        if (!g_bridge) {
+            DrawLine(hDC, y, "OEM bridge unavailable.");
+            return;
+        }
+        std::vector<oem::MissionObjectiveOffer> offers;
+        if (g_bridge->currentObjectiveOffers(vesselId_, offers)) {
+            DrawLine(hDC, y, "LOCAL OBJECTIVE BOARD");
+            const std::size_t count = offers.size() < 3 ? offers.size() : 3;
+            if (count == 0) selectedOffer_ = 0;
+            else if (selectedOffer_ >= count) selectedOffer_ = count - 1;
+            for (std::size_t i = 0; i < count; ++i) {
+                const oem::MissionObjectiveOffer& offer = offers[i];
+                char line[128];
+                const char* kind = offer.kind == oem::MISSION_OBJECTIVE_VISIT_SPACEPORT
+                    ? "VISIT" : "DOCK";
+                sprintf(line, "%lu %s %lld CR",
+                    (unsigned long)(i + 1), kind, (long long)offer.reward);
+                const COLORREF oldColor = GetTextColor(hDC);
+                if (i == selectedOffer_) SetTextColor(hDC, RGB(255, 220, 80));
+                std::string selectedLine = (i == selectedOffer_ ? "> " : "  ");
+                selectedLine += line;
+                DrawLine(hDC, y, selectedLine.c_str());
+                if (i == selectedOffer_) SetTextColor(hDC, oldColor);
+                sprintf(line, "  TO: %.27s", offer.targetLocationId.c_str());
+                DrawLine(hDC, y, line);
+            }
+            if (count > 0 && !offers[selectedOffer_].missionBriefing.empty()) {
+                DrawLine(hDC, y, "BRIEFING");
+                DrawWrappedText(hDC, y, offers[selectedOffer_].missionBriefing, 35);
+            }
+        } else {
+            DrawLine(hDC, y, "NO NEW OBJECTIVE OFFERS");
+            DrawLine(hDC, y, "Visit a registered service location");
+            DrawLine(hDC, y, "or wait for the next simulation day.");
+        }
+
+        DrawLine(hDC, y, "------------------------------");
+        DrawLine(hDC, y, "YOUR OBJECTIVE MISSIONS");
+        const std::vector<oem::MissionObjectiveContract>& missions =
+            g_bridge->missionObjectiveBook().missions();
+        int shown = 0;
+        for (std::size_t n = missions.size(); n > 0 && shown < 4; --n) {
+            const oem::MissionObjectiveContract& mission = missions[n - 1];
+            if (mission.objective.vesselId != vesselId_) continue;
+            const char* state = mission.status == oem::MISSION_OBJECTIVE_ACCEPTED ? "ACTIVE" :
+                mission.status == oem::MISSION_OBJECTIVE_COMPLETED ? "PAYMENT PENDING" :
+                mission.status == oem::MISSION_OBJECTIVE_SETTLED ? "PAID" :
+                mission.status == oem::MISSION_OBJECTIVE_CANCELLED ? "CANCELLED" : "EXPIRED";
+            const char* kind = mission.objective.kind == oem::MISSION_OBJECTIVE_VISIT_SPACEPORT
+                ? "VISIT" : "DOCK";
+            char line[256];
+            sprintf(line, "%s %s %lld CR", kind, state, (long long)mission.reward);
+            DrawLine(hDC, y, line);
+            sprintf(line, "  TO: %.27s", mission.objective.targetLocationId.c_str());
+            DrawLine(hDC, y, line);
+            ++shown;
+        }
+        if (shown == 0) DrawLine(hDC, y, "No accepted objective missions.");
+        DrawLine(hDC, y, "PAYOUT IS AUTOMATIC ON VERIFIED EVENT");
+        DrawLine(hDC, y, status_.c_str());
+    }
+
+    bool ConsumeKeyBuffered(DWORD key) override {
+        if (!g_bridge) return false;
+        if (key == OAPI_KEY_UP || key == OAPI_KEY_DOWN) {
+            std::vector<oem::MissionObjectiveOffer> offers;
+            g_bridge->currentObjectiveOffers(vesselId_, offers);
+            const std::size_t count = offers.size() < 3 ? offers.size() : 3;
+            if (count > 0) {
+                if (key == OAPI_KEY_UP && selectedOffer_ > 0) --selectedOffer_;
+                if (key == OAPI_KEY_DOWN && selectedOffer_ + 1 < count) ++selectedOffer_;
+            } else selectedOffer_ = 0;
+            status_ = count > 0 ? "Objective selection changed." : "No objective offer to select.";
+            return true;
+        }
+        oem::Result result;
+        if (key == OAPI_KEY_A) {
+            result = g_bridge->acceptObjectiveOffer(vesselId_, selectedOffer_);
+        } else if (key == OAPI_KEY_C) {
+            result = oem::Result::failure("MISSION_NOT_ACTIVE", "No active objective mission is available to cancel.");
+            const std::vector<oem::MissionObjectiveContract>& missions =
+                g_bridge->missionObjectiveBook().missions();
+            for (std::size_t i = missions.size(); i > 0; --i) {
+                const oem::MissionObjectiveContract& mission = missions[i - 1];
+                if (mission.objective.vesselId == vesselId_ &&
+                    mission.status == oem::MISSION_OBJECTIVE_ACCEPTED) {
+                    result = g_bridge->cancelMissionObjective(mission.objective.missionId, vesselId_);
+                    break;
+                }
+            }
+        } else return false;
+        status_ = result.ok ? "Objective mission journal updated." :
+            result.code + ": " + result.message;
+        return true;
+    }
+
+    bool ConsumeButton(int bt, int event) override {
+        if (!(event & PANEL_MOUSE_LBDOWN)) return false;
+        if (bt == 0) return ConsumeKeyBuffered(OAPI_KEY_UP);
+        if (bt == 1) return ConsumeKeyBuffered(OAPI_KEY_DOWN);
+        if (bt == 2) return ConsumeKeyBuffered(OAPI_KEY_A);
+        if (bt == 3) return ConsumeKeyBuffered(OAPI_KEY_C);
+        return false;
+    }
+
+    char *ButtonLabel(int bt) override {
+        static char *labels[4] = {
+            (char*)"UP", (char*)"DOWN", (char*)"ACCEPT", (char*)"CANCEL"
+        };
+        return bt >= 0 && bt < 4 ? labels[bt] : 0;
+    }
+
+    int ButtonMenu(const MFDBUTTONMENU **menu) const override {
+        static const MFDBUTTONMENU items[4] = {
+            { "Select the previous objective", 0, 0 },
+            { "Select the next objective", 0, 0 },
+            { "Accept the highlighted visit or docking mission", 0, 'A' },
+            { "Cancel the latest active objective without penalty", 0, 'C' }
+        };
+        if (menu) *menu = items;
+        return 4;
+    }
+
+    static int MsgProc(UINT msg, UINT mfd, WPARAM wparam, LPARAM lparam) {
+        if (msg == OAPI_MSG_MFD_OPENEDEX && g_bridge) {
+            MFDMODEOPENSPEC *spec = (MFDMODEOPENSPEC*)wparam;
+            return (int)(new OEMIndependentMissionsMFD(
+                spec->w, spec->h, (VESSEL*)lparam));
+        }
+        return 0;
+    }
+
+private:
+    void DrawLine(HDC hDC, int &y, const char *text) {
+        std::string line = text ? text : "";
+        if (line.size() > 35) line.resize(35);
+        TextOutA(hDC, 4, y, line.c_str(), (int)line.size());
+        y += (int)ch;
+    }
+
+    void DrawWrappedText(HDC hDC, int &y, const std::string& text, std::size_t width) {
+        std::size_t pos = 0;
+        while (pos < text.size()) {
+            while (pos < text.size() && (text[pos] == ' ' || text[pos] == '\t' ||
+                   text[pos] == '\r' || text[pos] == '\n')) ++pos;
+            if (pos >= text.size()) break;
+            std::string line;
+            while (pos < text.size() && text[pos] != '\r' && text[pos] != '\n') {
+                while (pos < text.size() && (text[pos] == ' ' || text[pos] == '\t')) ++pos;
+                if (pos >= text.size() || text[pos] == '\r' || text[pos] == '\n') break;
+                const std::size_t start = pos;
+                while (pos < text.size() && text[pos] != ' ' && text[pos] != '\t' &&
+                       text[pos] != '\r' && text[pos] != '\n') ++pos;
+                const std::string word = text.substr(start, pos - start);
+                if (!line.empty() && line.size() + 1 + word.size() > width) {
+                    DrawLine(hDC, y, line.c_str()); line.clear();
+                }
+                if (!line.empty()) line += " ";
+                line += word;
+            }
+            if (!line.empty()) DrawLine(hDC, y, line.c_str());
+            while (pos < text.size() && (text[pos] == '\r' || text[pos] == '\n')) ++pos;
+        }
+    }
+
+    std::string vesselId_;
+    std::string status_;
+    std::size_t selectedOffer_;
+};
+
 class OEMCargoExchangeTestMFD : public MFD {
 public:
     OEMCargoExchangeTestMFD(DWORD w, DWORD h, VESSEL *vessel)
