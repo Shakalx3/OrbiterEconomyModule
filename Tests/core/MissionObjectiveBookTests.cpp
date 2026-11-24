@@ -14,7 +14,13 @@ int main(){
  oem::MissionObjectiveBook dockBook;oem::MissionObjective d;d.missionId="dock-01";d.vesselId="GL-NT";d.kind=oem::MISSION_OBJECTIVE_DOCK_STATION;d.targetLocationId="OrbitalStation";d.acceptedAt=50;d.deadline=500;
  assert(dockBook.accept(d,400).ok);assert(!dockBook.observe(ev(oem::SIM_EVENT_DOCK,"wrong-station",100,"GL-NT","OtherStation"),manifest).ok);
  assert(dockBook.observe(ev(oem::SIM_EVENT_DOCK,"right-station",100,"GL-NT","OrbitalStation"),manifest).ok);
- oem::MissionObjectiveBook expiry;oem::MissionObjective x=visit("expires");x.deadline=150;assert(expiry.accept(x,100).ok);assert(expiry.expireDue(150).empty());
+ oem::MissionObjectiveBook expiry;oem::MissionObjective x=visit("expires");x.deadline=150;assert(expiry.accept(x,100).ok);
+ // An unrelated post-deadline event must not silently mutate mission state;
+ // expiry is committed separately by the durable lifecycle path.
+ assert(!expiry.observe(ev(oem::SIM_EVENT_DOCK,"late-unrelated",200,"GL-NT","OtherStation"),manifest).ok);
+ const oem::MissionObjectiveContract* stillAccepted=expiry.find("expires");
+ assert(stillAccepted&&stillAccepted->status==oem::MISSION_OBJECTIVE_ACCEPTED);
+ assert(expiry.expireDue(150).empty());
  std::vector<std::string> expired=expiry.expireDue(151);assert(expired.size()==1&&expired[0]=="expires");
  oem::MissionObjectiveBook cancel;oem::MissionObjective c=visit("cancel");assert(cancel.accept(c,100).ok);assert(cancel.cancel("cancel").ok);
  assert(!cancel.restoreCompleted("cancel","late-event",200).ok);
