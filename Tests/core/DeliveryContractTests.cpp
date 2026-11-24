@@ -93,6 +93,9 @@ int main() {
     assert(expiryManifest.load(transfer("expiry-load",oem::CARGO_LOAD,"ISS",3,150)).ok);
     oem::SimulationEvent late=arrival(oem::SIM_EVENT_LANDING,"late-arrival",200);
     assert(!expiryBook.observe(late,expiryManifest).ok);
+    assert(expiryBook.find("expired")->status==oem::CONTRACT_ACCEPTED);
+    const std::vector<std::string> lateExpired=expiryBook.expireDue(200);
+    assert(lateExpired.size()==1&&lateExpired[0]=="expired");
     assert(expiryBook.find("expired")->status==oem::CONTRACT_EXPIRED);
 
     oem::DeliveryContractBook unloadBook;oem::DeliveryContract unloadContract=contract();
