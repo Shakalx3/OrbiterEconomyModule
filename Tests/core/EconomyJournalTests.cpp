@@ -208,6 +208,7 @@ int main(){
  assert(store.acceptContract(poorFailurePath,poorFailureBook,poorContract).ok);
  oem::Ledger poorFailureLedger;assert(poorFailureLedger.createAccount("company",5).ok);
  assert(store.expireContract(poorFailurePath,poorFailureBook,poorContract.contractId,poorFailureLedger,"company",21).ok);
+ assert(store.expireContract(poorFailurePath,poorFailureBook,poorContract.contractId,poorFailureLedger,"company",21).ok);
  assert(poorFailureBook.find(poorContract.contractId)->status==oem::CONTRACT_EXPIRED);
  assert(poorFailureLedger.getBalance("company",balance)&&balance==0);
  assert(poorFailureLedger.getReputation("company",failureReputation)&&failureReputation==45);
