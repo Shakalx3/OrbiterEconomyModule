@@ -48,7 +48,6 @@ class OEMLandingBridge;
 OEMLandingBridge *g_bridge = 0;
 int g_flightLogMode = -1;
 int g_cargoManifestMode = -1;
-int g_cargoExchangeTestMode = -1;
 int g_marketMode = -1;
 int g_deliveryContractsMode = -1;
 int g_independentMissionsMode = -1;
@@ -3696,11 +3695,6 @@ DLLCLBK void InitModule(HINSTANCE hDLL) {
     spec.msgproc = OEMCargoManifestMFD::MsgProc;
     g_cargoManifestMode = oapiRegisterMFDMode(spec);
 
-    spec.name = "OEM Cargo Exchange Test";
-    spec.key = OAPI_KEY_E;
-    spec.msgproc = OEMCargoExchangeTestMFD::MsgProc;
-    g_cargoExchangeTestMode = oapiRegisterMFDMode(spec);
-
     spec.name = "OEM Location Market";
     spec.key = OAPI_KEY_M;
     spec.msgproc = OEMMarketMFD::MsgProc;
@@ -3735,7 +3729,6 @@ DLLCLBK void InitModule(HINSTANCE hDLL) {
 DLLCLBK void ExitModule(HINSTANCE hDLL) {
     if (g_flightLogMode >= 0) oapiUnregisterMFDMode(g_flightLogMode);
     if (g_cargoManifestMode >= 0) oapiUnregisterMFDMode(g_cargoManifestMode);
-    if (g_cargoExchangeTestMode >= 0) oapiUnregisterMFDMode(g_cargoExchangeTestMode);
     if (g_marketMode >= 0) oapiUnregisterMFDMode(g_marketMode);
     if (g_deliveryContractsMode >= 0) oapiUnregisterMFDMode(g_deliveryContractsMode);
     if (g_independentMissionsMode >= 0) oapiUnregisterMFDMode(g_independentMissionsMode);
@@ -3744,7 +3737,6 @@ DLLCLBK void ExitModule(HINSTANCE hDLL) {
     if (g_propellantRefuelMode >= 0) oapiUnregisterMFDMode(g_propellantRefuelMode);
     g_flightLogMode = -1;
     g_cargoManifestMode = -1;
-    g_cargoExchangeTestMode = -1;
     g_marketMode = -1;
     g_deliveryContractsMode = -1;
     g_independentMissionsMode = -1;
