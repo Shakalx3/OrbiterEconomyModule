@@ -173,6 +173,7 @@ int main(){
  assert(store.load(cancelPath,cat,cancelLedger,cancelStocks,cancelManifests,&cancelRecovered).ok);
  assert(cancelRecovered.find(cancellable.contractId)->status==oem::CONTRACT_CANCELLED);
  assert(cancelLedger.getBalance("company",balance)&&balance==1000);
+ int cancelledReputation=0;assert(!cancelLedger.getReputation("company",cancelledReputation));
  assert(cancelStocks["ISS"].quantity("oxygen")==5&&cancelStocks["MARS"].quantity("oxygen")==4);
  // Expired delivery contracts debit the configured fee and reduce reputation once.
  const std::string failurePath="OEMContractFailureJournalTests.journal";std::remove(failurePath.c_str());
@@ -198,6 +199,26 @@ int main(){
  assert(store.load(failurePath,cat,failureRecoveredLedger,failureStocks,failureManifests,&failureRecoveredBook).ok);
  assert(failureRecoveredLedger.getBalance("company",balance)&&balance==475);
  std::remove(failurePath.c_str());
+
+ // Failure fees are capped at the available balance; expiry still commits.
+ const std::string poorFailurePath="OEMContractPoorFailureTests.journal";std::remove(poorFailurePath.c_str());
+ oem::DeliveryContractBook poorFailureBook;
+ oem::DeliveryContract poorContract=failedContract;
+ poorContract.contractId="failure-delivery-poor";poorContract.reward=100;
+ assert(store.acceptContract(poorFailurePath,poorFailureBook,poorContract).ok);
+ oem::Ledger poorFailureLedger;assert(poorFailureLedger.createAccount("company",5).ok);
+ assert(store.expireContract(poorFailurePath,poorFailureBook,poorContract.contractId,poorFailureLedger,"company",21).ok);
+ assert(poorFailureBook.find(poorContract.contractId)->status==oem::CONTRACT_EXPIRED);
+ assert(poorFailureLedger.getBalance("company",balance)&&balance==0);
+ assert(poorFailureLedger.getReputation("company",failureReputation)&&failureReputation==45);
+ oem::Ledger poorRecoveredLedger;assert(poorRecoveredLedger.createAccount("company",5).ok);
+ oem::DeliveryContractBook poorRecoveredBook;
+ std::map<std::string,oem::CargoServiceInventory> poorStocks;
+ std::map<std::string,oem::CargoManifest> poorManifests;
+ assert(store.load(poorFailurePath,cat,poorRecoveredLedger,poorStocks,poorManifests,&poorRecoveredBook).ok);
+ assert(poorRecoveredLedger.getBalance("company",balance)&&balance==0);
+ assert(poorRecoveredLedger.getReputation("company",failureReputation)&&failureReputation==45);
+ std::remove(poorFailurePath.c_str());
  // Propellant charges share the global journal and replay exactly once.
  const std::string propellantPath="OEMPropellantEconomyJournalTests.journal";std::remove(propellantPath.c_str());
  oem::Ledger fuelLedger;assert(fuelLedger.createAccount("company",1000).ok);
