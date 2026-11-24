@@ -89,7 +89,8 @@ Result DeliveryContractBook::observe(const SimulationEvent& e,
         if (c.status != CONTRACT_ACCEPTED || c.vesselId != e.vesselId) continue;
         if (e.simulationTime < c.acceptedAt || !isDestinationEvent(c, e)) continue;
         if (c.deadline > 0 && e.simulationTime > c.deadline) {
-            c.status = CONTRACT_EXPIRED;
+            // Leave the contract accepted here. The economy journal owns the
+            // durable expiry transition and its configured financial penalties.
             continue;
         }
         if (eligibleCargoAt(c, manifest, e.simulationTime) < c.quantity) continue;
