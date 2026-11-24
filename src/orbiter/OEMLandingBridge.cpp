@@ -605,6 +605,7 @@ public:
                 const oem::CargoDefinition& item=cargoCatalog_.entries()[c];
                 if(stock->second.quantity(item.cargoId)<=0 || item.buyPrice<=0) continue;
                 oem::MissionCandidate candidate;
+                candidate.issuerId="issuer:"+originLocation.canonicalId;
                 candidate.cargoId=item.cargoId;
                 candidate.destinationLocationId=destination;
                 candidate.destinationBodyId=locations[d].celestialBody;
@@ -697,7 +698,7 @@ public:
         if(selected.originLocationId!=origin)
             return oem::Result::failure("CONTRACT_ORIGIN","Selected mission belongs to another location.");
         selected.vesselId=vesselId;
-        selected.issuerId="issuer:"+originLocation.canonicalId;
+        if(selected.issuerId.empty()) selected.issuerId="issuer:"+originLocation.canonicalId;
         if (currentSimulationTime_ < 0 || selected.deadline < selected.acceptedAt)
             return oem::Result::failure("CONTRACT_TIME","Mission quote contains an invalid deadline window.");
         const oem::SimulationSeconds allowance = selected.deadline - selected.acceptedAt;
@@ -828,6 +829,7 @@ public:
             const oem::MissionQuote quote = oem::quoteMission(500, 1, route, config);
             if (!quote.valid) continue;
             oem::MissionObjectiveCandidate candidate;
+            candidate.issuerId = "issuer:" + originLocation.canonicalId;
             candidate.kind = target.kind == oem::ECONOMIC_LOCATION_SPACEPORT
                 ? oem::MISSION_OBJECTIVE_VISIT_SPACEPORT : oem::MISSION_OBJECTIVE_DOCK_STATION;
             candidate.targetLocationId = target.storageId;
@@ -914,7 +916,7 @@ public:
             return oem::Result::failure("MISSION_TIME", "Objective mission deadline is outside the supported range.");
         oem::MissionObjective objective;
         objective.missionId = offer.missionId;
-        objective.issuerId = "issuer:" + originLocation.canonicalId;
+        objective.issuerId = offer.issuerId.empty() ? "issuer:" + originLocation.canonicalId : offer.issuerId;
         objective.vesselId = vesselId;
         objective.kind = offer.kind;
         objective.originLocationId = originLocation.canonicalId;
