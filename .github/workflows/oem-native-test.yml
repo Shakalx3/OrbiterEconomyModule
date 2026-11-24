@@ -5,6 +5,8 @@ on:
     branches: [development, feature/delivery-contracts]
     paths:
       - "src/orbiter/**"
+      - "Tests/core/**"
+      - "CMakeLists.txt"
       - "src/core/SurfaceDistance.h"
       - "src/core/SpaceportRegistry.h"
       - "src/core/SpaceportRegistry.cpp"
@@ -78,6 +80,8 @@ on:
   pull_request:
     paths:
       - "src/orbiter/**"
+      - "Tests/core/**"
+      - "CMakeLists.txt"
       - "src/core/SurfaceDistance.h"
       - "src/core/SpaceportRegistry.h"
       - "src/core/SpaceportRegistry.cpp"
@@ -160,6 +164,21 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x86
+      - name: Configure portable core tests
+        shell: pwsh
+        run: |
+          cmake -S . -B build -A Win32
+          if ($LASTEXITCODE -ne 0) { throw "Could not configure portable core tests" }
+      - name: Build portable core tests
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --parallel
+          if ($LASTEXITCODE -ne 0) { throw "Portable core test build failed" }
+      - name: Run portable core tests before DLL publication
+        shell: pwsh
+        run: |
+          ctest --test-dir build -C Release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw "Portable core tests failed; refusing to publish test DLL" }
       - name: Compile Orbiter Launchpad resources
         shell: cmd
         run: |
