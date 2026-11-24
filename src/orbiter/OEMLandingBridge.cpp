@@ -739,8 +739,10 @@ public:
     bool currentObjectiveOffers(const std::string& vesselId,
                                 std::vector<oem::MissionObjectiveOffer>& offers) {
         offers.clear();
+        oem::Credits companyBalance = 0;
         if (!economyReady_ || !objectiveBoardsReady_ || sessionId_.empty() ||
-            currentSimulationTime_ <= 0 || vesselId.empty() || !isFocusedVessel(vesselId))
+            currentSimulationTime_ <= 0 || vesselId.empty() || !isFocusedVessel(vesselId) ||
+            !ledger_.getBalance("company", companyBalance))
             return false;
         std::size_t active = 0;
         const std::vector<oem::MissionObjectiveContract>& accepted = objectiveBook_.missions();
@@ -817,7 +819,9 @@ public:
                 route.kind = oem::MISSION_ROUTE_ESTIMATE;
             }
             route.valid = _finite(route.metres) && route.metres >= 0.0;
-            const oem::MissionEconomicsConfig config;
+            oem::MissionEconomicsConfig config;
+            if (route.kind == oem::MISSION_ROUTE_SURFACE)
+                config.nominalCruiseSpeedMetresPerSecond = 250.0;
             const oem::MissionQuote quote = oem::quoteMission(500, 1, route, config);
             if (!quote.valid) continue;
             oem::MissionObjectiveCandidate candidate;
