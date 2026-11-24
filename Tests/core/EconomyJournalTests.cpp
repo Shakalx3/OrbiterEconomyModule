@@ -214,6 +214,7 @@ int main(){
  const std::string poorFailurePath="OEMContractPoorFailureTests.journal";std::remove(poorFailurePath.c_str());
  oem::DeliveryContractBook poorFailureBook;
  oem::DeliveryContract poorContract=failedContract;
+ poorContract.issuerId.clear(); // Keep this legacy-path test on the company-reputation fallback.
  poorContract.contractId="failure-delivery-poor";poorContract.reward=100;
  assert(store.acceptContract(poorFailurePath,poorFailureBook,poorContract).ok);
  oem::Ledger poorFailureLedger;assert(poorFailureLedger.createAccount("company",5).ok);
