@@ -29,12 +29,12 @@ std::string encodeA(const DeliveryContract&c,double unitMassKg=0.0){std::ostring
 std::string encodeC(const std::string&id,const std::string&event,SimulationSeconds time,const CargoTransfer&t){std::ostringstream o;o.imbue(std::locale::classic());o<<"C|"<<hx("contract-complete:"+id)<<'|'<<hx(id)<<'|'<<hx(event)<<'|'<<time<<'|'<<hx(t.locationId)<<'|'<<hx(t.vesselId)<<'|'<<hx(t.cargoId)<<'|'<<t.quantity<<'|'<<std::setprecision(17)<<t.unitMassKg<<'\n';return o.str();}
 std::string encodeR(const std::string&op,const std::string&account,Credits cost,SimulationSeconds time){std::ostringstream o;o<<"R|"<<hx(op)<<'|'<<hx(account)<<'|'<<cost<<'|'<<time<<'\n';return o.str();}
 std::string encodeS(const std::string&id,const std::string&account,Credits reward,SimulationSeconds time){std::ostringstream o;o<<"S|"<<hx("contract-settle:"+id)<<'|'<<hx(id)<<'|'<<hx(account)<<'|'<<reward<<'|'<<time<<'\n';return o.str();}
-std::string encodeF(const std::string&id,const std::string&account,Credits penalty,int reputationDelta,SimulationSeconds time){std::ostringstream o;o<<"F|"<<hx("contract-expire:"+id)<<'|'<<hx(id)<<'|'<<hx(account)<<'|'<<penalty<<'|'<<reputationDelta<<'|'<<time<<'\\n';return o.str();}
+std::string encodeF(const std::string&id,const std::string&account,Credits penalty,int reputationDelta,SimulationSeconds time){std::ostringstream o;o<<"F|"<<hx("contract-expire:"+id)<<'|'<<hx(id)<<'|'<<hx(account)<<'|'<<penalty<<'|'<<reputationDelta<<'|'<<time<<'\n';return o.str();}
 std::string encodeG(const std::string&id){std::ostringstream o;o<<"G|"<<hx("contract-cancel:"+id)<<'|'<<hx(id)<<'\n';return o.str();}
 std::string encodeM(const MissionObjective&o,Credits reward){std::ostringstream s;s<<"M|"<<hx("mission-objective-accept:"+o.missionId)<<'|'<<hx(o.missionId)<<'|'<<hx(o.vesselId)<<'|'<<(int)o.kind<<'|'<<hx(o.originLocationId)<<'|'<<hx(o.targetLocationId)<<'|'<<hx(o.targetBodyId)<<'|'<<hx(o.cargoId)<<'|'<<o.quantity<<'|'<<o.acceptedAt<<'|'<<o.deadline<<'|'<<reward<<'\n';return s.str();}
 std::string encodeN(const std::string&id,const std::string&event,SimulationSeconds time){std::ostringstream s;s<<"N|"<<hx("mission-objective-complete:"+id)<<'|'<<hx(id)<<'|'<<hx(event)<<'|'<<time<<'\n';return s.str();}
 std::string encodeP(const std::string&id,const std::string&account,Credits reward,SimulationSeconds time){std::ostringstream s;s<<"P|"<<hx("mission-objective-settle:"+id)<<'|'<<hx(id)<<'|'<<hx(account)<<'|'<<reward<<'|'<<time<<'\n';return s.str();}
-std::string encodeQ(const std::string&id,const std::string&account,Credits penalty,int reputationDelta,SimulationSeconds time){std::ostringstream s;s<<"Q|"<<hx("mission-objective-expire:"+id)<<'|'<<hx(id)<<'|'<<hx(account)<<'|'<<penalty<<'|'<<reputationDelta<<'|'<<time<<'\\n';return s.str();}
+std::string encodeQ(const std::string&id,const std::string&account,Credits penalty,int reputationDelta,SimulationSeconds time){std::ostringstream s;s<<"Q|"<<hx("mission-objective-expire:"+id)<<'|'<<hx(id)<<'|'<<hx(account)<<'|'<<penalty<<'|'<<reputationDelta<<'|'<<time<<'\n';return s.str();}
 std::string encodeV(const std::string&id){std::ostringstream s;s<<"V|"<<hx("mission-objective-cancel:"+id)<<'|'<<hx(id)<<'\n';return s.str();}
 bool decode(const std::string&s,Entry&r){r.total=0;r.time=0;r.reputationDelta=0;r.account.clear();std::vector<std::string>f=split(s);long long a=0,b=0,c=0,d=0,e=0;
  if(f.size()==9&&f[0]=="X"){r.type='X';if(!unhx(f[1],r.transfer.transferId)||!num(f[2],a)||(a!=CARGO_LOAD&&a!=CARGO_UNLOAD)||!unhx(f[3],r.transfer.vesselId)||!unhx(f[4],r.transfer.locationId)||!unhx(f[5],r.transfer.cargoId)||!num(f[6],b)||!dbl(f[7],r.transfer.unitMassKg)||!num(f[8],c))return false;r.transfer.direction=(CargoTransferDirection)a;r.transfer.quantity=b;r.transfer.simulationTime=c;return true;}
@@ -84,7 +84,7 @@ Result MissionFailurePolicyStore::loadOrCreate(const std::string& path, MissionF
         if (!out) return Result::failure("MISSION_FAILURE_POLICY_CREATE", "Could not create mission failure policy.");
         out.seekp(0, std::ios::end);
         if (out.tellp() == std::streampos(0)) {
-            out << "OEM_MISSION_FAILURE|1\\nP|" << policy.penaltyBasisPoints << "|" << policy.reputationDelta << "\\n";
+            out << "OEM_MISSION_FAILURE|1\nP|" << policy.penaltyBasisPoints << "|" << policy.reputationDelta << "\n";
             out.flush();
             if (!out.good()) return Result::failure("MISSION_FAILURE_POLICY_WRITE", "Could not write mission failure policy.");
             return Result::success();
@@ -97,11 +97,11 @@ Result MissionFailurePolicyStore::loadOrCreate(const std::string& path, MissionF
     if (!in) return Result::failure("MISSION_FAILURE_POLICY_OPEN", "Could not read mission failure policy.");
     std::string line;
     if (!std::getline(in, line)) return Result::failure("MISSION_FAILURE_POLICY_HEADER", "Mission failure policy is empty.");
-    if (!line.empty() && line[line.size()-1] == '\\r') line.erase(line.size()-1);
+    if (!line.empty() && line[line.size()-1] == '\r') line.erase(line.size()-1);
     if (line != "OEM_MISSION_FAILURE|1")
         return Result::failure("MISSION_FAILURE_POLICY_HEADER", "Mission failure policy header or version is invalid.");
     if (!std::getline(in, line)) return Result::failure("MISSION_FAILURE_POLICY_RECORD", "Mission failure policy record is missing.");
-    if (!line.empty() && line[line.size()-1] == '\\r') line.erase(line.size()-1);
+    if (!line.empty() && line[line.size()-1] == '\r') line.erase(line.size()-1);
     const std::vector<std::string> fields = split(line);
     long long basisPoints = 0, reputation = 0;
     if (fields.size() != 3 || fields[0] != "P" ||
@@ -109,7 +109,7 @@ Result MissionFailurePolicyStore::loadOrCreate(const std::string& path, MissionF
         basisPoints < 0 || basisPoints > 10000 || reputation >= 0 || reputation < -100)
         return Result::failure("MISSION_FAILURE_POLICY_RECORD", "Mission failure policy values are invalid.");
     std::string extra;
-    while (std::getline(in, extra)) if (!extra.empty() && extra != "\\r")
+    while (std::getline(in, extra)) if (!extra.empty() && extra != "\r")
         return Result::failure("MISSION_FAILURE_POLICY_TRAILING", "Unexpected data follows the mission failure policy.");
     policy.penaltyBasisPoints = (unsigned int)basisPoints;
     policy.reputationDelta = (int)reputation;
