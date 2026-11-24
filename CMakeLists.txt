@@ -24,6 +24,7 @@ add_library(OEMCore
     src/core/DeliveryContract.cpp
     src/core/MissionBoard.cpp
     src/core/MissionObjective.cpp
+    src/core/MissionObjectiveBook.cpp
     src/core/MissionEconomics.cpp
     src/core/SpaceportRegistry.cpp
     src/core/EconomicLocationRegistry.cpp
@@ -76,10 +77,12 @@ target_link_libraries(OEMDockingTransitionTests PRIVATE OEMCore)
 add_executable(OEMDeliveryContractTests Tests/core/DeliveryContractTests.cpp)
 add_executable(OEMMissionBoardTests Tests/core/MissionBoardTests.cpp)
 add_executable(OEMMissionObjectiveTests Tests/core/MissionObjectiveTests.cpp)
+add_executable(OEMMissionObjectiveBookTests Tests/core/MissionObjectiveBookTests.cpp)
 add_executable(OEMMissionEconomicsTests Tests/core/MissionEconomicsTests.cpp)
 target_link_libraries(OEMMissionEconomicsTests PRIVATE OEMCore)
 target_link_libraries(OEMMissionBoardTests PRIVATE OEMCore)
 target_link_libraries(OEMMissionObjectiveTests PRIVATE OEMCore)
+target_link_libraries(OEMMissionObjectiveBookTests PRIVATE OEMCore)
 target_link_libraries(OEMDeliveryContractTests PRIVATE OEMCore)
 add_executable(OEMSpaceportRegistryTests Tests/core/SpaceportRegistryTests.cpp)
 add_executable(OEMEconomicLocationRegistryTests Tests/core/EconomicLocationRegistryTests.cpp)
@@ -121,6 +124,7 @@ add_test(NAME OEMDockingTransitionTests COMMAND OEMDockingTransitionTests)
 add_test(NAME OEMDeliveryContractTests COMMAND OEMDeliveryContractTests)
 add_test(NAME OEMMissionBoardTests COMMAND OEMMissionBoardTests)
 add_test(NAME OEMMissionObjectiveTests COMMAND OEMMissionObjectiveTests)
+add_test(NAME OEMMissionObjectiveBookTests COMMAND OEMMissionObjectiveBookTests)
 add_test(NAME OEMMissionEconomicsTests COMMAND OEMMissionEconomicsTests)
 add_test(NAME OEMSpaceportRegistryTests COMMAND OEMSpaceportRegistryTests)
 add_test(NAME OEMEconomicLocationRegistryTests COMMAND OEMEconomicLocationRegistryTests)
