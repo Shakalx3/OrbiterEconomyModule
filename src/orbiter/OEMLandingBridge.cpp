@@ -929,6 +929,15 @@ public:
         const oem::Result accepted = economyJournalStore_.acceptMissionObjective(
             economyJournalPath_, objectiveBook_, objective, offer.reward);
         if (!accepted.ok) return accepted;
+        {
+            char diagnostic[768];
+            sprintf(diagnostic,
+                "OEM MISSION ACCEPTED: id=%s kind=%d vessel=%s targetBody=%s targetBase=%s acceptedAt=%lld deadline=%lld",
+                objective.missionId.c_str(), (int)objective.kind, objective.vesselId.c_str(),
+                objective.targetBodyId.c_str(), objective.targetLocationId.c_str(),
+                (long long)objective.acceptedAt, (long long)objective.deadline);
+            oapiWriteLog(diagnostic);
+        }
         oem::MissionObjectiveBoard updated = board->second;
         for (std::size_t i = 0; i < updated.offers.size(); ++i)
             if (updated.offers[i].missionId == offer.missionId) {
@@ -1753,7 +1762,18 @@ public:
         }
 
         oem::SpaceportLandingEvent landingEvent;
-        if (landingMonitors_[hVessel].observe(landing, landingEvent)) {
+        const bool landingDetected = landingMonitors_[hVessel].observe(landing, landingEvent);
+        if (landing.groundContact && landing.landed && landing.proximityKnown) {
+            char diagnostic[768];
+            sprintf(diagnostic,
+                "OEM LANDING SAMPLE: vessel=%s landed=%d contact=%d body=%s nearestBase=%s distance=%.1f m detected=%d simt=%lld",
+                landing.vesselId.c_str(), landing.landed ? 1 : 0,
+                landing.groundContact ? 1 : 0, landing.bodyId.c_str(),
+                landing.nearestBaseId.c_str(), landing.nearestBaseDistanceMetres,
+                landingDetected ? 1 : 0, (long long)landing.simulationTime);
+            oapiWriteLog(diagnostic);
+        }
+        if (landingDetected) {
             oem::SimulationEvent event;
             event.type = oem::SIM_EVENT_LANDING;
             event.vesselId = landingEvent.vesselId;
@@ -2392,7 +2412,23 @@ private:
                 for (std::size_t i = 0; i < acceptedIds.size(); ++i) {
                     const oem::MissionObjectiveContract* current = objectiveBook_.find(acceptedIds[i]);
                     if (!current || current->status != oem::MISSION_OBJECTIVE_ACCEPTED) continue;
-                    if (oem::missionObjectiveMatchesEvent(current->objective, event, manifest->second)) {
+                    const bool objectiveMatch =
+                        oem::missionObjectiveMatchesEvent(current->objective, event, manifest->second);
+                    if (event.type == oem::SIM_EVENT_LANDING &&
+                        current->objective.kind == oem::MISSION_OBJECTIVE_VISIT_SPACEPORT) {
+                        char diagnostic[1024];
+                        sprintf(diagnostic,
+                            "OEM MISSION LANDING CHECK: id=%s vessel=%s/%s targetBody=%s eventBody=%s targetBase=%s eventBase=%s locationKnown=%d eventTime=%lld acceptedAt=%lld deadline=%lld match=%d",
+                            current->objective.missionId.c_str(), current->objective.vesselId.c_str(),
+                            event.vesselId.c_str(), current->objective.targetBodyId.c_str(),
+                            event.bodyId.c_str(), current->objective.targetLocationId.c_str(),
+                            event.baseId.c_str(), event.locationKnown ? 1 : 0,
+                            (long long)event.simulationTime,
+                            (long long)current->objective.acceptedAt,
+                            (long long)current->objective.deadline, objectiveMatch ? 1 : 0);
+                        oapiWriteLog(diagnostic);
+                    }
+                    if (objectiveMatch) {
                         oem::MissionObjectiveBook candidate = objectiveBook_;
                         const oem::Result marked = candidate.restoreCompleted(
                             acceptedIds[i], event.eventId, event.simulationTime);
