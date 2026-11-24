@@ -3130,7 +3130,8 @@ public:
             std::vector<oem::MissionObjectiveOffer> objectives;
             g_bridge->currentMissionOffers(vesselId_,cargo);
             g_bridge->currentObjectiveOffers(vesselId_,objectives);
-            const std::size_t count=std::min((std::size_t)6,cargo.size()+objectives.size());
+            const std::size_t available=cargo.size()+objectives.size();
+            const std::size_t count=available<6?available:6;
             if(count) {
                 if(key==OAPI_KEY_UP&&selectedOffer_>0)--selectedOffer_;
                 if(key==OAPI_KEY_DOWN&&selectedOffer_+1<count)++selectedOffer_;
@@ -3142,8 +3143,9 @@ public:
             std::vector<oem::MissionObjectiveOffer> objectives;
             g_bridge->currentMissionOffers(vesselId_,cargo);
             g_bridge->currentObjectiveOffers(vesselId_,objectives);
-            const std::size_t cargoCount=std::min((std::size_t)6,cargo.size());
-            const std::size_t total=std::min((std::size_t)6,cargo.size()+objectives.size());
+            const std::size_t cargoCount=cargo.size()<6?cargo.size():6;
+            const std::size_t available=cargo.size()+objectives.size();
+            const std::size_t total=available<6?available:6;
             if(selectedOffer_>=total)return true;
             oem::Result result;
             if(selectedOffer_<cargoCount)
