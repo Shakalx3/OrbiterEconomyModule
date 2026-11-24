@@ -13,6 +13,14 @@ static oem::MissionObjective visit(const std::string& id) {
     o.acceptedAt=100; o.deadline=1000;
     return o;
 }
+static oem::MissionObjective dock(const std::string& id) {
+    oem::MissionObjective o;
+    o.missionId=id; o.vesselId="GL-01";
+    o.kind=oem::MISSION_OBJECTIVE_DOCK_STATION;
+    o.targetLocationId="ISS";
+    o.acceptedAt=100; o.deadline=1000;
+    return o;
+}
 int main() {
     // Failure policy is created once, then existing user values are preserved.
     const std::string policyPath="OEMMissionFailurePolicyTests.cfg";
@@ -111,6 +119,97 @@ int main() {
     assert(terminalLedger.getReputation("company",terminalReputation) && terminalReputation==45);
 
     std::remove(terminalPath.c_str());
+
+    // The same configurable failure policy applies to VISIT and DOCK expiries.
+    const std::string policyJournalPath="OEMMissionObjectivePolicyTests.journal";
+    std::remove(policyJournalPath.c_str());
+    oem::MissionObjectiveBook policyBook;
+    oem::MissionObjective policyVisit=visit("policy-visit-001");
+    policyVisit.deadline=150;
+    oem::MissionObjective policyDock=dock("policy-dock-001");
+    policyDock.deadline=150;
+    assert(store.acceptMissionObjective(policyJournalPath,policyBook,policyVisit,200).ok);
+    assert(store.acceptMissionObjective(policyJournalPath,policyBook,policyDock,400).ok);
+    oem::MissionFailurePolicy customPolicy;
+    customPolicy.penaltyBasisPoints=2500;
+    customPolicy.reputationDelta=-8;
+    assert(customPolicy.valid());
+    oem::Ledger policyLedger; assert(policyLedger.createAccount("company",1000).ok);
+    assert(!store.expireMissionObjective(policyJournalPath,policyBook,"policy-visit-001",
+        policyLedger,"company",150,customPolicy).ok);
+    assert(store.expireMissionObjective(policyJournalPath,policyBook,"policy-visit-001",
+        policyLedger,"company",151,customPolicy).ok);
+    assert(store.expireMissionObjective(policyJournalPath,policyBook,"policy-dock-001",
+        policyLedger,"company",151,customPolicy).ok);
+    assert(store.expireMissionObjective(policyJournalPath,policyBook,"policy-visit-001",
+        policyLedger,"company",151,customPolicy).ok);
+    assert(store.expireMissionObjective(policyJournalPath,policyBook,"policy-dock-001",
+        policyLedger,"company",151,customPolicy).ok);
+    assert(policyBook.find("policy-visit-001")->status==oem::MISSION_OBJECTIVE_EXPIRED);
+    assert(policyBook.find("policy-dock-001")->status==oem::MISSION_OBJECTIVE_EXPIRED);
+    assert(policyLedger.getBalance("company",balance) && balance==850);
+    int policyReputation=0;
+    assert(policyLedger.getReputation("company",policyReputation) && policyReputation==34);
+
+    oem::Ledger policyRecoveredLedger; assert(policyRecoveredLedger.createAccount("company",1000).ok);
+    oem::MissionObjectiveBook policyRecoveredBook;
+    std::map<std::string,oem::CargoServiceInventory> policyStocks;
+    std::map<std::string,oem::CargoManifest> policyManifests;
+    assert(store.load(policyJournalPath,catalog,policyRecoveredLedger,policyStocks,
+        policyManifests,0,&policyRecoveredBook).ok);
+    assert(policyRecoveredBook.find("policy-visit-001")->status==oem::MISSION_OBJECTIVE_EXPIRED);
+    assert(policyRecoveredBook.find("policy-dock-001")->status==oem::MISSION_OBJECTIVE_EXPIRED);
+    assert(policyRecoveredLedger.getBalance("company",balance) && balance==850);
+    assert(policyRecoveredLedger.getReputation("company",policyReputation) && policyReputation==34);
+    assert(store.load(policyJournalPath,catalog,policyRecoveredLedger,policyStocks,
+        policyManifests,0,&policyRecoveredBook).ok);
+    assert(policyRecoveredLedger.getBalance("company",balance) && balance==850);
+    assert(policyRecoveredLedger.getReputation("company",policyReputation) && policyReputation==34);
+    std::remove(policyJournalPath.c_str());
+
+    // A fee larger than the available balance is capped, and a retry is harmless.
+    const std::string poorPolicyPath="OEMMissionObjectivePoorPolicyTests.journal";
+    std::remove(poorPolicyPath.c_str());
+    oem::MissionObjectiveBook poorPolicyBook;
+    oem::MissionObjective poorObjective=visit("policy-poor-001");
+    poorObjective.deadline=150;
+    assert(store.acceptMissionObjective(poorPolicyPath,poorPolicyBook,poorObjective,100).ok);
+    oem::Ledger poorPolicyLedger; assert(poorPolicyLedger.createAccount("company",5).ok);
+    assert(store.expireMissionObjective(poorPolicyPath,poorPolicyBook,"policy-poor-001",
+        poorPolicyLedger,"company",151,customPolicy).ok);
+    assert(store.expireMissionObjective(poorPolicyPath,poorPolicyBook,"policy-poor-001",
+        poorPolicyLedger,"company",151,customPolicy).ok);
+    assert(poorPolicyLedger.getBalance("company",balance) && balance==0);
+    assert(poorPolicyLedger.getReputation("company",policyReputation) && policyReputation==42);
+    oem::Ledger poorRecoveredLedger; assert(poorRecoveredLedger.createAccount("company",5).ok);
+    oem::MissionObjectiveBook poorRecoveredBook;
+    std::map<std::string,oem::CargoServiceInventory> poorPolicyStocks;
+    std::map<std::string,oem::CargoManifest> poorPolicyManifests;
+    assert(store.load(poorPolicyPath,catalog,poorRecoveredLedger,poorPolicyStocks,
+        poorPolicyManifests,0,&poorRecoveredBook).ok);
+    assert(poorRecoveredBook.find("policy-poor-001")->status==oem::MISSION_OBJECTIVE_EXPIRED);
+    assert(poorRecoveredLedger.getBalance("company",balance) && balance==0);
+    assert(poorRecoveredLedger.getReputation("company",policyReputation) && policyReputation==42);
+    std::remove(poorPolicyPath.c_str());
+
+    // Cancelling by itself changes neither company funds nor reputation.
+    const std::string cancelOnlyPath="OEMMissionObjectiveCancelOnlyTests.journal";
+    std::remove(cancelOnlyPath.c_str());
+    oem::MissionObjectiveBook cancelOnlyBook;
+    oem::MissionObjective cancelOnly=visit("cancel-only-001");
+    assert(store.acceptMissionObjective(cancelOnlyPath,cancelOnlyBook,cancelOnly,300).ok);
+    assert(store.cancelMissionObjective(cancelOnlyPath,cancelOnlyBook,"cancel-only-001").ok);
+    oem::Ledger cancelOnlyLedger; assert(cancelOnlyLedger.createAccount("company",500).ok);
+    oem::MissionObjectiveBook cancelOnlyRecovered;
+    std::map<std::string,oem::CargoServiceInventory> cancelOnlyStocks;
+    std::map<std::string,oem::CargoManifest> cancelOnlyManifests;
+    assert(store.load(cancelOnlyPath,catalog,cancelOnlyLedger,cancelOnlyStocks,
+        cancelOnlyManifests,0,&cancelOnlyRecovered).ok);
+    assert(cancelOnlyRecovered.find("cancel-only-001")->status==oem::MISSION_OBJECTIVE_CANCELLED);
+    assert(cancelOnlyLedger.getBalance("company",balance) && balance==500);
+    assert(!cancelOnlyLedger.getReputation("company",policyReputation));
+    std::remove(cancelOnlyPath.c_str());
+
     std::remove(path.c_str());
     return 0;
 }
