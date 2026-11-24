@@ -876,6 +876,15 @@ public:
             return oem::Result::failure("MISSION_ECONOMY_UNAVAILABLE", "The global economy journal is unavailable.");
         if (!isFocusedVessel(vesselId))
             return oem::Result::failure("MISSION_FOCUS", "Accept the objective from its assigned vessel.");
+        std::size_t activeObjectives = 0;
+        const std::vector<oem::MissionObjectiveContract>& activeMissions = objectiveBook_.missions();
+        for (std::size_t i = 0; i < activeMissions.size(); ++i)
+            if (activeMissions[i].objective.vesselId == vesselId &&
+                (activeMissions[i].status == oem::MISSION_OBJECTIVE_ACCEPTED ||
+                 activeMissions[i].status == oem::MISSION_OBJECTIVE_COMPLETED))
+                ++activeObjectives;
+        if (activeObjectives >= 3)
+            return oem::Result::failure("MISSION_LIMIT", "This vessel already has three active objective missions.");
         const std::string origin = currentObjectiveLocation(vesselId);
         oem::EconomicLocation originLocation;
         if (origin.empty() || !resolveCurrentEconomicLocation(vesselId, origin, originLocation))
