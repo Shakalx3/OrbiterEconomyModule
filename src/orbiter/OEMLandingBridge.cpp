@@ -998,6 +998,15 @@ public:
         return economyReady_ && ledger_.getBalance("company", balance);
     }
 
+    bool companyReputation(int& reputation) const {
+        if (!economyReady_) return false;
+        if (ledger_.getReputation("company", reputation)) return true;
+        oem::Credits balance = 0;
+        if (!ledger_.getBalance("company", balance)) return false;
+        reputation = 50;
+        return true;
+    }
+
     const oem::CargoServiceInventory* cargoServiceInventory(const std::string& serviceId) const {
         std::map<std::string, oem::CargoServiceInventory>::const_iterator it =
             cargoServiceInventories_.find(serviceId);
@@ -3252,6 +3261,12 @@ public:
         if (!g_bridge) {
             DrawLine(hDC, y, "OEM bridge unavailable.");
             return;
+        }
+        int reputation = 50;
+        if (g_bridge->companyReputation(reputation)) {
+            char reputationLine[96];
+            sprintf(reputationLine, "COMPANY REPUTATION: %d / 100", reputation);
+            DrawLine(hDC, y, reputationLine);
         }
         std::vector<oem::MissionObjectiveOffer> offers;
         if (g_bridge->currentObjectiveOffers(vesselId_, offers)) {
