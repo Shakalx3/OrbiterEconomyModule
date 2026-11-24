@@ -7,6 +7,16 @@
 #include <string>
 static oem::CargoDefinition oxygen(){oem::CargoDefinition d;d.cargoId="oxygen";d.displayName="Oxygen";d.unitMassKg=10.0;d.buyPrice=100;d.sellPrice=60;return d;}
 static oem::CargoTransfer transfer(const std::string&id,const std::string&ship,const std::string&station,oem::CargoTransferDirection dir,long long qty,oem::SimulationSeconds t){oem::CargoTransfer x;x.transferId=id;x.vesselId=ship;x.locationId=station;x.cargoId="oxygen";x.direction=dir;x.quantity=qty;x.unitMassKg=10.0;x.simulationTime=t;return x;}
+static std::string hex(const std::string& value) {
+ static const char digits[] = "0123456789ABCDEF";
+ std::string encoded;
+ for (std::size_t i = 0; i < value.size(); ++i) {
+  const unsigned char c = (unsigned char)value[i];
+  encoded += digits[c >> 4];
+  encoded += digits[c & 15];
+ }
+ return encoded;
+}
 int main(){
  const std::string path="OEMEconomyJournalTests.journal";std::remove(path.c_str());
  oem::CargoCatalog cat;assert(cat.add(oxygen()).ok);
@@ -283,6 +293,83 @@ int main(){
  {std::ifstream absent(insufficientPath.c_str(),std::ios::binary);assert(!absent.good());}
  std::remove(insufficientPath.c_str());
  std::remove(propellantPath.c_str());
+ // Legacy three-field Q/F expiry records remain readable and must not
+ // retroactively charge the new penalty policy when an old save is loaded.
+ const std::string legacyObjectivePath="OEMLegacyObjectiveExpiryTests.journal";
+ std::remove(legacyObjectivePath.c_str());
+ oem::MissionObjectiveBook legacyObjectiveBook;
+ oem::MissionObjective legacyObjective;
+ legacyObjective.missionId="legacy-objective-expired";
+ legacyObjective.vesselId="GL-LEGACY";
+ legacyObjective.kind=oem::MISSION_OBJECTIVE_VISIT_SPACEPORT;
+ legacyObjective.targetLocationId="MoonBase";
+ legacyObjective.targetBodyId="Moon";
+ legacyObjective.acceptedAt=10;
+ legacyObjective.deadline=20;
+ assert(store.acceptMissionObjective(legacyObjectivePath,legacyObjectiveBook,
+     legacyObjective,300).ok);
+ {
+  std::ofstream oldRecord(legacyObjectivePath.c_str(),std::ios::binary|std::ios::app);
+  oldRecord << "Q|" << hex("mission-objective-expire:"+legacyObjective.missionId)
+            << "|" << hex(legacyObjective.missionId) << "\\n";
+ }
+ oem::Ledger legacyObjectiveLedger;
+ assert(legacyObjectiveLedger.createAccount("company",500).ok);
+ oem::MissionObjectiveBook legacyObjectiveRecovered;
+ oem::DeliveryContractBook legacyObjectiveContracts;
+ std::map<std::string,oem::CargoServiceInventory> legacyObjectiveStocks;
+ std::map<std::string,oem::CargoManifest> legacyObjectiveManifests;
+ assert(store.load(legacyObjectivePath,cat,legacyObjectiveLedger,
+     legacyObjectiveStocks,legacyObjectiveManifests,&legacyObjectiveContracts,
+     &legacyObjectiveRecovered).ok);
+ assert(legacyObjectiveRecovered.find(legacyObjective.missionId)->status==
+     oem::MISSION_OBJECTIVE_EXPIRED);
+ assert(legacyObjectiveLedger.getBalance("company",balance)&&balance==500);
+ int legacyReputation=0;
+ assert(!legacyObjectiveLedger.getReputation("company",legacyReputation));
+ assert(store.load(legacyObjectivePath,cat,legacyObjectiveLedger,
+     legacyObjectiveStocks,legacyObjectiveManifests,&legacyObjectiveContracts,
+     &legacyObjectiveRecovered).ok);
+ assert(legacyObjectiveLedger.getBalance("company",balance)&&balance==500);
+ assert(!legacyObjectiveLedger.getReputation("company",legacyReputation));
+ std::remove(legacyObjectivePath.c_str());
+
+ const std::string legacyContractPath="OEMLegacyContractExpiryTests.journal";
+ std::remove(legacyContractPath.c_str());
+ oem::DeliveryContract legacyContract;
+ legacyContract.contractId="legacy-contract-expired";
+ legacyContract.vesselId="GL-LEGACY";
+ legacyContract.cargoId="oxygen";
+ legacyContract.quantity=1;
+ legacyContract.originLocationId="ISS";
+ legacyContract.destinationLocationId="MARS";
+ legacyContract.reward=300;
+ legacyContract.acceptedAt=10;
+ legacyContract.deadline=20;
+ oem::DeliveryContractBook legacyContractBook;
+ assert(store.acceptContract(legacyContractPath,legacyContractBook,legacyContract).ok);
+ {
+  std::ofstream oldRecord(legacyContractPath.c_str(),std::ios::binary|std::ios::app);
+  oldRecord << "F|" << hex("contract-expire:"+legacyContract.contractId)
+            << "|" << hex(legacyContract.contractId) << "\\n";
+ }
+ oem::Ledger legacyContractLedger;
+ assert(legacyContractLedger.createAccount("company",500).ok);
+ oem::DeliveryContractBook legacyContractRecovered;
+ std::map<std::string,oem::CargoServiceInventory> legacyContractStocks;
+ std::map<std::string,oem::CargoManifest> legacyContractManifests;
+ assert(store.load(legacyContractPath,cat,legacyContractLedger,
+     legacyContractStocks,legacyContractManifests,&legacyContractRecovered).ok);
+ assert(legacyContractRecovered.find(legacyContract.contractId)->status==
+     oem::CONTRACT_EXPIRED);
+ assert(legacyContractLedger.getBalance("company",balance)&&balance==500);
+ assert(!legacyContractLedger.getReputation("company",legacyReputation));
+ assert(store.load(legacyContractPath,cat,legacyContractLedger,
+     legacyContractStocks,legacyContractManifests,&legacyContractRecovered).ok);
+ assert(legacyContractLedger.getBalance("company",balance)&&balance==500);
+ assert(!legacyContractLedger.getReputation("company",legacyReputation));
+ std::remove(legacyContractPath.c_str());
+
  std::remove(cancelPath.c_str());
  std::remove(contractPath.c_str());
  std::remove(path.c_str());return 0;
