@@ -1011,6 +1011,13 @@ public:
         return true;
     }
 
+    bool issuerReputation(const std::string& issuerId, int& reputation) const {
+        if (!economyReady_ || issuerId.empty()) return false;
+        if (ledger_.getReputation(issuerId, reputation)) return true;
+        reputation = 50;
+        return true;
+    }
+
     const oem::CargoServiceInventory* cargoServiceInventory(const std::string& serviceId) const {
         std::map<std::string, oem::CargoServiceInventory>::const_iterator it =
             cargoServiceInventories_.find(serviceId);
@@ -3062,6 +3069,13 @@ public:
                 DrawLine(hDC, y, line);
             }
 
+            if (count > 0) {
+                int issuerRep = 50; char repLine[96];
+                if (g_bridge->issuerReputation(offers[selectedOffer_].issuerId, issuerRep)) {
+                    sprintf(repLine, "ISSUER REPUTATION: %d / 100", issuerRep);
+                    DrawLine(hDC, y, repLine);
+                }
+            }
             if (count > 0 && !offers[selectedOffer_].missionBriefing.empty()) {
                 DrawLine(hDC, y, "BRIEFING");
                 DrawWrappedText(hDC, y, offers[selectedOffer_].missionBriefing, 35);
