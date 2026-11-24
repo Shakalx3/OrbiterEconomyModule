@@ -8,7 +8,7 @@ Result MissionObjectiveBook::accept(const MissionObjective& objective, Credits r
     if(reward<=0)return Result::failure("MISSION_OBJECTIVE_REWARD","Mission reward must be positive.");
     std::map<std::string,std::size_t>::const_iterator prior=indexes_.find(objective.missionId);
     if(prior!=indexes_.end()){const MissionObjectiveContract& old=missions_[prior->second];const MissionObjective& a=old.objective;
-        const bool same=a.vesselId==objective.vesselId&&a.kind==objective.kind&&a.targetLocationId==objective.targetLocationId&&a.targetBodyId==objective.targetBodyId&&a.acceptedAt==objective.acceptedAt&&a.deadline==objective.deadline&&old.reward==reward;
+        const bool same=a.vesselId==objective.vesselId&&a.kind==objective.kind&&a.originLocationId==objective.originLocationId&&a.targetLocationId==objective.targetLocationId&&a.targetBodyId==objective.targetBodyId&&a.cargoId==objective.cargoId&&a.quantity==objective.quantity&&a.acceptedAt==objective.acceptedAt&&a.deadline==objective.deadline&&old.reward==reward;
         return same?Result::success():Result::failure("MISSION_OBJECTIVE_CONFLICT","Mission ID already belongs to different terms.");}
     MissionObjectiveContract item;item.objective=objective;item.reward=reward;item.status=MISSION_OBJECTIVE_ACCEPTED;
     missions_.push_back(item);indexes_[objective.missionId]=missions_.size()-1;return Result::success();
