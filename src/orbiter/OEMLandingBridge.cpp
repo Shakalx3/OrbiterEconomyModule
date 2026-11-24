@@ -1544,7 +1544,7 @@ public:
             const std::vector<std::string> expiredObjectives = objectiveDue.expireDue(simSeconds);
             for (std::size_t i = 0; i < expiredObjectives.size(); ++i) {
                 const oem::Result committed = economyJournalStore_.expireMissionObjective(
-                    economyJournalPath_, objectiveBook_, expiredObjectives[i]);
+                    economyJournalPath_, objectiveBook_, expiredObjectives[i], ledger_, "company", simSeconds);
                 if (!committed.ok) {
                     char error[512];
                     sprintf(error, "OEM MISSION: expiry commit failed id=%s (%s): %s",
@@ -1556,7 +1556,7 @@ public:
             const std::vector<std::string> expired = due.expireDue(simSeconds);
             for (std::size_t i = 0; i < expired.size(); ++i) {
                 const oem::Result committed = economyJournalStore_.expireContract(
-                    economyJournalPath_, contractBook_, expired[i]);
+                    economyJournalPath_, contractBook_, expired[i], ledger_, "company", simSeconds);
                 if (!committed.ok) {
                     char error[512];
                     sprintf(error, "OEM CONTRACT: expiry commit failed id=%s (%s): %s",
@@ -2372,7 +2372,7 @@ private:
                     } else if (current->objective.deadline > 0 &&
                                event.simulationTime > current->objective.deadline) {
                         const oem::Result expired = economyJournalStore_.expireMissionObjective(
-                            economyJournalPath_, objectiveBook_, acceptedIds[i]);
+                            economyJournalPath_, objectiveBook_, acceptedIds[i], ledger_, "company", event.simulationTime);
                         if (!expired.ok) {
                             char missionError[512];
                             sprintf(missionError, "OEM MISSION: expiry commit failed id=%s (%s): %s",
