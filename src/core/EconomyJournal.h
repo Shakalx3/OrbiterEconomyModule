@@ -47,6 +47,18 @@ public:
                           const std::string& contractId) const;
     Result cancelContract(const std::string& path, DeliveryContractBook& contracts,
                           const std::string& contractId) const;
+    Result acceptMissionObjective(const std::string& path, MissionObjectiveBook& objectives,
+                          const MissionObjective& objective, Credits reward) const;
+    Result completeMissionObjective(const std::string& path, MissionObjectiveBook& objectives,
+                          const std::string& missionId, const std::string& eventId,
+                          SimulationSeconds completedAt) const;
+    Result settleMissionObjective(const std::string& path, MissionObjectiveBook& objectives,
+                          const std::string& missionId, const std::string& accountId,
+                          Ledger& ledger) const;
+    Result expireMissionObjective(const std::string& path, MissionObjectiveBook& objectives,
+                          const std::string& missionId) const;
+    Result cancelMissionObjective(const std::string& path, MissionObjectiveBook& objectives,
+                          const std::string& missionId) const;
 };
 }
 #endif
