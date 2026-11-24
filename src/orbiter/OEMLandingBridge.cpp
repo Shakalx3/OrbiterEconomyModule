@@ -30,6 +30,7 @@
 #include "../core/MissionBoard.h"
 #include "../core/MissionEconomics.h"
 #include "../core/MissionObjectiveBook.h"
+#include "../core/MissionObjectiveBoard.h"
 #include "../core/LedgerConfig.h"
 #include "../core/CargoCatalogConfig.h"
 #include "../core/EconomicLocationRegistry.h"
@@ -49,6 +50,7 @@ int g_cargoManifestMode = -1;
 int g_cargoExchangeTestMode = -1;
 int g_marketMode = -1;
 int g_deliveryContractsMode = -1;
+int g_independentMissionsMode = -1;
 int g_economicAdminMode = -1;
 int g_propellantMonitorMode = -1;
 int g_propellantRefuelMode = -1;
@@ -157,6 +159,10 @@ std::string makeMissionBoardPath(HINSTANCE module) {
     return makeEconomyDataFilePath(module, "mission_boards.dat");
 }
 
+std::string makeObjectiveMissionBoardPath(HINSTANCE module) {
+    return makeEconomyDataFilePath(module, "objective_mission_boards.dat");
+}
+
 class OEMLandingBridge : public oapi::Module {
 public:
     explicit OEMLandingBridge(HINSTANCE hDLL)
@@ -165,7 +171,7 @@ public:
           cargoServices_(), cargoServicesPath_(makeCargoServicesPath(hDLL)),
           cargoTransferGate_(), cargoManifests_(), cargoManifestLoadAttempted_(),
           cargoStockConfigStore_(), cargoServiceInventories_(), cargoServiceInventoryLoadAttempted_(),
-          economyJournalStore_(), contractBook_(), objectiveBook_(), pendingContractOffers_(), contractOfferSequence_(0), contractOfferDay_(-1), missionBoardStore_(), missionBoards_(), missionBoardPath_(makeMissionBoardPath(hDLL)), missionBoardsReady_(false), economyJournalPath_(makeEconomyDataFilePath(hDLL, "economy.journal")),
+          economyJournalStore_(), contractBook_(), objectiveBook_(), pendingContractOffers_(), contractOfferSequence_(0), contractOfferDay_(-1), missionBoardStore_(), missionBoards_(), missionBoardPath_(makeMissionBoardPath(hDLL)), missionBoardsReady_(false), objectiveBoardStore_(), objectiveBoards_(), objectiveBoardPath_(makeObjectiveMissionBoardPath(hDLL)), objectiveBoardsReady_(false), economyJournalPath_(makeEconomyDataFilePath(hDLL, "economy.journal")),
           propellantTransactionJournal_(), propellantTransactionJournalPath_(makeEconomyDataFilePath(hDLL, "propellant_transactions.journal")), propellantPricePath_(makeEconomyDataFilePath(hDLL, "propellant_prices.cfg")), propellantRecoveryReady_(false), propellantOperationSequence_(0),
           ledgerConfigStore_(), cargoCatalogConfigStore_(), accountsPath_(makeEconomyDataFilePath(hDLL, "accounts.cfg")),
           cargoCatalogPath_(makeEconomyDataFilePath(hDLL, "cargo_catalog.cfg")),
@@ -730,6 +736,179 @@ public:
         return oem::Result::success();
     }
 
+    bool currentObjectiveOffers(const std::string& vesselId,
+                                std::vector<oem::MissionObjectiveOffer>& offers) {
+        offers.clear();
+        if (!economyReady_ || !objectiveBoardsReady_ || sessionId_.empty() ||
+            currentSimulationTime_ <= 0 || vesselId.empty() || !isFocusedVessel(vesselId))
+            return false;
+        std::size_t active = 0;
+        const std::vector<oem::MissionObjectiveContract>& accepted = objectiveBook_.missions();
+        for (std::size_t i = 0; i < accepted.size(); ++i)
+            if (accepted[i].objective.vesselId == vesselId &&
+                (accepted[i].status == oem::MISSION_OBJECTIVE_ACCEPTED ||
+                 accepted[i].status == oem::MISSION_OBJECTIVE_COMPLETED))
+                ++active;
+        if (active >= 3) return false;
+        const std::string origin = currentMarketLocation(vesselId);
+        oem::EconomicLocation originLocation;
+        if (origin.empty() || !resolveCurrentEconomicLocation(vesselId, origin, originLocation))
+            return false;
+        const long long day = (long long)currentSimulationTime_ / 86400;
+        std::map<std::string, oem::MissionObjectiveBoard>::iterator existing =
+            objectiveBoards_.find(originLocation.canonicalId);
+        if (existing != objectiveBoards_.end() && existing->second.simulationDay == day) {
+            for (std::size_t i = 0; i < existing->second.offers.size(); ++i)
+                if (!objectiveBook_.find(existing->second.offers[i].missionId))
+                    offers.push_back(existing->second.offers[i]);
+            return !offers.empty();
+        }
+
+        VECTOR3 originGlobal = _V(0,0,0);
+        OBJHANDLE originBody = 0;
+        double originLng = 0.0, originLat = 0.0, originRadius = 0.0;
+        if (!resolveEconomicLocationPosition(originLocation, originGlobal, originBody,
+                originLng, originLat, originRadius)) return false;
+
+        std::vector<oem::MissionObjectiveCandidate> candidates;
+        const std::vector<oem::EconomicLocation>& locations = economicLocations_.entries();
+        for (std::size_t i = 0; i < locations.size(); ++i) {
+            const oem::EconomicLocation& target = locations[i];
+            if (target.canonicalId == originLocation.canonicalId) continue;
+            if (target.kind != oem::ECONOMIC_LOCATION_SPACEPORT &&
+                target.kind != oem::ECONOMIC_LOCATION_STATION) continue;
+            VECTOR3 targetGlobal = _V(0,0,0);
+            OBJHANDLE targetBody = 0;
+            double targetLng = 0.0, targetLat = 0.0, targetRadius = 0.0;
+            if (!resolveEconomicLocationPosition(target, targetGlobal, targetBody,
+                    targetLng, targetLat, targetRadius)) continue;
+            oem::MissionRouteDistance route;
+            if (target.kind == oem::ECONOMIC_LOCATION_SPACEPORT &&
+                originLocation.kind == oem::ECONOMIC_LOCATION_SPACEPORT &&
+                targetBody == originBody && originRadius > 0.0) {
+                route.metres = oem::surfaceDistanceMetres(originLat, originLng,
+                    targetLat, targetLng, originRadius);
+                route.kind = oem::MISSION_ROUTE_SURFACE;
+            } else {
+                const double dx = targetGlobal.x - originGlobal.x;
+                const double dy = targetGlobal.y - originGlobal.y;
+                const double dz = targetGlobal.z - originGlobal.z;
+                route.metres = sqrt(dx*dx + dy*dy + dz*dz);
+                route.kind = oem::MISSION_ROUTE_ESTIMATE;
+            }
+            route.valid = _finite(route.metres) && route.metres >= 0.0;
+            const oem::MissionEconomicsConfig config;
+            const oem::MissionQuote quote = oem::quoteMission(500, 1, route, config);
+            if (!quote.valid) continue;
+            oem::MissionObjectiveCandidate candidate;
+            candidate.kind = target.kind == oem::ECONOMIC_LOCATION_SPACEPORT
+                ? oem::MISSION_OBJECTIVE_VISIT_SPACEPORT : oem::MISSION_OBJECTIVE_DOCK_STATION;
+            candidate.targetLocationId = target.storageId;
+            candidate.targetBodyId = target.celestialBody;
+            candidate.targetCanonicalId = target.canonicalId;
+            candidate.reward = quote.reward;
+            candidate.allowanceSeconds = quote.allowanceSeconds;
+            if (candidate.kind == oem::MISSION_OBJECTIVE_VISIT_SPACEPORT) {
+                candidate.missionType = "VISIT";
+                candidate.missionTitle = "Spaceport visit";
+                candidate.missionBriefing = "Visit " + target.displayName + " on " +
+                    target.celestialBody + ". Orbiter must record a landing at this exact base with ground contact.";
+            } else {
+                candidate.missionType = "DOCK";
+                candidate.missionTitle = "Station rendezvous";
+                candidate.missionBriefing = "Rendezvous with " + target.displayName +
+                    ". Completion requires an actual Orbiter docking transition with this registered station.";
+            }
+            candidates.push_back(candidate);
+        }
+
+        const unsigned long generation = existing == objectiveBoards_.end()
+            ? 1 : existing->second.generation + 1;
+        char generationText[32]; sprintf(generationText, "%lu", generation);
+        oem::MissionObjectiveBoard generated;
+        const oem::Result result = objectiveBoardStore_.generate(origin, originLocation.canonicalId,
+            day, generation, sessionId_ + "|" + originLocation.canonicalId + "|" +
+            generationText + "|independent", candidates, generated);
+        if (!result.ok) return false;
+        std::map<std::string, oem::MissionObjectiveBoard> updated = objectiveBoards_;
+        updated[originLocation.canonicalId] = generated;
+        const oem::Result saved = objectiveBoardStore_.save(objectiveBoardPath_, updated);
+        if (!saved.ok) {
+            char message[512];
+            sprintf(message, "OEM Independent Mission Board: save failed (%s): %s",
+                saved.code.c_str(), saved.message.c_str());
+            oapiWriteLog(message);
+            return false;
+        }
+        objectiveBoards_.swap(updated);
+        for (std::size_t i = 0; i < generated.offers.size(); ++i)
+            if (!objectiveBook_.find(generated.offers[i].missionId))
+                offers.push_back(generated.offers[i]);
+        return !offers.empty();
+    }
+
+    oem::Result acceptObjectiveOffer(const std::string& vesselId, std::size_t offerIndex) {
+        if (!economyReady_ || economyJournalPath_.empty())
+            return oem::Result::failure("MISSION_ECONOMY_UNAVAILABLE", "The global economy journal is unavailable.");
+        if (!isFocusedVessel(vesselId))
+            return oem::Result::failure("MISSION_FOCUS", "Accept the objective from its assigned vessel.");
+        const std::string origin = currentMarketLocation(vesselId);
+        oem::EconomicLocation originLocation;
+        if (origin.empty() || !resolveCurrentEconomicLocation(vesselId, origin, originLocation))
+            return oem::Result::failure("MISSION_ORIGIN", "Could not resolve the current economic location.");
+        std::map<std::string, oem::MissionObjectiveBoard>::iterator board =
+            objectiveBoards_.find(originLocation.canonicalId);
+        if (board == objectiveBoards_.end() || offerIndex >= board->second.offers.size())
+            return oem::Result::failure("MISSION_OFFER_UNAVAILABLE", "Selected objective offer is no longer available.");
+        const oem::MissionObjectiveOffer offer = board->second.offers[offerIndex];
+        if (objectiveBook_.find(offer.missionId))
+            return oem::Result::failure("MISSION_ALREADY_ACCEPTED", "This objective mission has already been accepted.");
+        if (currentSimulationTime_ <= 0 || offer.allowanceSeconds <= 0 ||
+            offer.allowanceSeconds > LLONG_MAX - currentSimulationTime_)
+            return oem::Result::failure("MISSION_TIME", "Objective mission deadline is outside the supported range.");
+        oem::MissionObjective objective;
+        objective.missionId = offer.missionId;
+        objective.vesselId = vesselId;
+        objective.kind = offer.kind;
+        objective.originLocationId = originLocation.canonicalId;
+        objective.targetLocationId = offer.targetLocationId;
+        objective.targetBodyId = offer.targetBodyId;
+        objective.acceptedAt = currentSimulationTime_;
+        objective.deadline = currentSimulationTime_ + offer.allowanceSeconds;
+        const oem::Result accepted = economyJournalStore_.acceptMissionObjective(
+            economyJournalPath_, objectiveBook_, objective, offer.reward);
+        if (!accepted.ok) return accepted;
+        oem::MissionObjectiveBoard updated = board->second;
+        for (std::size_t i = 0; i < updated.offers.size(); ++i)
+            if (updated.offers[i].missionId == offer.missionId) {
+                updated.offers.erase(updated.offers.begin() + i);
+                break;
+            }
+        std::map<std::string, oem::MissionObjectiveBoard> candidate = objectiveBoards_;
+        candidate[originLocation.canonicalId] = updated;
+        const oem::Result saved = objectiveBoardStore_.save(objectiveBoardPath_, candidate);
+        if (!saved.ok) {
+            board->second = updated;
+            return oem::Result::failure("OBJECTIVE_BOARD_SAVE",
+                "Objective accepted durably, but the remaining board could not be saved; it will be reconciled on restart.");
+        }
+        objectiveBoards_.swap(candidate);
+        return oem::Result::success();
+    }
+
+    oem::Result cancelMissionObjective(const std::string& missionId, const std::string& vesselId) {
+        if (!economyReady_ || economyJournalPath_.empty())
+            return oem::Result::failure("MISSION_ECONOMY_UNAVAILABLE", "The global economy journal is unavailable.");
+        if (!isFocusedVessel(vesselId))
+            return oem::Result::failure("MISSION_FOCUS", "Cancel the objective from its assigned vessel.");
+        const oem::MissionObjectiveContract* mission = objectiveBook_.find(missionId);
+        if (!mission) return oem::Result::failure("MISSION_NOT_FOUND", "Objective mission does not exist.");
+        if (mission->objective.vesselId != vesselId)
+            return oem::Result::failure("MISSION_VESSEL", "This objective belongs to another vessel.");
+        return economyJournalStore_.cancelMissionObjective(
+            economyJournalPath_, objectiveBook_, missionId);
+    }
+
     oem::Result cancelDeliveryContract(const std::string& contractId, const std::string& vesselId) {
         if (!economyReady_ || economyJournalPath_.empty())
             return oem::Result::failure("CONTRACT_ECONOMY_UNAVAILABLE", "Economy journal is unavailable.");
@@ -1144,6 +1323,8 @@ public:
         contractOfferSequence_ = 0;
         missionBoards_.clear();
         missionBoardsReady_ = false;
+        objectiveBoards_.clear();
+        objectiveBoardsReady_ = false;
         if (!missionBoardPath_.empty()) {
             const DWORD boardAttributes = GetFileAttributesA(missionBoardPath_.c_str());
             if (boardAttributes == INVALID_FILE_ATTRIBUTES &&
@@ -1155,6 +1336,23 @@ public:
                 if (!boardLoad.ok) {
                     char boardError[512]; sprintf(boardError, "OEM Mission Board: load failed (%s): %s", boardLoad.code.c_str(), boardLoad.message.c_str());
                     oapiWriteLog(boardError);
+                }
+            }
+        }
+        if (!objectiveBoardPath_.empty()) {
+            const DWORD objectiveAttributes = GetFileAttributesA(objectiveBoardPath_.c_str());
+            if (objectiveAttributes == INVALID_FILE_ATTRIBUTES &&
+                (GetLastError() == ERROR_FILE_NOT_FOUND || GetLastError() == ERROR_PATH_NOT_FOUND)) {
+                objectiveBoardsReady_ = true;
+            } else if (objectiveAttributes != INVALID_FILE_ATTRIBUTES) {
+                const oem::Result objectiveLoad = objectiveBoardStore_.load(
+                    objectiveBoardPath_, objectiveBoards_);
+                objectiveBoardsReady_ = objectiveLoad.ok;
+                if (!objectiveLoad.ok) {
+                    char objectiveError[512];
+                    sprintf(objectiveError, "OEM Independent Mission Board: load failed (%s): %s",
+                        objectiveLoad.code.c_str(), objectiveLoad.message.c_str());
+                    oapiWriteLog(objectiveError);
                 }
             }
         }
@@ -2114,6 +2312,10 @@ private:
     std::map<std::string, oem::MissionBoard> missionBoards_;
     std::string missionBoardPath_;
     bool missionBoardsReady_;
+    oem::MissionObjectiveBoardStore objectiveBoardStore_;
+    std::map<std::string, oem::MissionObjectiveBoard> objectiveBoards_;
+    std::string objectiveBoardPath_;
+    bool objectiveBoardsReady_;
     std::string economyJournalPath_;
     oem::LedgerConfigStore ledgerConfigStore_;
     oem::CargoCatalogConfigStore cargoCatalogConfigStore_;
