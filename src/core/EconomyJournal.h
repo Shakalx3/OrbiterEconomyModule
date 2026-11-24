@@ -13,6 +13,11 @@ struct MissionFailurePolicy {
     bool valid() const { return penaltyBasisPoints <= 10000 && reputationDelta < 0 && reputationDelta >= -100; }
 };
 
+class MissionFailurePolicyStore {
+public:
+    Result loadOrCreate(const std::string& path, MissionFailurePolicy& policy) const;
+};
+
 class EconomyJournalStore {
 public:
     // Inputs are explicit opening-state projections. Recovery is transactional across all stations.
