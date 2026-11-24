@@ -29,6 +29,7 @@
 #include "../core/EconomyJournal.h"
 #include "../core/MissionBoard.h"
 #include "../core/MissionEconomics.h"
+#include "../core/MissionObjectiveBook.h"
 #include "../core/LedgerConfig.h"
 #include "../core/CargoCatalogConfig.h"
 #include "../core/EconomicLocationRegistry.h"
@@ -164,7 +165,7 @@ public:
           cargoServices_(), cargoServicesPath_(makeCargoServicesPath(hDLL)),
           cargoTransferGate_(), cargoManifests_(), cargoManifestLoadAttempted_(),
           cargoStockConfigStore_(), cargoServiceInventories_(), cargoServiceInventoryLoadAttempted_(),
-          economyJournalStore_(), contractBook_(), pendingContractOffers_(), contractOfferSequence_(0), contractOfferDay_(-1), missionBoardStore_(), missionBoards_(), missionBoardPath_(makeMissionBoardPath(hDLL)), missionBoardsReady_(false), economyJournalPath_(makeEconomyDataFilePath(hDLL, "economy.journal")),
+          economyJournalStore_(), contractBook_(), objectiveBook_(), pendingContractOffers_(), contractOfferSequence_(0), contractOfferDay_(-1), missionBoardStore_(), missionBoards_(), missionBoardPath_(makeMissionBoardPath(hDLL)), missionBoardsReady_(false), economyJournalPath_(makeEconomyDataFilePath(hDLL, "economy.journal")),
           propellantTransactionJournal_(), propellantTransactionJournalPath_(makeEconomyDataFilePath(hDLL, "propellant_transactions.journal")), propellantPricePath_(makeEconomyDataFilePath(hDLL, "propellant_prices.cfg")), propellantRecoveryReady_(false), propellantOperationSequence_(0),
           ledgerConfigStore_(), cargoCatalogConfigStore_(), accountsPath_(makeEconomyDataFilePath(hDLL, "accounts.cfg")),
           cargoCatalogPath_(makeEconomyDataFilePath(hDLL, "cargo_catalog.cfg")),
@@ -550,6 +551,10 @@ public:
 
     const oem::DeliveryContractBook& deliveryContractBook() const {
         return contractBook_;
+    }
+
+    const oem::MissionObjectiveBook& missionObjectiveBook() const {
+        return objectiveBook_;
     }
 
     bool currentMissionOffers(const std::string& vesselId, std::vector<oem::DeliveryContract>& offers) {
@@ -1134,6 +1139,7 @@ public:
         cargoManifests_.clear();
         cargoManifestLoadAttempted_.clear();
         contractBook_ = oem::DeliveryContractBook();
+        objectiveBook_ = oem::MissionObjectiveBook();
         pendingContractOffers_.clear();
         contractOfferSequence_ = 0;
         missionBoards_.clear();
@@ -1266,6 +1272,19 @@ public:
 
         if (economyReady_) {
             settleCompletedContracts();
+            settleCompletedObjectives();
+            oem::MissionObjectiveBook objectiveDue = objectiveBook_;
+            const std::vector<std::string> expiredObjectives = objectiveDue.expireDue(simSeconds);
+            for (std::size_t i = 0; i < expiredObjectives.size(); ++i) {
+                const oem::Result committed = economyJournalStore_.expireMissionObjective(
+                    economyJournalPath_, objectiveBook_, expiredObjectives[i]);
+                if (!committed.ok) {
+                    char error[512];
+                    sprintf(error, "OEM MISSION: expiry commit failed id=%s (%s): %s",
+                        expiredObjectives[i].c_str(), committed.code.c_str(), committed.message.c_str());
+                    oapiWriteLog(error);
+                }
+            }
             oem::DeliveryContractBook due = contractBook_;
             const std::vector<std::string> expired = due.expireDue(simSeconds);
             for (std::size_t i = 0; i < expired.size(); ++i) {
@@ -1516,6 +1535,34 @@ private:
             if (!settled.ok) {
                 char error[512];
                 sprintf(error, "OEM CONTRACT: automatic settlement retry failed id=%s (%s): %s",
+                    pending[i].c_str(), settled.code.c_str(), settled.message.c_str());
+                oapiWriteLog(error);
+            }
+        }
+    }
+
+    void settleCompletedObjectives() {
+        std::vector<std::string> pending;
+        const std::vector<oem::MissionObjectiveContract>& missions = objectiveBook_.missions();
+        for (std::size_t i = 0; i < missions.size(); ++i)
+            if (missions[i].status == oem::MISSION_OBJECTIVE_COMPLETED)
+                pending.push_back(missions[i].objective.missionId);
+        for (std::size_t i = 0; i < pending.size(); ++i) {
+            const oem::MissionObjectiveContract* item = objectiveBook_.find(pending[i]);
+            if (!item) continue;
+            const oem::Credits reward = item->reward;
+            const oem::Result settled = economyJournalStore_.settleMissionObjective(
+                economyJournalPath_, objectiveBook_, pending[i], "company", ledger_);
+            if (settled.ok) {
+                char notice[512];
+                sprintf(notice, "MISSION COMPLETED\\nObjective verified\\n+ %lld CR", (long long)reward);
+                showCompletionNotice(notice);
+                char log[512];
+                sprintf(log, "OEM MISSION SETTLED: id=%s reward=%lld", pending[i].c_str(), (long long)reward);
+                oapiWriteLog(log);
+            } else {
+                char error[512];
+                sprintf(error, "OEM MISSION: automatic settlement retry failed id=%s (%s): %s",
                     pending[i].c_str(), settled.code.c_str(), settled.message.c_str());
                 oapiWriteLog(error);
             }
@@ -1884,7 +1931,7 @@ private:
         std::map<std::string, oem::CargoManifest> openingManifests;
         const oem::Result recovered = economyJournalStore_.load(
             economyJournalPath_, openingCatalog, openingLedger,
-            cargoServiceInventories_, openingManifests, &contractBook_);
+            cargoServiceInventories_, openingManifests, &contractBook_, &objectiveBook_);
         if (!recovered.ok) {
             char message[512];
             sprintf(message, "OEM Economy: global journal recovery failed (%s): %s",
@@ -1972,6 +2019,58 @@ private:
             }
         }
 
+        if (economyReady_) {
+            std::map<std::string, oem::CargoManifest>::const_iterator manifest =
+                cargoManifests_.find(event.vesselId);
+            if (manifest != cargoManifests_.end()) {
+                std::vector<std::string> acceptedIds;
+                const std::vector<oem::MissionObjectiveContract>& missions = objectiveBook_.missions();
+                for (std::size_t i = 0; i < missions.size(); ++i)
+                    if (missions[i].status == oem::MISSION_OBJECTIVE_ACCEPTED &&
+                        missions[i].objective.vesselId == event.vesselId)
+                        acceptedIds.push_back(missions[i].objective.missionId);
+                for (std::size_t i = 0; i < acceptedIds.size(); ++i) {
+                    const oem::MissionObjectiveContract* current = objectiveBook_.find(acceptedIds[i]);
+                    if (!current || current->status != oem::MISSION_OBJECTIVE_ACCEPTED) continue;
+                    if (oem::missionObjectiveMatchesEvent(current->objective, event, manifest->second)) {
+                        oem::MissionObjectiveBook candidate = objectiveBook_;
+                        const oem::Result marked = candidate.restoreCompleted(
+                            acceptedIds[i], event.eventId, event.simulationTime);
+                        if (!marked.ok) continue;
+                        const oem::MissionObjectiveContract* completed = candidate.find(acceptedIds[i]);
+                        const oem::Result committed = completed
+                            ? economyJournalStore_.completeMissionObjective(
+                                economyJournalPath_, candidate, acceptedIds[i],
+                                completed->completionEventId, completed->completedAt)
+                            : oem::Result::failure("MISSION_OBJECTIVE_NOT_FOUND", "Completed objective disappeared.");
+                        if (committed.ok) {
+                            objectiveBook_ = candidate;
+                            char missionMessage[512];
+                            sprintf(missionMessage,
+                                "OEM MISSION OBJECTIVE COMPLETED: id=%s event=%s vessel=%s",
+                                acceptedIds[i].c_str(), event.eventId.c_str(), event.vesselId.c_str());
+                            oapiWriteLog(missionMessage);
+                        } else {
+                            char missionError[512];
+                            sprintf(missionError, "OEM MISSION: completion commit failed id=%s (%s): %s",
+                                acceptedIds[i].c_str(), committed.code.c_str(), committed.message.c_str());
+                            oapiWriteLog(missionError);
+                        }
+                    } else if (current->objective.deadline > 0 &&
+                               event.simulationTime > current->objective.deadline) {
+                        const oem::Result expired = economyJournalStore_.expireMissionObjective(
+                            economyJournalPath_, objectiveBook_, acceptedIds[i]);
+                        if (!expired.ok) {
+                            char missionError[512];
+                            sprintf(missionError, "OEM MISSION: expiry commit failed id=%s (%s): %s",
+                                acceptedIds[i].c_str(), expired.code.c_str(), expired.message.c_str());
+                            oapiWriteLog(missionError);
+                        }
+                    }
+                }
+            }
+        }
+
         char message[768];
         sprintf(message,
             "OEM EVENT QUEUED: id=%s type=%s vessel=%s body=%s base=%s simt=%lld",
@@ -2007,6 +2106,7 @@ private:
     bool propellantRecoveryReady_;
     unsigned long propellantOperationSequence_;
     oem::DeliveryContractBook contractBook_;
+    oem::MissionObjectiveBook objectiveBook_;
     std::map<std::string, oem::DeliveryContract> pendingContractOffers_;
     unsigned long contractOfferSequence_;
     long long contractOfferDay_;
