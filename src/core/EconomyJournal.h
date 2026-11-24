@@ -2,6 +2,7 @@
 #define OEM_CORE_ECONOMY_JOURNAL_H
 #include "MarketTrade.h"
 #include "DeliveryContract.h"
+#include "MissionObjectiveBook.h"
 #include <map>
 #include <string>
 namespace oem {
@@ -11,7 +12,8 @@ public:
     Result load(const std::string& path, const CargoCatalog& catalog, Ledger& ledger,
                 std::map<std::string, CargoServiceInventory>& inventories,
                 std::map<std::string, CargoManifest>& manifests,
-                DeliveryContractBook* contracts = 0) const;
+                DeliveryContractBook* contracts = 0,
+                MissionObjectiveBook* objectives = 0) const;
     // A single durable append commits either a non-financial exchange or a market trade.
     Result applyExchange(const std::string& path,
                 std::map<std::string, CargoServiceInventory>& inventories,
