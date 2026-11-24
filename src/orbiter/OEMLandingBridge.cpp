@@ -1499,6 +1499,7 @@ public:
         updateCompletionNotice(simSeconds);
 
         if (economyReady_) {
+            reconcileObjectiveEvents();
             settleCompletedContracts();
             settleCompletedObjectives();
             oem::MissionObjectiveBook objectiveDue = objectiveBook_;
@@ -1765,6 +1766,52 @@ private:
                 sprintf(error, "OEM CONTRACT: automatic settlement retry failed id=%s (%s): %s",
                     pending[i].c_str(), settled.code.c_str(), settled.message.c_str());
                 oapiWriteLog(error);
+            }
+        }
+    }
+
+    void reconcileObjectiveEvents() {
+        if (!economyReady_) return;
+        const std::vector<oem::SimulationEvent>& events = eventQueue_.events();
+        std::vector<std::string> acceptedIds;
+        const std::vector<oem::MissionObjectiveContract>& missions = objectiveBook_.missions();
+        for (std::size_t i = 0; i < missions.size(); ++i)
+            if (missions[i].status == oem::MISSION_OBJECTIVE_ACCEPTED)
+                acceptedIds.push_back(missions[i].objective.missionId);
+        for (std::size_t i = 0; i < acceptedIds.size(); ++i) {
+            const oem::MissionObjectiveContract* mission = objectiveBook_.find(acceptedIds[i]);
+            if (!mission) continue;
+            std::map<std::string, oem::CargoManifest>::const_iterator manifest =
+                cargoManifests_.find(mission->objective.vesselId);
+            if (manifest == cargoManifests_.end()) continue;
+            for (std::size_t n = events.size(); n > 0; --n) {
+                const oem::SimulationEvent& event = events[n - 1];
+                if (event.vesselId != mission->objective.vesselId ||
+                    !oem::missionObjectiveMatchesEvent(mission->objective, event, manifest->second))
+                    continue;
+                oem::MissionObjectiveBook candidate = objectiveBook_;
+                const oem::Result marked = candidate.restoreCompleted(
+                    acceptedIds[i], event.eventId, event.simulationTime);
+                if (!marked.ok) break;
+                const oem::MissionObjectiveContract* completed = candidate.find(acceptedIds[i]);
+                const oem::Result committed = completed
+                    ? economyJournalStore_.completeMissionObjective(
+                        economyJournalPath_, candidate, acceptedIds[i],
+                        completed->completionEventId, completed->completedAt)
+                    : oem::Result::failure("MISSION_OBJECTIVE_NOT_FOUND", "Completed objective disappeared.");
+                if (committed.ok) {
+                    objectiveBook_ = candidate;
+                    char message[512];
+                    sprintf(message, "OEM MISSION EVENT RECOVERED: id=%s event=%s",
+                        acceptedIds[i].c_str(), event.eventId.c_str());
+                    oapiWriteLog(message);
+                } else {
+                    char error[512];
+                    sprintf(error, "OEM MISSION: event recovery commit failed id=%s (%s): %s",
+                        acceptedIds[i].c_str(), committed.code.c_str(), committed.message.c_str());
+                    oapiWriteLog(error);
+                }
+                break;
             }
         }
     }
