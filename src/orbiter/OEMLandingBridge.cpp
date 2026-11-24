@@ -758,9 +758,22 @@ public:
         std::map<std::string, oem::MissionObjectiveBoard>::iterator existing =
             objectiveBoards_.find(originLocation.canonicalId);
         if (existing != objectiveBoards_.end() && existing->second.simulationDay == day) {
-            for (std::size_t i = 0; i < existing->second.offers.size(); ++i)
-                if (!objectiveBook_.find(existing->second.offers[i].missionId))
-                    offers.push_back(existing->second.offers[i]);
+            oem::MissionObjectiveBoard pruned = existing->second;
+            bool changed = false;
+            for (std::size_t i = 0; i < pruned.offers.size();) {
+                if (objectiveBook_.find(pruned.offers[i].missionId)) {
+                    pruned.offers.erase(pruned.offers.begin() + i);
+                    changed = true;
+                } else ++i;
+            }
+            if (changed) {
+                std::map<std::string, oem::MissionObjectiveBoard> updated = objectiveBoards_;
+                updated[originLocation.canonicalId] = pruned;
+                const oem::Result saved = objectiveBoardStore_.save(objectiveBoardPath_, updated);
+                if (!saved.ok) return false;
+                objectiveBoards_.swap(updated);
+            }
+            offers = pruned.offers;
             return !offers.empty();
         }
 
