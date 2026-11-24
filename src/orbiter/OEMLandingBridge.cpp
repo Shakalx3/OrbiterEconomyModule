@@ -3054,13 +3054,13 @@ public:
         if(delivery||objective) {
             DrawLine(hDC,y,"CURRENT MISSION");
             if(delivery) {
-                DrawLine(hDC,y,delivery->missionTitle.empty()?"Cargo delivery":delivery->missionTitle.c_str());
+                DrawWrappedText(hDC,y,delivery->missionTitle.empty()?"Cargo delivery":delivery->missionTitle,35);
                 DrawWrappedText(hDC,y,delivery->missionBriefing.empty()?
                     "Deliver the contracted cargo to the destination.":delivery->missionBriefing,35);
                 DrawRemaining(hDC,y,delivery->deadline,now);
             } else {
                 const oem::MissionObjective& m=objective->objective;
-                DrawLine(hDC,y,m.kind==oem::MISSION_OBJECTIVE_VISIT_SPACEPORT?"Spaceport visit":"Station rendezvous");
+                DrawWrappedText(hDC,y,m.kind==oem::MISSION_OBJECTIVE_VISIT_SPACEPORT?"Spaceport visit":"Station rendezvous",35);
                 std::string briefing;
                 if(m.kind==oem::MISSION_OBJECTIVE_VISIT_SPACEPORT)
                     briefing="Land at "+m.targetLocationId+" and establish ground contact. The landing must be recorded at this exact base.";
@@ -3102,7 +3102,7 @@ public:
             const COLORREF old=GetTextColor(hDC);
             if(i==selectedOffer_) SetTextColor(hDC,RGB(255,220,80));
             std::string marked=(i==selectedOffer_?"> ":"  ")+entries[i].title;
-            DrawLine(hDC,y,marked.c_str());
+            DrawWrappedText(hDC,y,marked,35);
             SetTextColor(hDC,old);
             DrawLine(hDC,y,line);
             if(entries[i].delivery) {
