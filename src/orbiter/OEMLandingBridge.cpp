@@ -1555,7 +1555,7 @@ private:
                 economyJournalPath_, objectiveBook_, pending[i], "company", ledger_);
             if (settled.ok) {
                 char notice[512];
-                sprintf(notice, "MISSION COMPLETED\\nObjective verified\\n+ %lld CR", (long long)reward);
+                sprintf(notice, "MISSION COMPLETED\nObjective verified\n+ %lld CR", (long long)reward);
                 showCompletionNotice(notice);
                 char log[512];
                 sprintf(log, "OEM MISSION SETTLED: id=%s reward=%lld", pending[i].c_str(), (long long)reward);
