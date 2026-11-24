@@ -693,8 +693,21 @@ public:
         // allowance begins when the player actually accepts it.
         selected.acceptedAt = currentSimulationTime_;
         selected.deadline = currentSimulationTime_ + allowance;
-        const oem::Result accepted=economyJournalStore_.acceptContract(
-            economyJournalPath_,contractBook_,selected);
+        ensureCargoManifest(vesselId);
+        if(!ensureCargoServiceInventory(origin))
+            return oem::Result::failure("CONTRACT_ORIGIN_STOCK",
+                "The origin cargo stock is not available for automatic mission loading.");
+        std::map<std::string,oem::CargoManifest>::iterator manifest=cargoManifests_.find(vesselId);
+        if(manifest==cargoManifests_.end())
+            return oem::Result::failure("CONTRACT_MANIFEST",
+                "The assigned vessel's OEM cargo manifest is unavailable.");
+        oem::CargoDefinition cargoDefinition;
+        if(!cargoCatalog_.find(selected.cargoId,cargoDefinition))
+            return oem::Result::failure("CONTRACT_CARGO",
+                "The mission cargo is missing from the configured cargo catalog.");
+        const oem::Result accepted=economyJournalStore_.acceptContractWithCargo(
+            economyJournalPath_,contractBook_,cargoServiceInventories_,
+            manifest->second,selected,cargoDefinition.unitMassKg);
         if(!accepted.ok) return accepted;
         oem::MissionBoard updated=board->second;
         updated.offers.erase(updated.offers.begin()+offerIndex);
