@@ -220,6 +220,48 @@ int main(){
  assert(poorRecoveredLedger.getBalance("company",balance)&&balance==0);
  assert(poorRecoveredLedger.getReputation("company",failureReputation)&&failureReputation==45);
  std::remove(poorFailurePath.c_str());
+ // A late destination event must flow through durable expiry, not silently
+ // mark the contract expired before its configured fee and reputation loss commit.
+ const std::string lateFailurePath="OEMContractLateFailureTests.journal";std::remove(lateFailurePath.c_str());
+ oem::DeliveryContractBook lateFailureBook;
+ oem::DeliveryContract lateFailure;
+ lateFailure.contractId="late-failure-001";lateFailure.vesselId="GL-01";
+ lateFailure.cargoId="oxygen";lateFailure.quantity=1;
+ lateFailure.originLocationId="ISS";lateFailure.destinationLocationId="MARS";
+ lateFailure.reward=200;lateFailure.acceptedAt=10;lateFailure.deadline=20;
+ assert(store.acceptContract(lateFailurePath,lateFailureBook,lateFailure).ok);
+ oem::CargoManifest lateManifest("GL-01");
+ assert(lateManifest.load(transfer("late-failure-load","GL-01","ISS",oem::CARGO_LOAD,1,15)).ok);
+ oem::SimulationEvent lateArrival;
+ lateArrival.eventId="late-failure-arrival";lateArrival.type=oem::SIM_EVENT_LANDING;
+ lateArrival.vesselId="GL-01";lateArrival.simulationTime=21;
+ lateArrival.locationKnown=true;lateArrival.baseId="MARS";
+ assert(!lateFailureBook.observe(lateArrival,lateManifest).ok);
+ assert(lateFailureBook.find(lateFailure.contractId)->status==oem::CONTRACT_ACCEPTED);
+ oem::MissionFailurePolicy customFailurePolicy;
+ customFailurePolicy.penaltyBasisPoints=2500;customFailurePolicy.reputationDelta=-8;
+ oem::Ledger lateFailureLedger;assert(lateFailureLedger.createAccount("company",1000).ok);
+ assert(store.expireContract(lateFailurePath,lateFailureBook,lateFailure.contractId,
+     lateFailureLedger,"company",21,customFailurePolicy).ok);
+ assert(store.expireContract(lateFailurePath,lateFailureBook,lateFailure.contractId,
+     lateFailureLedger,"company",21,customFailurePolicy).ok);
+ assert(lateFailureLedger.getBalance("company",balance)&&balance==950);
+ int lateFailureReputation=0;
+ assert(lateFailureLedger.getReputation("company",lateFailureReputation)&&lateFailureReputation==42);
+ oem::Ledger lateRecoveredLedger;assert(lateRecoveredLedger.createAccount("company",1000).ok);
+ oem::DeliveryContractBook lateRecoveredBook;
+ std::map<std::string,oem::CargoServiceInventory> lateStocks;
+ std::map<std::string,oem::CargoManifest> lateManifests;
+ assert(store.load(lateFailurePath,cat,lateRecoveredLedger,lateStocks,lateManifests,
+     &lateRecoveredBook).ok);
+ assert(lateRecoveredBook.find(lateFailure.contractId)->status==oem::CONTRACT_EXPIRED);
+ assert(lateRecoveredLedger.getBalance("company",balance)&&balance==950);
+ assert(lateRecoveredLedger.getReputation("company",lateFailureReputation)&&lateFailureReputation==42);
+ assert(store.load(lateFailurePath,cat,lateRecoveredLedger,lateStocks,lateManifests,
+     &lateRecoveredBook).ok);
+ assert(lateRecoveredLedger.getBalance("company",balance)&&balance==950);
+ assert(lateRecoveredLedger.getReputation("company",lateFailureReputation)&&lateFailureReputation==42);
+ std::remove(lateFailurePath.c_str());
  // Propellant charges share the global journal and replay exactly once.
  const std::string propellantPath="OEMPropellantEconomyJournalTests.journal";std::remove(propellantPath.c_str());
  oem::Ledger fuelLedger;assert(fuelLedger.createAccount("company",1000).ok);
