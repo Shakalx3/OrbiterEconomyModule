@@ -11,7 +11,7 @@
 
 namespace oem {
 namespace {
-const char* kHeader="OEM_OBJECTIVE_BOARDS|1";
+const char* kHeader="OEM_OBJECTIVE_BOARDS|2";
 std::string hex(const std::string& value) {
     if(value.empty()) return "-";
     static const char digits[]="0123456789ABCDEF";
@@ -70,17 +70,17 @@ bool writeBoard(std::ostream& out,const MissionObjectiveBoard& b) {
         out<<"O|"<<hex(o.missionId)<<"|"<<(int)o.kind<<"|"<<hex(o.targetLocationId)
            <<"|"<<hex(o.targetBodyId)<<"|"<<hex(o.targetCanonicalId)
            <<"|"<<hex(o.missionType)<<"|"<<hex(o.missionTitle)<<"|"<<hex(o.missionBriefing)
-           <<"|"<<o.reward<<"|"<<o.allowanceSeconds<<"\n";
+           <<"|"<<o.reward<<"|"<<o.allowanceSeconds<<"|"<<hex(o.issuerId)<<"\n";
     }
     return (bool)out;
 }
 }
 MissionObjectiveCandidate::MissionObjectiveCandidate()
-    : kind(MISSION_OBJECTIVE_VISIT_SPACEPORT),targetLocationId(),targetBodyId(),
+    : issuerId(),kind(MISSION_OBJECTIVE_VISIT_SPACEPORT),targetLocationId(),targetBodyId(),
       targetCanonicalId(),missionType(),missionTitle(),missionBriefing(),
       reward(0),allowanceSeconds(604800) {}
 MissionObjectiveOffer::MissionObjectiveOffer()
-    : missionId(),kind(MISSION_OBJECTIVE_VISIT_SPACEPORT),targetLocationId(),targetBodyId(),
+    : missionId(),issuerId(),kind(MISSION_OBJECTIVE_VISIT_SPACEPORT),targetLocationId(),targetBodyId(),
       targetCanonicalId(),missionType(),missionTitle(),missionBriefing(),
       reward(0),allowanceSeconds(604800) {}
 MissionObjectiveBoard::MissionObjectiveBoard()
@@ -122,6 +122,7 @@ Result MissionObjectiveBoardStore::generate(const std::string& originLocationId,
                 std::to_string(day)+"|"+std::to_string(generation)+"|"+candidate.targetCanonicalId+"|"+
                 std::to_string((int)candidate.kind)))+"-"+std::to_string(n);
             offer.kind=candidate.kind;
+            offer.issuerId=candidate.issuerId.empty()?"issuer:"+originCanonicalId:candidate.issuerId;
             offer.targetLocationId=candidate.targetLocationId;
             offer.targetBodyId=candidate.targetBodyId;
             offer.targetCanonicalId=candidate.targetCanonicalId;
@@ -170,8 +171,10 @@ Result MissionObjectiveBoardStore::load(const std::string& path,
     std::ifstream in(path.c_str(),std::ios::binary);
     if(!in) return Result::failure("OBJECTIVE_BOARD_READ","Could not open objective board file.");
     std::string line;
-    if(!std::getline(in,line)||line!=kHeader)
-        return Result::failure("OBJECTIVE_BOARD_HEADER","Objective board header/version is invalid.");
+    if(!std::getline(in,line)) return Result::failure("OBJECTIVE_BOARD_HEADER","Objective board header/version is invalid.");
+    const bool versionOne=line=="OEM_OBJECTIVE_BOARDS|1";
+    const bool versionTwo=line==kHeader;
+    if(!versionOne&&!versionTwo) return Result::failure("OBJECTIVE_BOARD_HEADER","Objective board header/version is invalid.");
     std::map<std::string,MissionObjectiveBoard> parsed;
     while(std::getline(in,line)) {
         if(!line.empty()&&line[line.size()-1]=='\r') line.erase(line.size()-1);
@@ -191,15 +194,17 @@ Result MissionObjectiveBoardStore::load(const std::string& path,
             if(!std::getline(in,line)) return Result::failure("OBJECTIVE_BOARD_CORRUPT","Objective board offer is missing.");
             if(!line.empty()&&line[line.size()-1]=='\r') line.erase(line.size()-1);
             f=split(line); MissionObjectiveOffer offer; long long kind=0,reward=0,allowance=0;
-            if(f.size()!=11||f[0]!="O"||!unhex(f[1],offer.missionId)||offer.missionId.empty()||
+            if((versionTwo?f.size()!=12:f.size()!=11)||f[0]!="O"||!unhex(f[1],offer.missionId)||offer.missionId.empty()||
                !number(f[2],kind)||(kind!=MISSION_OBJECTIVE_VISIT_SPACEPORT&&kind!=MISSION_OBJECTIVE_DOCK_STATION)||
                !unhex(f[3],offer.targetLocationId)||!unhex(f[4],offer.targetBodyId)||
                !unhex(f[5],offer.targetCanonicalId)||!unhex(f[6],offer.missionType)||
                !unhex(f[7],offer.missionTitle)||!unhex(f[8],offer.missionBriefing)||
-               !number(f[9],reward)||reward<=0||!number(f[10],allowance)||allowance<=0)
+               !number(f[9],reward)||reward<=0||!number(f[10],allowance)||allowance<=0||
+               (versionTwo&&!unhex(f[11],offer.issuerId)))
                 return Result::failure("OBJECTIVE_BOARD_CORRUPT","Objective board offer is invalid.");
+            if(offer.issuerId.empty()) offer.issuerId="issuer:"+board.originCanonicalId;
             offer.kind=(MissionObjectiveKind)kind; offer.reward=reward; offer.allowanceSeconds=allowance;
-            MissionObjectiveCandidate candidate; candidate.kind=offer.kind;
+            MissionObjectiveCandidate candidate; candidate.issuerId=offer.issuerId; candidate.kind=offer.kind;
             candidate.targetLocationId=offer.targetLocationId; candidate.targetBodyId=offer.targetBodyId;
             candidate.targetCanonicalId=offer.targetCanonicalId; candidate.missionType=offer.missionType;
             candidate.missionTitle=offer.missionTitle; candidate.missionBriefing=offer.missionBriefing;

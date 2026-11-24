@@ -10,6 +10,7 @@ namespace oem {
 
 struct MissionCandidate {
     std::string cargoId;
+    std::string issuerId;
     std::string destinationLocationId;
     std::string destinationBodyId;
     std::string destinationCanonicalId;

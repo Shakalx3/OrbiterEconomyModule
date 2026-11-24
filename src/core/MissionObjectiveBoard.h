@@ -9,6 +9,7 @@
 namespace oem {
 
 struct MissionObjectiveCandidate {
+    std::string issuerId;
     MissionObjectiveKind kind;
     std::string targetLocationId;
     std::string targetBodyId;
@@ -23,6 +24,7 @@ struct MissionObjectiveCandidate {
 
 struct MissionObjectiveOffer {
     std::string missionId;
+    std::string issuerId;
     MissionObjectiveKind kind;
     std::string targetLocationId;
     std::string targetBodyId;

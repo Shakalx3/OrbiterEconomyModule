@@ -11,7 +11,7 @@
 
 namespace oem {
 namespace {
-const char* kHeader = "OEM_MISSION_BOARDS|3";
+const char* kHeader = "OEM_MISSION_BOARDS|4";
 std::string hex(const std::string& value) {
     if(value.empty()) return "-";
     static const char digits[] = "0123456789ABCDEF";
@@ -61,13 +61,13 @@ bool writeBoard(std::ostream& out,const MissionBoard& b) {
         const DeliveryContract& c=b.offers[i];
         out<<"O|"<<hex(c.contractId)<<"|"<<hex(c.vesselId)<<"|"<<hex(c.cargoId)<<"|"<<c.quantity
            <<"|"<<hex(c.originLocationId)<<"|"<<hex(c.destinationLocationId)<<"|"<<hex(c.destinationBodyId)
-           <<"|"<<c.reward<<"|"<<c.acceptedAt<<"|"<<c.deadline<<"|"<<hex(c.missionType)<<"|"<<hex(c.missionTitle)<<"|"<<hex(c.missionBriefing)<<"\n";
+           <<"|"<<c.reward<<"|"<<c.acceptedAt<<"|"<<c.deadline<<"|"<<hex(c.missionType)<<"|"<<hex(c.missionTitle)<<"|"<<hex(c.missionBriefing)<<"|"<<hex(c.issuerId)<<"\n";
     }
     return (bool)out;
 }
 }
 MissionCandidate::MissionCandidate()
-    : cargoId(),destinationLocationId(),destinationBodyId(),destinationCanonicalId(),
+    : cargoId(),issuerId(),destinationLocationId(),destinationBodyId(),
       missionType(),missionTitle(),missionBriefing(),quantity(1),reward(0),allowanceSeconds(604800) {}
 MissionBoard::MissionBoard()
     : originLocationId(),originCanonicalId(),simulationDay(-1),generation(0),offers() {}
@@ -113,6 +113,7 @@ Result MissionBoardStore::generate(const std::string& originStorageId,
             offer.contractId="OEMMISSION-"+std::to_string(score(originCanonicalId))+"-"+
                 std::to_string(day)+"-"+std::to_string(generation)+"-"+std::to_string(n);
             offer.cargoId=c.cargoId;
+            offer.issuerId=c.issuerId.empty()?"issuer:"+originCanonicalId:c.issuerId;
             offer.quantity=c.quantity;
             offer.originLocationId=originStorageId;
             offer.destinationLocationId=c.destinationLocationId;
@@ -166,14 +167,15 @@ Result MissionBoardStore::load(const std::string& path,
     if(!std::getline(in,line)) return Result::failure("MISSION_BOARD_HEADER","Mission board header/version is invalid.");
     const bool versionOne=line=="OEM_MISSION_BOARDS|1";
     const bool versionTwo=line=="OEM_MISSION_BOARDS|2";
-    const bool versionThree=line==kHeader;
-    if(!versionOne&&!versionTwo&&!versionThree) return Result::failure("MISSION_BOARD_HEADER","Mission board header/version is invalid.");
+    const bool versionThree=line=="OEM_MISSION_BOARDS|3";
+    const bool versionFour=line==kHeader;
+    if(!versionOne&&!versionTwo&&!versionThree&&!versionFour) return Result::failure("MISSION_BOARD_HEADER","Mission board header/version is invalid.");
     std::map<std::string,MissionBoard> parsed;
     while(std::getline(in,line)) {
         if(!line.empty()&&line[line.size()-1]=='\r') line.erase(line.size()-1);
         if(line.empty()) continue;
         std::vector<std::string> f=split(line);
-        if(f.empty()||f[0]!="B"||(versionOne&&f.size()!=5)||((versionTwo||versionThree)&&f.size()!=6))
+        if(f.empty()||f[0]!="B"||(versionOne&&f.size()!=5)||((versionTwo||versionThree||versionFour)&&f.size()!=6))
             return Result::failure("MISSION_BOARD_CORRUPT","Mission board header record is malformed.");
         MissionBoard b; long long day=0,generation=0,count=0;
         if(versionOne) {
@@ -195,15 +197,17 @@ Result MissionBoardStore::load(const std::string& path,
             if(!line.empty()&&line[line.size()-1]=='\r') line.erase(line.size()-1);
             f=split(line); DeliveryContract c;
             long long qty=0,reward=0,accepted=0,deadline=0;
-            if((versionThree?f.size()!=14:f.size()!=11)||f[0]!="O"||!unhex(f[1],c.contractId)||!unhex(f[2],c.vesselId)||
+            if(((versionFour&&f.size()!=15)||(versionThree&&f.size()!=14)||((versionOne||versionTwo)&&f.size()!=11))||f[0]!="O"||!unhex(f[1],c.contractId)||!unhex(f[2],c.vesselId)||
                !unhex(f[3],c.cargoId)||!number(f[4],qty)||qty<=0||!unhex(f[5],c.originLocationId)||
                !unhex(f[6],c.destinationLocationId)||!unhex(f[7],c.destinationBodyId)||
                !number(f[8],reward)||reward<=0||!number(f[9],accepted)||!number(f[10],deadline)||
                c.contractId.empty()||c.cargoId.empty()||c.originLocationId!=b.originLocationId||
                c.destinationLocationId.empty()||c.destinationLocationId==c.originLocationId||
-               (versionThree&&(!unhex(f[11],c.missionType)||!unhex(f[12],c.missionTitle)||!unhex(f[13],c.missionBriefing))))
+               ((versionThree||versionFour)&&(!unhex(f[11],c.missionType)||!unhex(f[12],c.missionTitle)||!unhex(f[13],c.missionBriefing)))||
+               (versionFour&&!unhex(f[14],c.issuerId)))
                 return Result::failure("MISSION_BOARD_CORRUPT","Mission board offer is invalid.");
-            if(!versionThree) { c.missionType="DELIVERY"; c.missionTitle="Cargo delivery"; c.missionBriefing="Deliver the contracted cargo to the named destination."; }
+            if(!versionThree&&!versionFour) { c.missionType="DELIVERY"; c.missionTitle="Cargo delivery"; c.missionBriefing="Deliver the contracted cargo to the named destination."; }
+            if(c.issuerId.empty()) c.issuerId="issuer:"+b.originCanonicalId;
             c.quantity=qty; c.reward=reward; c.acceptedAt=accepted; c.deadline=deadline;
             b.offers.push_back(c);
         }
