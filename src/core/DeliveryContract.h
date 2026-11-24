@@ -20,6 +20,7 @@ enum ContractStatus {
 
 struct DeliveryContract {
     std::string contractId;
+    std::string issuerId; // Stable identity of the organization issuing this contract.
     std::string vesselId;
     std::string cargoId;
     long long quantity;

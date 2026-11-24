@@ -4,7 +4,7 @@
 namespace oem {
 
 MissionObjective::MissionObjective()
-    : missionId(), vesselId(), kind(MISSION_OBJECTIVE_DELIVER_CARGO),
+    : missionId(), issuerId(), vesselId(), kind(MISSION_OBJECTIVE_DELIVER_CARGO),
       originLocationId(), targetLocationId(), targetBodyId(), cargoId(),
       quantity(0), acceptedAt(0), deadline(0) {}
 

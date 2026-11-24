@@ -697,6 +697,7 @@ public:
         if(selected.originLocationId!=origin)
             return oem::Result::failure("CONTRACT_ORIGIN","Selected mission belongs to another location.");
         selected.vesselId=vesselId;
+        selected.issuerId="issuer:"+originLocation.canonicalId;
         if (currentSimulationTime_ < 0 || selected.deadline < selected.acceptedAt)
             return oem::Result::failure("CONTRACT_TIME","Mission quote contains an invalid deadline window.");
         const oem::SimulationSeconds allowance = selected.deadline - selected.acceptedAt;
@@ -913,6 +914,7 @@ public:
             return oem::Result::failure("MISSION_TIME", "Objective mission deadline is outside the supported range.");
         oem::MissionObjective objective;
         objective.missionId = offer.missionId;
+        objective.issuerId = "issuer:" + originLocation.canonicalId;
         objective.vesselId = vesselId;
         objective.kind = offer.kind;
         objective.originLocationId = originLocation.canonicalId;

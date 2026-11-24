@@ -18,6 +18,7 @@ enum MissionObjectiveKind {
 // A mission-board offer may retain the canonical economic-location ID separately.
 struct MissionObjective {
     std::string missionId;
+    std::string issuerId; // Stable identity of the organization issuing this mission.
     std::string vesselId;
     MissionObjectiveKind kind;
     std::string originLocationId;
