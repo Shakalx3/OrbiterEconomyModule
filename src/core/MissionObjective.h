@@ -13,8 +13,9 @@ enum MissionObjectiveKind {
     MISSION_OBJECTIVE_DOCK_STATION = 3
 };
 
-// A portable objective definition. Targets use the same canonical identifiers
-// as the economic-location registry; a body constraint disambiguates surface bases.
+// A portable objective definition. targetLocationId matches the exact base or
+// station name recorded by Orbiter events; targetBodyId disambiguates surface bases.
+// A mission-board offer may retain the canonical economic-location ID separately.
 struct MissionObjective {
     std::string missionId;
     std::string vesselId;
