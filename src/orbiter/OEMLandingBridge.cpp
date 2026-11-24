@@ -172,6 +172,8 @@ public:
           cargoTransferGate_(), cargoManifests_(), cargoManifestLoadAttempted_(),
           cargoStockConfigStore_(), cargoServiceInventories_(), cargoServiceInventoryLoadAttempted_(),
           economyJournalStore_(), contractBook_(), objectiveBook_(), pendingContractOffers_(), contractOfferSequence_(0), contractOfferDay_(-1), missionBoardStore_(), missionBoards_(), missionBoardPath_(makeMissionBoardPath(hDLL)), missionBoardsReady_(false), objectiveBoardStore_(), objectiveBoards_(), objectiveBoardPath_(makeObjectiveMissionBoardPath(hDLL)), objectiveBoardsReady_(false), economyJournalPath_(makeEconomyDataFilePath(hDLL, "economy.journal")),
+          missionFailurePolicyStore_(), missionFailurePolicy_(),
+          missionFailurePolicyPath_(makeEconomyDataFilePath(hDLL, "mission_failure.cfg")),
           propellantTransactionJournal_(), propellantTransactionJournalPath_(makeEconomyDataFilePath(hDLL, "propellant_transactions.journal")), propellantPricePath_(makeEconomyDataFilePath(hDLL, "propellant_prices.cfg")), propellantRecoveryReady_(false), propellantOperationSequence_(0),
           ledgerConfigStore_(), cargoCatalogConfigStore_(), accountsPath_(makeEconomyDataFilePath(hDLL, "accounts.cfg")),
           cargoCatalogPath_(makeEconomyDataFilePath(hDLL, "cargo_catalog.cfg")),
@@ -1544,7 +1546,7 @@ public:
             const std::vector<std::string> expiredObjectives = objectiveDue.expireDue(simSeconds);
             for (std::size_t i = 0; i < expiredObjectives.size(); ++i) {
                 const oem::Result committed = economyJournalStore_.expireMissionObjective(
-                    economyJournalPath_, objectiveBook_, expiredObjectives[i], ledger_, "company", simSeconds);
+                    economyJournalPath_, objectiveBook_, expiredObjectives[i], ledger_, "company", simSeconds, missionFailurePolicy_);
                 if (!committed.ok) {
                     char error[512];
                     sprintf(error, "OEM MISSION: expiry commit failed id=%s (%s): %s",
@@ -1556,7 +1558,7 @@ public:
             const std::vector<std::string> expired = due.expireDue(simSeconds);
             for (std::size_t i = 0; i < expired.size(); ++i) {
                 const oem::Result committed = economyJournalStore_.expireContract(
-                    economyJournalPath_, contractBook_, expired[i], ledger_, "company", simSeconds);
+                    economyJournalPath_, contractBook_, expired[i], ledger_, "company", simSeconds, missionFailurePolicy_);
                 if (!committed.ok) {
                     char error[512];
                     sprintf(error, "OEM CONTRACT: expiry commit failed id=%s (%s): %s",
@@ -2140,8 +2142,18 @@ private:
     }
 
     bool initializeEconomyState() {
-        if (economyJournalPath_.empty() || accountsPath_.empty() || cargoCatalogPath_.empty()) {
+        if (economyJournalPath_.empty() || accountsPath_.empty() || cargoCatalogPath_.empty() || missionFailurePolicyPath_.empty()) {
             oapiWriteLog((char*)"OEM Economy: could not resolve economy configuration paths.");
+            return false;
+        }
+
+        const oem::Result failurePolicy = missionFailurePolicyStore_.loadOrCreate(
+            missionFailurePolicyPath_, missionFailurePolicy_);
+        if (!failurePolicy.ok) {
+            char message[512];
+            sprintf(message, "OEM Economy: mission failure policy failed (%s): %s",
+                    failurePolicy.code.c_str(), failurePolicy.message.c_str());
+            oapiWriteLog(message);
             return false;
         }
 
@@ -2320,7 +2332,7 @@ private:
                     }
                     else if (updated[i].status == oem::CONTRACT_EXPIRED)
                         committed = economyJournalStore_.expireContract(
-                            economyJournalPath_, contractBook_, updated[i].contractId, ledger_, "company", event.simulationTime);
+                            economyJournalPath_, contractBook_, updated[i].contractId, ledger_, "company", event.simulationTime, missionFailurePolicy_);
                     if (!committed.ok) {
                         char contractError[512];
                         sprintf(contractError, "OEM CONTRACT: journal commit failed id=%s (%s): %s",
@@ -2372,7 +2384,7 @@ private:
                     } else if (current->objective.deadline > 0 &&
                                event.simulationTime > current->objective.deadline) {
                         const oem::Result expired = economyJournalStore_.expireMissionObjective(
-                            economyJournalPath_, objectiveBook_, acceptedIds[i], ledger_, "company", event.simulationTime);
+                            economyJournalPath_, objectiveBook_, acceptedIds[i], ledger_, "company", event.simulationTime, missionFailurePolicy_);
                         if (!expired.ok) {
                             char missionError[512];
                             sprintf(missionError, "OEM MISSION: expiry commit failed id=%s (%s): %s",
@@ -2432,6 +2444,9 @@ private:
     std::string objectiveBoardPath_;
     bool objectiveBoardsReady_;
     std::string economyJournalPath_;
+    oem::MissionFailurePolicyStore missionFailurePolicyStore_;
+    oem::MissionFailurePolicy missionFailurePolicy_;
+    std::string missionFailurePolicyPath_;
     oem::LedgerConfigStore ledgerConfigStore_;
     oem::CargoCatalogConfigStore cargoCatalogConfigStore_;
     std::string accountsPath_;
