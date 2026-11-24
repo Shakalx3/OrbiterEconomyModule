@@ -10,7 +10,7 @@ struct MissionFailurePolicy {
     unsigned int penaltyBasisPoints;
     int reputationDelta;
     MissionFailurePolicy() : penaltyBasisPoints(1000), reputationDelta(-5) {}
-    bool valid() const { return penaltyBasisPoints <= 10000 && reputationDelta < 0; }
+    bool valid() const { return penaltyBasisPoints <= 10000 && reputationDelta < 0 && reputationDelta >= -100; }
 };
 
 class EconomyJournalStore {
