@@ -750,7 +750,7 @@ public:
                  accepted[i].status == oem::MISSION_OBJECTIVE_COMPLETED))
                 ++active;
         if (active >= 3) return false;
-        const std::string origin = currentMarketLocation(vesselId);
+        const std::string origin = currentObjectiveLocation(vesselId);
         oem::EconomicLocation originLocation;
         if (origin.empty() || !resolveCurrentEconomicLocation(vesselId, origin, originLocation))
             return false;
@@ -872,7 +872,7 @@ public:
             return oem::Result::failure("MISSION_ECONOMY_UNAVAILABLE", "The global economy journal is unavailable.");
         if (!isFocusedVessel(vesselId))
             return oem::Result::failure("MISSION_FOCUS", "Accept the objective from its assigned vessel.");
-        const std::string origin = currentMarketLocation(vesselId);
+        const std::string origin = currentObjectiveLocation(vesselId);
         oem::EconomicLocation originLocation;
         if (origin.empty() || !resolveCurrentEconomicLocation(vesselId, origin, originLocation))
             return oem::Result::failure("MISSION_ORIGIN", "Could not resolve the current economic location.");
@@ -1009,6 +1009,30 @@ public:
         return std::string();
     }
 
+    std::string dockedEconomicStation(const std::string& vesselId) const {
+        OBJHANDLE focus = oapiGetFocusObject();
+        if (!focus || !oapiIsVessel(focus)) return std::string();
+        VESSEL* vessel = oapiGetVesselInterface(focus);
+        if (!vessel || !vessel->GetName() || vesselId != vessel->GetName())
+            return std::string();
+        for (UINT i = 0; i < vessel->DockCount(); ++i) {
+            DOCKHANDLE dock = vessel->GetDockHandle(i);
+            if (!dock) continue;
+            OBJHANDLE other = vessel->GetDockStatus(dock);
+            if (!other || !oapiIsVessel(other)) continue;
+            char name[128] = {};
+            oapiGetObjectName(other, name, sizeof(name));
+            if (name[0] && economicStations_.isStation(name)) return std::string(name);
+        }
+        return std::string();
+    }
+
+    std::string currentObjectiveLocation(const std::string& vesselId) const {
+        const std::string service = currentMarketLocation(vesselId);
+        if (!service.empty()) return service;
+        return dockedEconomicStation(vesselId);
+    }
+
     std::string currentMarketLocation(const std::string& vesselId) const {
         const std::string docked = dockedCargoService(vesselId);
         if (!docked.empty()) return docked;
@@ -1086,7 +1110,8 @@ public:
 
     bool resolveCurrentEconomicLocation(const std::string& vesselId,
             const std::string& storageId, oem::EconomicLocation& location) const {
-        const std::string docked = dockedCargoService(vesselId);
+        std::string docked = dockedCargoService(vesselId);
+        if (docked.empty()) docked = dockedEconomicStation(vesselId);
         if (!docked.empty()) {
             const oem::EconomicLocation* found =
                 economicLocations_.find(std::string("station:") + docked);
