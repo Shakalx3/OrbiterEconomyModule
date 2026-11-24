@@ -23,14 +23,14 @@ int main() {
     assert(policy.penaltyBasisPoints==1000 && policy.reputationDelta==-5);
     {
         std::ofstream custom(policyPath.c_str(),std::ios::binary|std::ios::trunc);
-        custom << "OEM_MISSION_FAILURE|1\\nP|2500|-8\\n";
+        custom << "OEM_MISSION_FAILURE|1\nP|2500|-8\n";
     }
     oem::MissionFailurePolicy loadedPolicy;
     assert(policyStore.loadOrCreate(policyPath,loadedPolicy).ok);
     assert(loadedPolicy.penaltyBasisPoints==2500 && loadedPolicy.reputationDelta==-8);
     {
         std::ofstream invalid(policyPath.c_str(),std::ios::binary|std::ios::trunc);
-        invalid << "OEM_MISSION_FAILURE|1\\nP|12000|-8\\n";
+        invalid << "OEM_MISSION_FAILURE|1\nP|12000|-8\n";
     }
     assert(!policyStore.loadOrCreate(policyPath,loadedPolicy).ok);
     std::remove(policyPath.c_str());
