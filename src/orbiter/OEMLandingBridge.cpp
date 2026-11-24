@@ -761,7 +761,14 @@ public:
             oem::MissionObjectiveBoard pruned = existing->second;
             bool changed = false;
             for (std::size_t i = 0; i < pruned.offers.size();) {
-                if (objectiveBook_.find(pruned.offers[i].missionId)) {
+                const oem::MissionObjectiveOffer& offer = pruned.offers[i];
+                const oem::EconomicLocation* target = economicLocations_.find(offer.targetCanonicalId);
+                const bool targetValid = target && target->storageId == offer.targetLocationId &&
+                    ((offer.kind == oem::MISSION_OBJECTIVE_VISIT_SPACEPORT &&
+                      target->kind == oem::ECONOMIC_LOCATION_SPACEPORT) ||
+                     (offer.kind == oem::MISSION_OBJECTIVE_DOCK_STATION &&
+                      target->kind == oem::ECONOMIC_LOCATION_STATION));
+                if (objectiveBook_.find(offer.missionId) || !targetValid) {
                     pruned.offers.erase(pruned.offers.begin() + i);
                     changed = true;
                 } else ++i;
@@ -876,6 +883,16 @@ public:
         const oem::MissionObjectiveOffer offer = board->second.offers[offerIndex];
         if (objectiveBook_.find(offer.missionId))
             return oem::Result::failure("MISSION_ALREADY_ACCEPTED", "This objective mission has already been accepted.");
+        const oem::EconomicLocation* target = economicLocations_.find(offer.targetCanonicalId);
+        if (!target || target->storageId != offer.targetLocationId ||
+            (offer.kind == oem::MISSION_OBJECTIVE_VISIT_SPACEPORT &&
+             target->kind != oem::ECONOMIC_LOCATION_SPACEPORT) ||
+            (offer.kind == oem::MISSION_OBJECTIVE_DOCK_STATION &&
+             target->kind != oem::ECONOMIC_LOCATION_STATION))
+            return oem::Result::failure("MISSION_TARGET_UNAVAILABLE", "The objective target is no longer a registered location.");
+        oem::Credits companyFunds = 0;
+        if (!ledger_.getBalance("company", companyFunds))
+            return oem::Result::failure("MISSION_ACCOUNT_UNAVAILABLE", "A company account is required before accepting paid missions.");
         if (currentSimulationTime_ <= 0 || offer.allowanceSeconds <= 0 ||
             offer.allowanceSeconds > LLONG_MAX - currentSimulationTime_)
             return oem::Result::failure("MISSION_TIME", "Objective mission deadline is outside the supported range.");
