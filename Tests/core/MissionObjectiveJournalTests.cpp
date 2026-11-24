@@ -1,6 +1,7 @@
 #include "../../src/core/EconomyJournal.h"
 #include <cassert>
 #include <cstdio>
+#include <fstream>
 #include <map>
 #include <string>
 
@@ -13,6 +14,26 @@ static oem::MissionObjective visit(const std::string& id) {
     return o;
 }
 int main() {
+    // Failure policy is created once, then existing user values are preserved.
+    const std::string policyPath="OEMMissionFailurePolicyTests.cfg";
+    std::remove(policyPath.c_str());
+    oem::MissionFailurePolicyStore policyStore;
+    oem::MissionFailurePolicy policy;
+    assert(policyStore.loadOrCreate(policyPath,policy).ok);
+    assert(policy.penaltyBasisPoints==1000 && policy.reputationDelta==-5);
+    {
+        std::ofstream custom(policyPath.c_str(),std::ios::binary|std::ios::trunc);
+        custom << "OEM_MISSION_FAILURE|1\\nP|2500|-8\\n";
+    }
+    oem::MissionFailurePolicy loadedPolicy;
+    assert(policyStore.loadOrCreate(policyPath,loadedPolicy).ok);
+    assert(loadedPolicy.penaltyBasisPoints==2500 && loadedPolicy.reputationDelta==-8);
+    {
+        std::ofstream invalid(policyPath.c_str(),std::ios::binary|std::ios::trunc);
+        invalid << "OEM_MISSION_FAILURE|1\\nP|12000|-8\\n";
+    }
+    assert(!policyStore.loadOrCreate(policyPath,loadedPolicy).ok);
+    std::remove(policyPath.c_str());
     const std::string path="OEMMissionObjectiveJournalTests.journal";
     std::remove(path.c_str());
     oem::EconomyJournalStore store;
