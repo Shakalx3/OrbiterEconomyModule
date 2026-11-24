@@ -1763,7 +1763,10 @@ public:
 
         oem::SpaceportLandingEvent landingEvent;
         const bool landingDetected = landingMonitors_[hVessel].observe(landing, landingEvent);
-        if (landing.groundContact && landing.landed && landing.proximityKnown) {
+        static std::set<std::string> landingDiagnosticLogged;
+        if (!landing.groundContact) landingDiagnosticLogged.erase(landing.vesselId);
+        if (landing.groundContact && landing.landed && landing.proximityKnown &&
+            landingDiagnosticLogged.insert(landing.vesselId).second) {
             char diagnostic[768];
             sprintf(diagnostic,
                 "OEM LANDING SAMPLE: vessel=%s landed=%d contact=%d body=%s nearestBase=%s distance=%.1f m detected=%d simt=%lld",
