@@ -119,7 +119,8 @@ Result MissionObjectiveBoardStore::generate(const std::string& originLocationId,
             const MissionObjectiveCandidate& candidate=eligible[best];
             MissionObjectiveOffer offer;
             offer.missionId="OEMOBJ-"+std::to_string(score(seed+"|"+originCanonicalId+"|"+
-                std::to_string(day)+"|"+std::to_string(generation)))+"-"+std::to_string(n);
+                std::to_string(day)+"|"+std::to_string(generation)+"|"+candidate.targetCanonicalId+"|"+
+                std::to_string((int)candidate.kind)))+"-"+std::to_string(n);
             offer.kind=candidate.kind;
             offer.targetLocationId=candidate.targetLocationId;
             offer.targetBodyId=candidate.targetBodyId;
