@@ -35,6 +35,7 @@
 #include "../core/CargoCatalogConfig.h"
 #include "../core/EconomicLocationRegistry.h"
 #include "../core/EconomicStationRegistry.h"
+#include "../core/MissionIssuerRegistry.h"
 #include "../core/PropellantPlan.h"
 #include "../core/PropellantQuote.h"
 #include "../core/PropellantTransaction.h"
@@ -174,6 +175,7 @@ public:
           economyJournalStore_(), contractBook_(), objectiveBook_(), pendingContractOffers_(), contractOfferSequence_(0), contractOfferDay_(-1), missionBoardStore_(), missionBoards_(), missionBoardPath_(makeMissionBoardPath(hDLL)), missionBoardsReady_(false), objectiveBoardStore_(), objectiveBoards_(), objectiveBoardPath_(makeObjectiveMissionBoardPath(hDLL)), objectiveBoardsReady_(false), economyJournalPath_(makeEconomyDataFilePath(hDLL, "economy.journal")),
           missionFailurePolicyStore_(), missionFailurePolicy_(),
           missionFailurePolicyPath_(makeEconomyDataFilePath(hDLL, "mission_failure.cfg")),
+          missionIssuerRegistry_(), missionIssuerRegistryPath_(makeEconomyDataFilePath(hDLL, "mission_issuers.cfg")),
           propellantTransactionJournal_(), propellantTransactionJournalPath_(makeEconomyDataFilePath(hDLL, "propellant_transactions.journal")), propellantPricePath_(makeEconomyDataFilePath(hDLL, "propellant_prices.cfg")), propellantRecoveryReady_(false), propellantOperationSequence_(0),
           ledgerConfigStore_(), cargoCatalogConfigStore_(), accountsPath_(makeEconomyDataFilePath(hDLL, "accounts.cfg")),
           cargoCatalogPath_(makeEconomyDataFilePath(hDLL, "cargo_catalog.cfg")),
@@ -605,7 +607,7 @@ public:
                 const oem::CargoDefinition& item=cargoCatalog_.entries()[c];
                 if(stock->second.quantity(item.cargoId)<=0 || item.buyPrice<=0) continue;
                 oem::MissionCandidate candidate;
-                candidate.issuerId="issuer:"+originLocation.canonicalId;
+                candidate.issuerId=issuerForLocation(originLocation.canonicalId);
                 candidate.cargoId=item.cargoId;
                 candidate.destinationLocationId=destination;
                 candidate.destinationBodyId=locations[d].celestialBody;
@@ -829,7 +831,7 @@ public:
             const oem::MissionQuote quote = oem::quoteMission(500, 1, route, config);
             if (!quote.valid) continue;
             oem::MissionObjectiveCandidate candidate;
-            candidate.issuerId = "issuer:" + originLocation.canonicalId;
+            candidate.issuerId = issuerForLocation(originLocation.canonicalId);
             candidate.kind = target.kind == oem::ECONOMIC_LOCATION_SPACEPORT
                 ? oem::MISSION_OBJECTIVE_VISIT_SPACEPORT : oem::MISSION_OBJECTIVE_DOCK_STATION;
             candidate.targetLocationId = target.storageId;
@@ -1009,6 +1011,10 @@ public:
         if (!ledger_.getBalance("company", balance)) return false;
         reputation = 50;
         return true;
+    }
+
+    std::string issuerForLocation(const std::string& canonicalLocationId) const {
+        return missionIssuerRegistry_.issuerForLocation(canonicalLocationId);
     }
 
     bool issuerReputation(const std::string& issuerId, int& reputation) const {
@@ -2162,7 +2168,7 @@ private:
     }
 
     bool initializeEconomyState() {
-        if (economyJournalPath_.empty() || accountsPath_.empty() || cargoCatalogPath_.empty() || missionFailurePolicyPath_.empty()) {
+        if (economyJournalPath_.empty() || accountsPath_.empty() || cargoCatalogPath_.empty() || missionFailurePolicyPath_.empty() || missionIssuerRegistryPath_.empty()) {
             oapiWriteLog((char*)"OEM Economy: could not resolve economy configuration paths.");
             return false;
         }
@@ -2173,6 +2179,15 @@ private:
             char message[512];
             sprintf(message, "OEM Economy: mission failure policy failed (%s): %s",
                     failurePolicy.code.c_str(), failurePolicy.message.c_str());
+            oapiWriteLog(message);
+            return false;
+        }
+
+        const oem::Result issuerRegistry = missionIssuerRegistry_.loadOrCreate(missionIssuerRegistryPath_);
+        if (!issuerRegistry.ok) {
+            char message[512];
+            sprintf(message, "OEM Economy: mission issuer registry failed (%s): %s",
+                    issuerRegistry.code.c_str(), issuerRegistry.message.c_str());
             oapiWriteLog(message);
             return false;
         }
@@ -2466,6 +2481,8 @@ private:
     std::string economyJournalPath_;
     oem::MissionFailurePolicyStore missionFailurePolicyStore_;
     oem::MissionFailurePolicy missionFailurePolicy_;
+    oem::MissionIssuerRegistry missionIssuerRegistry_;
+    std::string missionIssuerRegistryPath_;
     std::string missionFailurePolicyPath_;
     oem::LedgerConfigStore ledgerConfigStore_;
     oem::CargoCatalogConfigStore cargoCatalogConfigStore_;

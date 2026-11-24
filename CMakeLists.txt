@@ -26,6 +26,7 @@ add_library(OEMCore
     src/core/MissionObjective.cpp
     src/core/MissionObjectiveBook.cpp
     src/core/MissionObjectiveBoard.cpp
+    src/core/MissionIssuerRegistry.cpp
     src/core/MissionEconomics.cpp
     src/core/SpaceportRegistry.cpp
     src/core/EconomicLocationRegistry.cpp
@@ -81,6 +82,8 @@ add_executable(OEMMissionObjectiveTests Tests/core/MissionObjectiveTests.cpp)
 add_executable(OEMMissionObjectiveBookTests Tests/core/MissionObjectiveBookTests.cpp)
 add_executable(OEMMissionObjectiveJournalTests Tests/core/MissionObjectiveJournalTests.cpp)
 add_executable(OEMMissionObjectiveBoardTests Tests/core/MissionObjectiveBoardTests.cpp)
+add_executable(OEMMissionIssuerRegistryTests Tests/core/MissionIssuerRegistryTests.cpp)
+target_link_libraries(OEMMissionIssuerRegistryTests PRIVATE OEMCore)
 add_executable(OEMMissionEconomicsTests Tests/core/MissionEconomicsTests.cpp)
 target_link_libraries(OEMMissionEconomicsTests PRIVATE OEMCore)
 target_link_libraries(OEMMissionBoardTests PRIVATE OEMCore)
@@ -132,6 +135,7 @@ add_test(NAME OEMMissionObjectiveTests COMMAND OEMMissionObjectiveTests)
 add_test(NAME OEMMissionObjectiveBookTests COMMAND OEMMissionObjectiveBookTests)
 add_test(NAME OEMMissionObjectiveJournalTests COMMAND OEMMissionObjectiveJournalTests)
 add_test(NAME OEMMissionObjectiveBoardTests COMMAND OEMMissionObjectiveBoardTests)
+add_test(NAME OEMMissionIssuerRegistryTests COMMAND OEMMissionIssuerRegistryTests)
 add_test(NAME OEMMissionEconomicsTests COMMAND OEMMissionEconomicsTests)
 add_test(NAME OEMSpaceportRegistryTests COMMAND OEMSpaceportRegistryTests)
 add_test(NAME OEMEconomicLocationRegistryTests COMMAND OEMEconomicLocationRegistryTests)
