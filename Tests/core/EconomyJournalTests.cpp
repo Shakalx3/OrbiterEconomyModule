@@ -311,7 +311,7 @@ int main(){
  {
   std::ofstream oldRecord(legacyObjectivePath.c_str(),std::ios::binary|std::ios::app);
   oldRecord << "Q|" << hex("mission-objective-expire:"+legacyObjective.missionId)
-            << "|" << hex(legacyObjective.missionId) << "\\n";
+            << "|" << hex(legacyObjective.missionId) << "\n";
  }
  oem::Ledger legacyObjectiveLedger;
  assert(legacyObjectiveLedger.createAccount("company",500).ok);
@@ -351,7 +351,7 @@ int main(){
  {
   std::ofstream oldRecord(legacyContractPath.c_str(),std::ios::binary|std::ios::app);
   oldRecord << "F|" << hex("contract-expire:"+legacyContract.contractId)
-            << "|" << hex(legacyContract.contractId) << "\\n";
+            << "|" << hex(legacyContract.contractId) << "\n";
  }
  oem::Ledger legacyContractLedger;
  assert(legacyContractLedger.createAccount("company",500).ok);
