@@ -189,13 +189,13 @@ int main(){
  const std::string failurePath="OEMContractFailureJournalTests.journal";std::remove(failurePath.c_str());
  oem::DeliveryContractBook failureBook;
  oem::DeliveryContract failedContract=contract;
- failedContract.contractId="failure-delivery-001";failedContract.acceptedAt=10;failedContract.deadline=20;failedContract.reward=250;
+ failedContract.contractId="failure-delivery-001";failedContract.acceptedAt=10;failedContract.deadline=20;failedContract.reward=250;failedContract.issuerId="issuer:station:ISS";
  assert(store.acceptContract(failurePath,failureBook,failedContract).ok);
  oem::Ledger failureLedger;assert(failureLedger.createAccount("company",500).ok);
  assert(store.expireContract(failurePath,failureBook,failedContract.contractId,failureLedger,"company",21).ok);
  assert(failureBook.find(failedContract.contractId)->status==oem::CONTRACT_EXPIRED);
  assert(failureLedger.getBalance("company",balance)&&balance==475);
- int failureReputation=0;assert(failureLedger.getReputation("company",failureReputation)&&failureReputation==45);
+ int failureReputation=0;assert(failureLedger.getReputation("issuer:station:ISS",failureReputation)&&failureReputation==45);assert(!failureLedger.getReputation("company",failureReputation));
  assert(store.expireContract(failurePath,failureBook,failedContract.contractId,failureLedger,"company",21).ok);
  assert(failureLedger.getBalance("company",balance)&&balance==475);
  oem::Ledger failureRecoveredLedger;assert(failureRecoveredLedger.createAccount("company",500).ok);
@@ -205,7 +205,7 @@ int main(){
  assert(store.load(failurePath,cat,failureRecoveredLedger,failureStocks,failureManifests,&failureRecoveredBook).ok);
  assert(failureRecoveredBook.find(failedContract.contractId)->status==oem::CONTRACT_EXPIRED);
  assert(failureRecoveredLedger.getBalance("company",balance)&&balance==475);
- assert(failureRecoveredLedger.getReputation("company",failureReputation)&&failureReputation==45);
+ assert(failureRecoveredLedger.getReputation("issuer:station:ISS",failureReputation)&&failureReputation==45);assert(!failureRecoveredLedger.getReputation("company",failureReputation));
  assert(store.load(failurePath,cat,failureRecoveredLedger,failureStocks,failureManifests,&failureRecoveredBook).ok);
  assert(failureRecoveredLedger.getBalance("company",balance)&&balance==475);
  std::remove(failurePath.c_str());
