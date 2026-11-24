@@ -3093,6 +3093,14 @@ public:
                     DrawLine(hDC, y, repLine);
                 }
             }
+            if (count > 0) {
+                int issuerReputation = 50;
+                char issuerLine[128];
+                if (g_bridge->issuerReputation(offers[selectedOffer_].issuerId, issuerReputation)) {
+                    sprintf(issuerLine, "ISSUER REPUTATION: %d / 100", issuerReputation);
+                    DrawLine(hDC, y, issuerLine);
+                }
+            }
             if (count > 0 && !offers[selectedOffer_].missionBriefing.empty()) {
                 DrawLine(hDC, y, "BRIEFING");
                 DrawWrappedText(hDC, y, offers[selectedOffer_].missionBriefing, 35);
