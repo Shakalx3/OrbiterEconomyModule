@@ -191,7 +191,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Could not update delivery-contracts test release metadata" }
             gh release upload $tag OEMLandingBridge.dll --repo $env:GITHUB_REPOSITORY --clobber
           } else {
-            gh release create $tag OEMLandingBridge.dll --repo $env:GITHUB_REPOSITORY --title $title --notes $notes --target $env:GITHUB_SHA --prerelease
+            gh release create $tag OEMLandingBridge.dll --repo $env:GITHUB_REPOSITORY --title $title --notes $notes --target $env:BUILD_SHA --prerelease
           }
           if ($LASTEXITCODE -ne 0) { throw "Could not publish delivery-contracts test DLL" }
           $published = gh release view $tag --repo $env:GITHUB_REPOSITORY --json targetCommitish,assets | ConvertFrom-Json
