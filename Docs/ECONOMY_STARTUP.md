@@ -12,6 +12,7 @@ The following files are read beside the module, under `OEMData`:
 - `accounts.cfg`: optional until market trading is enabled. If absent, the company ledger starts with no accounts and market trades cannot be executed.
 - `cargo_catalog.cfg`: optional until market trading is enabled. If absent, there are no defined tradeable cargo types.
 - `objective_mission_boards.dat`: generated, versioned daily offers for independent visit and docking missions. OEM creates and atomically updates it; do not edit it manually. Accepted mission state and payouts are stored in `economy.journal`, not in this board file.
+- `mission_failure.cfg`: configurable expiry penalties shared by delivery contracts and independent VISIT/DOCK missions. OEM creates it with defaults if absent and preserves existing values.
 
 The native Location Market MFD (key M) uses the company account ID `company`. Market trades are enabled only when `accounts.cfg` defines that account and `cargo_catalog.cfg` defines at least one item. Trade buttons buy or sell one unit of the first catalog item for which the station or vessel has available quantity.
 
@@ -38,6 +39,19 @@ C|54455354|5465737420636172676F|1.0|100|60
 ```
 
 The example cargo ID is `TEST`, display name is `Test cargo`, unit mass is 1 kg, company purchase price is 100 credits, and company sale price is 60 credits. It matches the two-unit TEST stock in the sample `cargo_stock_495353.cfg`. These prices and the 10,000-credit example balance are test values; choose the opening balance and prices deliberately before using the economy in a live scenario.
+
+## Mission expiry penalties
+
+The generated `OEMData/mission_failure.cfg` controls penalties for accepted delivery contracts and independent **VISIT**/**DOCK** missions that pass their deadline:
+
+```
+OEM_MISSION_FAILURE|1
+P|1000|-5
+```
+
+The first value is a percentage in basis points: `1000` means 10% of the mission reward, `2500` means 25%, and `0` disables the money fee. The fee is capped at the company's currently available positive balance; an expired mission still records its reputation penalty when the account has no credits. The second value is the reputation change and must be between `-1` and `-100`; the default `-5` reduces reputation by five points. The same policy applies to both mission systems.
+
+Only deadline expiry is penalized. Cancelling an accepted mission or delivery contract remains penalty-free. Expiry, the exact fee and reputation change are committed together to `economy.journal`, so replay after a restart does not charge twice. The policy file is created only when missing; existing user settings are not overwritten. If its format or values are invalid, correct the file before starting the economy module.
 
 ## New Game / campaign reset
 
