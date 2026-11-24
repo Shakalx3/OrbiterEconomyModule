@@ -21,6 +21,12 @@ int main() {
     assert(store.acceptMissionObjective(path,book,objective,750).ok);
     assert(store.acceptMissionObjective(path,book,objective,750).ok);
     assert(book.find("visit-001") && book.find("visit-001")->status==oem::MISSION_OBJECTIVE_ACCEPTED);
+    assert(!store.completeMissionObjective(path,book,"visit-001","forged-event",200).ok);
+    oem::CargoManifest manifest("GL-01");
+    oem::SimulationEvent landing; landing.eventId="landing-200"; landing.type=oem::SIM_EVENT_LANDING;
+    landing.vesselId="GL-01"; landing.baseId="MoonBase"; landing.bodyId="Moon";
+    landing.locationKnown=true; landing.simulationTime=200;
+    assert(book.observe(landing,manifest).ok);
     assert(store.completeMissionObjective(path,book,"visit-001","landing-200",200).ok);
     assert(store.completeMissionObjective(path,book,"visit-001","landing-200",200).ok);
     assert(!store.completeMissionObjective(path,book,"visit-001","different-event",200).ok);
