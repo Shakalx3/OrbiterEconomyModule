@@ -116,8 +116,12 @@ Result Ledger::applyReputation(const std::string& operationId,
     std::map<std::string, int>::iterator current = reputations_.find(accountId);
     if (current == reputations_.end())
         current = reputations_.insert(std::make_pair(accountId, 50)).first;
-    const int next = current->second + delta;
-    current->second = next < 0 ? 0 : (next > 100 ? 100 : next);
+    if (delta < 0 && delta <= -current->second)
+        current->second = 0;
+    else if (delta > 0 && delta >= 100 - current->second)
+        current->second = 100;
+    else
+        current->second += delta;
     ReputationEntry entry;
     entry.operationId = operationId;
     entry.accountId = accountId;
