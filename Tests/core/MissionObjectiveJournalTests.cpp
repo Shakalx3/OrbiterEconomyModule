@@ -72,8 +72,8 @@ int main() {
     oem::MissionObjective expired=visit("expire-001");
     expired.deadline=150;
     assert(store.acceptMissionObjective(terminalPath,terminal,expired,300).ok);
-    assert(store.expireMissionObjective(terminalPath,terminal,"expire-001").ok);
     oem::Ledger terminalLedger; assert(terminalLedger.createAccount("company",500).ok);
+    assert(store.expireMissionObjective(terminalPath,terminal,"expire-001",terminalLedger,"company",200).ok);
     oem::MissionObjectiveBook terminalRecovered;
     std::map<std::string,oem::CargoServiceInventory> terminalInventories;
     std::map<std::string,oem::CargoManifest> terminalManifests;
@@ -81,7 +81,13 @@ int main() {
                       terminalManifests,0,&terminalRecovered).ok);
     assert(terminalRecovered.find("cancel-001")->status==oem::MISSION_OBJECTIVE_CANCELLED);
     assert(terminalRecovered.find("expire-001")->status==oem::MISSION_OBJECTIVE_EXPIRED);
-    assert(terminalLedger.getBalance("company",balance) && balance==500);
+    assert(terminalLedger.getBalance("company",balance) && balance==470);
+    int terminalReputation=0;
+    assert(terminalLedger.getReputation("company",terminalReputation) && terminalReputation==45);
+    assert(store.load(terminalPath,catalog,terminalLedger,terminalInventories,
+                      terminalManifests,0,&terminalRecovered).ok);
+    assert(terminalLedger.getBalance("company",balance) && balance==470);
+    assert(terminalLedger.getReputation("company",terminalReputation) && terminalReputation==45);
 
     std::remove(terminalPath.c_str());
     std::remove(path.c_str());
