@@ -17,8 +17,7 @@ Result MissionObjectiveBook::observe(const SimulationEvent& event,const CargoMan
     if(event.eventId.empty()||event.vesselId.empty())return Result::failure("MISSION_OBJECTIVE_EVENT","Verified event ID and vessel ID are required.");
     bool completed=false;
     for(std::size_t i=0;i<missions_.size();++i){MissionObjectiveContract& item=missions_[i];if(item.status!=MISSION_OBJECTIVE_ACCEPTED)continue;
-        if(missionObjectiveMatchesEvent(item.objective,event,manifest)){item.status=MISSION_OBJECTIVE_COMPLETED;item.completionEventId=event.eventId;item.completedAt=event.simulationTime;completed=true;}
-        else if(item.objective.vesselId==event.vesselId&&item.objective.deadline>0&&event.simulationTime>item.objective.deadline)item.status=MISSION_OBJECTIVE_EXPIRED;}
+        if(missionObjectiveMatchesEvent(item.objective,event,manifest)){item.status=MISSION_OBJECTIVE_COMPLETED;item.completionEventId=event.eventId;item.completedAt=event.simulationTime;completed=true;}}
     return completed?Result::success():Result::failure("MISSION_OBJECTIVE_NO_MATCH","Event does not complete an accepted objective.");
 }
 Result MissionObjectiveBook::settle(const std::string& id,const std::string& accountId,Ledger& ledger){
