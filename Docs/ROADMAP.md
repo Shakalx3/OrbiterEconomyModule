@@ -141,8 +141,11 @@ Current route-quote defaults are centralized in `MissionEconomicsConfig`: nomina
 - [ ] Initial player-executed objective pool: cargo delivery, base/station supply, urgent delivery, verified spaceport visit, verified station docking, and research/route visits where the required position and dwell-time evidence can be measured reliably.
 - [ ] Keep mission definition, generated mission instance, objective, conditions, reward, penalty, issuer/reputation, and journal/persistence as separate extensible concepts.
 - [x] Persist delivery and independent-objective board offers and per-location generation state separately; daily refresh is based on Orbiter simulation time, while accepted mission state and objective evidence/payouts replay idempotently from the global economy journal.
-- [ ] On mission failure, apply both a monetary penalty and a reputation reduction. Declining an unaccepted offer has no penalty; cancellation/failure rules for accepted contracts must be explicit per mission.
+- [x] On mission failure, apply both a monetary penalty and a reputation reduction. Declining an unaccepted offer has no penalty; cancellation/failure rules for accepted contracts must be explicit per mission. Runtime-validated in Orbiter 2010, including scenario reload.
 - [ ] Track reputation independently for each organization/issuer; use it to influence future mission availability and offer quality, without implying the issuer is a physical NPC vessel.
+  - [ ] Add stable issuer IDs to delivery and independent mission definitions and persist them in the global journal with backward-compatible replay of legacy records.
+  - [ ] Apply expiry penalties to the company account while applying reputation changes only to the issuing organization; keep company-wide reputation separate.
+  - [ ] Give generated offers explicit issuer identities, then use issuer reputation to weight mission availability and procedural offer quality without changing already-published offers.
 - [ ] Use Orbiter simulation time for deadlines and mission timing; never use wall-clock time.
 
 ### Abstract economic agents and background trade — planned
