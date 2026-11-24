@@ -23,6 +23,12 @@ public:
                 CargoManifest& manifest) const;
     Result acceptContract(const std::string& path, DeliveryContractBook& contracts,
                           const DeliveryContract& contract) const;
+    // Atomically accept a delivery contract, debit origin stock, and record the
+    // contracted cargo in the vessel's OEM manifest in one durable journal record.
+    Result acceptContractWithCargo(const std::string& path, DeliveryContractBook& contracts,
+                          std::map<std::string, CargoServiceInventory>& inventories,
+                          CargoManifest& manifest, const DeliveryContract& contract,
+                          double unitMassKg) const;
     Result completeContract(const std::string& path, DeliveryContractBook& contracts,
                             const std::string& contractId, const std::string& eventId,
                             SimulationSeconds completedAt,
