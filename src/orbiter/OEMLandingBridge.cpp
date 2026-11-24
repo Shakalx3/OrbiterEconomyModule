@@ -2320,7 +2320,7 @@ private:
                     }
                     else if (updated[i].status == oem::CONTRACT_EXPIRED)
                         committed = economyJournalStore_.expireContract(
-                            economyJournalPath_, contractBook_, updated[i].contractId);
+                            economyJournalPath_, contractBook_, updated[i].contractId, ledger_, "company", event.simulationTime);
                     if (!committed.ok) {
                         char contractError[512];
                         sprintf(contractError, "OEM CONTRACT: journal commit failed id=%s (%s): %s",
