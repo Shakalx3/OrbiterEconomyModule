@@ -2559,7 +2559,7 @@ public:
     OEMDeliveryContractsMFD(DWORD w, DWORD h, VESSEL *vessel)
         : MFD(w, h, vessel),
           vesselId_(vessel && vessel->GetName() ? vessel->GetName() : ""),
-          status_("1/2/3: select mission  A: accept") , selectedOffer_(0) {}
+          status_("UP/DOWN: SELECT  A: ACCEPT"), selectedOffer_(0) {}
 
     void Update(HDC hDC) override {
         Title(hDC, "OEM DELIVERY CONTRACTS");
@@ -2569,35 +2569,51 @@ public:
             DrawLine(hDC, y, "OEM bridge unavailable.");
             return;
         }
+
         std::vector<oem::DeliveryContract> offers;
         if (g_bridge->currentMissionOffers(vesselId_, offers)) {
-            char line[256];
             DrawLine(hDC, y, "LOCAL MISSION BOARD");
-            if (selectedOffer_ >= offers.size()) selectedOffer_ = 0;
-            for (std::size_t i=0;i<offers.size() && i<3;++i) {
-                const oem::DeliveryContract& offer=offers[i];
-                const long long allowance=offer.deadline-offer.acceptedAt;
-                const char* title=offer.missionTitle.empty()?"Cargo delivery":offer.missionTitle.c_str();
-                if (allowance>=86400)
-                    sprintf(line,"%lu: %.12s %lldcr %lldd",(unsigned long)(i+1),
-                        title,(long long)offer.reward,allowance/86400);
+            const std::size_t count = offers.size() < 3 ? offers.size() : 3;
+            if (count == 0) selectedOffer_ = 0;
+            else if (selectedOffer_ >= count) selectedOffer_ = count - 1;
+
+            for (std::size_t i = 0; i < count; ++i) {
+                const oem::DeliveryContract& offer = offers[i];
+                const long long allowance = offer.deadline - offer.acceptedAt;
+                const char* title = offer.missionTitle.empty()
+                    ? "Cargo delivery" : offer.missionTitle.c_str();
+                char line[128];
+                if (allowance >= 86400)
+                    sprintf(line, "%lu %.10s %lldcr %lldd",
+                        (unsigned long)(i + 1), title,
+                        (long long)offer.reward, allowance / 86400);
                 else
-                    sprintf(line,"%lu: %.12s %lldcr %lldh",(unsigned long)(i+1),
-                        title,(long long)offer.reward,allowance/3600);
-                DrawLine(hDC,y,line);
-                sprintf(line,"   TO: %.22s  x%lld",offer.destinationLocationId.c_str(),offer.quantity);
-                DrawLine(hDC,y,line);
+                    sprintf(line, "%lu %.10s %lldcr %lldh",
+                        (unsigned long)(i + 1), title,
+                        (long long)offer.reward, allowance / 3600);
+
+                const COLORREF oldColor = GetTextColor(hDC);
+                if (i == selectedOffer_) SetTextColor(hDC, RGB(255, 220, 80));
+                std::string selectedLine = (i == selectedOffer_ ? "> " : "  ");
+                selectedLine += line;
+                DrawLine(hDC, y, selectedLine.c_str());
+                if (i == selectedOffer_) SetTextColor(hDC, oldColor);
+
+                sprintf(line, "  TO: %.16s x%lld",
+                    offer.destinationLocationId.c_str(), offer.quantity);
+                DrawLine(hDC, y, line);
             }
-            if (!offers.empty() && !offers[selectedOffer_].missionBriefing.empty()) {
-                sprintf(line,"BRIEF: %.46s",offers[selectedOffer_].missionBriefing.c_str());
-                DrawLine(hDC,y,line);
+
+            if (count > 0 && !offers[selectedOffer_].missionBriefing.empty()) {
+                DrawLine(hDC, y, "BRIEFING");
+                DrawWrappedText(hDC, y, offers[selectedOffer_].missionBriefing, 35);
             }
-            DrawLine(hDC,y,"1/2/3: SELECT  A: ACCEPT SELECTED");
         } else {
-            DrawLine(hDC,y,"NO MISSIONS AVAILABLE HERE");
-            DrawLine(hDC,y,"Board may be empty or stock/location");
-            DrawLine(hDC,y,"requirements are not currently met.");
+            DrawLine(hDC, y, "NO MISSIONS AVAILABLE HERE");
+            DrawLine(hDC, y, "Board may be empty or stock/location");
+            DrawLine(hDC, y, "requirements are not currently met.");
         }
+
         DrawLine(hDC, y, "------------------------------");
         DrawLine(hDC, y, "YOUR CONTRACTS");
         const std::vector<oem::DeliveryContract>& contracts =
@@ -2612,34 +2628,46 @@ public:
                 c.status == oem::CONTRACT_CANCELLED ? "CANCELLED" : "EXPIRED";
             char line[256];
             const long long allowance = c.deadline - c.acceptedAt;
-            const char* title = c.missionTitle.empty()?c.contractId.c_str():c.missionTitle.c_str();
+            const char* title = c.missionTitle.empty()
+                ? c.contractId.c_str() : c.missionTitle.c_str();
             if (allowance >= 86400)
-                sprintf(line, "%.10s %s %lldd", title, state, allowance/86400);
+                sprintf(line, "%.10s %s %lldd", title, state, allowance / 86400);
             else
-                sprintf(line, "%.10s %s %lldh", title, state, allowance/3600);
+                sprintf(line, "%.10s %s %lldh", title, state, allowance / 3600);
             DrawLine(hDC, y, line);
-            sprintf(line, "  %.12s -> %.12s  x%lld",
+            sprintf(line, "  %.12s -> %.12s x%lld",
                 c.originLocationId.c_str(), c.destinationLocationId.c_str(), c.quantity);
             DrawLine(hDC, y, line);
             ++shown;
         }
         if (shown == 0) DrawLine(hDC, y, "No accepted contracts.");
-        DrawLine(hDC, y, "C: CANCEL LATEST ACTIVE CONTRACT");
+        DrawLine(hDC, y, "C: CANCEL LATEST ACTIVE");
         DrawLine(hDC, y, "PAYOUT IS AUTOMATIC ON ARRIVAL");
         DrawLine(hDC, y, status_.c_str());
     }
 
     bool ConsumeKeyBuffered(DWORD key) override {
         if (!g_bridge) return false;
-        oem::Result result;
-        if (key == OAPI_KEY_1 || key == OAPI_KEY_2 || key == OAPI_KEY_3) {
-            selectedOffer_ = key == OAPI_KEY_1 ? 0 : key == OAPI_KEY_2 ? 1 : 2;
-            status_ = "Mission selection changed.";
+        if (key == OAPI_KEY_UP || key == OAPI_KEY_DOWN) {
+            std::vector<oem::DeliveryContract> offers;
+            g_bridge->currentMissionOffers(vesselId_, offers);
+            const std::size_t count = offers.size() < 3 ? offers.size() : 3;
+            if (count > 0) {
+                if (key == OAPI_KEY_UP && selectedOffer_ > 0) --selectedOffer_;
+                if (key == OAPI_KEY_DOWN && selectedOffer_ + 1 < count) ++selectedOffer_;
+            } else {
+                selectedOffer_ = 0;
+            }
+            status_ = count > 0 ? "Mission selection changed." : "No mission to select.";
             return true;
-        } else if (key == OAPI_KEY_A) {
+        }
+
+        oem::Result result;
+        if (key == OAPI_KEY_A) {
             result = g_bridge->acceptDeliveryOffer(vesselId_, selectedOffer_);
         } else if (key == OAPI_KEY_S) {
-            result = oem::Result::failure("CONTRACT_NOT_COMPLETE", "No completed contract is waiting for payment.");
+            result = oem::Result::failure("CONTRACT_NOT_COMPLETE",
+                "No completed contract is waiting for payment.");
             const std::vector<oem::DeliveryContract>& contracts =
                 g_bridge->deliveryContractBook().contracts();
             for (std::size_t i = 0; i < contracts.size(); ++i) {
@@ -2650,7 +2678,8 @@ public:
                 }
             }
         } else if (key == OAPI_KEY_C) {
-            result = oem::Result::failure("CONTRACT_NOT_ACTIVE", "No active contract is available to cancel.");
+            result = oem::Result::failure("CONTRACT_NOT_ACTIVE",
+                "No active contract is available to cancel.");
             const std::vector<oem::DeliveryContract>& contracts =
                 g_bridge->deliveryContractBook().contracts();
             for (std::size_t i = contracts.size(); i > 0; --i) {
@@ -2663,31 +2692,38 @@ public:
         } else {
             return false;
         }
-        status_ = result.ok ? "Contract journal updated." : result.code + ": " + result.message;
+        status_ = result.ok ? "Contract journal updated." :
+            result.code + ": " + result.message;
         return true;
     }
 
     bool ConsumeButton(int bt, int event) override {
         if (!(event & PANEL_MOUSE_LBDOWN)) return false;
-        if (bt == 0) return ConsumeKeyBuffered(OAPI_KEY_A);
-        if (bt == 1) return ConsumeKeyBuffered(OAPI_KEY_S);
-        if (bt == 2) return ConsumeKeyBuffered(OAPI_KEY_C);
+        if (bt == 0) return ConsumeKeyBuffered(OAPI_KEY_UP);
+        if (bt == 1) return ConsumeKeyBuffered(OAPI_KEY_DOWN);
+        if (bt == 2) return ConsumeKeyBuffered(OAPI_KEY_A);
+        if (bt == 3) return ConsumeKeyBuffered(OAPI_KEY_S);
+        if (bt == 4) return ConsumeKeyBuffered(OAPI_KEY_C);
         return false;
     }
 
     char *ButtonLabel(int bt) override {
-        static char *labels[3] = { (char*)"ACCEPT", (char*)"RETRY", (char*)"CANCEL" };
-        return bt >= 0 && bt < 3 ? labels[bt] : 0;
+        static char *labels[5] = {
+            (char*)"UP", (char*)"DOWN", (char*)"ACCEPT", (char*)"PAY", (char*)"CANCEL"
+        };
+        return bt >= 0 && bt < 5 ? labels[bt] : 0;
     }
 
     int ButtonMenu(const MFDBUTTONMENU **menu) const override {
-        static const MFDBUTTONMENU items[3] = {
-            { "Accept the current delivery offer", 0, 'A' },
+        static const MFDBUTTONMENU items[5] = {
+            { "Select the previous mission", 0, 0 },
+            { "Select the next mission", 0, 0 },
+            { "Accept the highlighted delivery offer", 0, 'A' },
             { "Retry a pending automatic payout", 0, 'S' },
             { "Cancel the latest active contract without penalty", 0, 'C' }
         };
         if (menu) *menu = items;
-        return 3;
+        return 5;
     }
 
     static int MsgProc(UINT msg, UINT mfd, WPARAM wparam, LPARAM lparam) {
@@ -2701,8 +2737,54 @@ public:
 
 private:
     void DrawLine(HDC hDC, int &y, const char *text) {
-        TextOutA(hDC, 4, y, text, (int)strlen(text));
+        std::string line = text ? text : "";
+        if (line.size() > 35) line.resize(35);
+        TextOutA(hDC, 4, y, line.c_str(), (int)line.size());
         y += (int)ch;
+    }
+
+    void DrawWrappedText(HDC hDC, int &y, const std::string& text, std::size_t width) {
+        std::size_t pos = 0;
+        while (pos < text.size()) {
+            while (pos < text.size() && (text[pos] == ' ' || text[pos] == '\t' ||
+                   text[pos] == '\r' || text[pos] == '\n')) {
+                if (text[pos] == '\n') ++pos;
+                else ++pos;
+            }
+            if (pos >= text.size()) break;
+
+            std::string line;
+            while (pos < text.size() && text[pos] != '\r' && text[pos] != '\n') {
+                while (pos < text.size() && (text[pos] == ' ' || text[pos] == '\t')) ++pos;
+                if (pos >= text.size() || text[pos] == '\r' || text[pos] == '\n') break;
+                const std::size_t wordStart = pos;
+                while (pos < text.size() && text[pos] != ' ' && text[pos] != '\t' &&
+                       text[pos] != '\r' && text[pos] != '\n') ++pos;
+                const std::string word = text.substr(wordStart, pos - wordStart);
+                if (!line.empty() && line.size() + 1 + word.size() > width) {
+                    DrawLine(hDC, y, line.c_str());
+                    line.clear();
+                }
+                if (word.size() > width) {
+                    std::size_t offset = 0;
+                    if (!line.empty()) {
+                        DrawLine(hDC, y, line.c_str());
+                        line.clear();
+                    }
+                    while (offset < word.size()) {
+                        const std::string part = word.substr(offset, width);
+                        offset += part.size();
+                        if (offset < word.size()) DrawLine(hDC, y, part.c_str());
+                        else line = part;
+                    }
+                } else {
+                    if (!line.empty()) line += " ";
+                    line += word;
+                }
+            }
+            if (!line.empty()) DrawLine(hDC, y, line.c_str());
+            while (pos < text.size() && (text[pos] == '\r' || text[pos] == '\n')) ++pos;
+        }
     }
 
     std::string vesselId_;
