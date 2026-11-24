@@ -72,6 +72,36 @@ bool appendDurable(const std::string&p,const std::string&s){
 Result scanIds(const std::string&data,std::map<std::string,std::string>&ids){std::istringstream in(data);std::string line;if(!std::getline(in,line)||line!=kHeader)return Result::failure("ECONOMY_JOURNAL_HEADER","Global economy journal header or version is invalid.");while(std::getline(in,line)){if(!line.empty()&&line[line.size()-1]=='\r')line.erase(line.size()-1);if(line.empty())continue;Entry r;if(!decode(line,r)||opOf(r).empty())return Result::failure("ECONOMY_JOURNAL_CORRUPT","A complete global economy record is invalid.");std::map<std::string,std::string>::const_iterator it=ids.find(opOf(r));if(it!=ids.end()){if(it->second!=line)return Result::failure("ECONOMY_OPERATION_CONFLICT","An operation ID is reused by different global journal records.");}else ids[opOf(r)]=line;}return Result::success();}
 Result appendUnique(const std::string&p,const std::string&record,const std::string&operationId){bool exists=false;std::string data;if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not inspect global journal before contract append.");std::map<std::string,std::string>ids;if(exists){Result x=scanIds(data,ids);if(!x.ok)return x;}std::map<std::string,std::string>::const_iterator prior=ids.find(operationId);if(prior!=ids.end())return prior->second+"\n"==record?Result::success():Result::failure("ECONOMY_OPERATION_CONFLICT","Contract operation ID already belongs to a different journal record.");if(!appendDurable(p,(exists?std::string():std::string(kHeader)+"\n")+record))return Result::failure("ECONOMY_JOURNAL_COMMIT","Could not durably append contract operation.");return Result::success();}
 }
+
+Result MissionFailurePolicyStore::loadOrCreate(const std::string& path, MissionFailurePolicy& policy) const {
+    if (path.empty()) return Result::failure("MISSION_FAILURE_POLICY_PATH", "Policy path is empty.");
+    std::ifstream in(path.c_str(), std::ios::binary);
+    if (!in) {
+        std::ofstream out(path.c_str(), std::ios::binary | std::ios::out);
+        if (!out) return Result::failure("MISSION_FAILURE_POLICY_CREATE", "Could not create mission failure policy.");
+        out << "OEM_MISSION_FAILURE|1\nP|" << policy.penaltyBasisPoints << "|" << policy.reputationDelta << "\n";
+        out.flush();
+        if (!out.good()) return Result::failure("MISSION_FAILURE_POLICY_WRITE", "Could not write mission failure policy.");
+        return Result::success();
+    }
+    std::string line;
+    if (!std::getline(in, line) || line != "OEM_MISSION_FAILURE|1")
+        return Result::failure("MISSION_FAILURE_POLICY_HEADER", "Mission failure policy header or version is invalid.");
+    if (!std::getline(in, line)) return Result::failure("MISSION_FAILURE_POLICY_RECORD", "Mission failure policy record is missing.");
+    if (!line.empty() && line[line.size()-1] == '\r') line.erase(line.size()-1);
+    const std::vector<std::string> fields = split(line);
+    long long basisPoints = 0, reputation = 0;
+    if (fields.size() != 3 || fields[0] != "P" ||
+        !num(fields[1], basisPoints) || !num(fields[2], reputation) ||
+        basisPoints < 0 || basisPoints > 10000 || reputation >= 0 || reputation < -100)
+        return Result::failure("MISSION_FAILURE_POLICY_RECORD", "Mission failure policy values are invalid.");
+    std::string extra;
+    while (std::getline(in, extra)) if (!extra.empty())
+        return Result::failure("MISSION_FAILURE_POLICY_TRAILING", "Unexpected data follows the mission failure policy.");
+    policy.penaltyBasisPoints = (unsigned int)basisPoints;
+    policy.reputationDelta = (int)reputation;
+    return Result::success();
+}
 Result EconomyJournalStore::load(const std::string&p,const CargoCatalog&cat,Ledger&ledger,std::map<std::string,CargoServiceInventory>&inventories,std::map<std::string,CargoManifest>&manifests,DeliveryContractBook*contracts,MissionObjectiveBook*objectives)const{
  bool exists=false;std::string data;if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not read or repair the global journal tail.");if(!exists)return Result::success();
  std::map<std::string,std::string> ids;Result valid=scanIds(data,ids);if(!valid.ok)return valid;
