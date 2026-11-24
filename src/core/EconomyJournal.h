@@ -49,6 +49,7 @@ public:
                           const std::string& contractId) const;
     Result acceptMissionObjective(const std::string& path, MissionObjectiveBook& objectives,
                           const MissionObjective& objective, Credits reward) const;
+    // Requires the objective book to have observed this exact matching Orbiter event first.
     Result completeMissionObjective(const std::string& path, MissionObjectiveBook& objectives,
                           const std::string& missionId, const std::string& eventId,
                           SimulationSeconds completedAt) const;
