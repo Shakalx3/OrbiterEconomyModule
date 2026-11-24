@@ -2481,9 +2481,9 @@ private:
     std::string economyJournalPath_;
     oem::MissionFailurePolicyStore missionFailurePolicyStore_;
     oem::MissionFailurePolicy missionFailurePolicy_;
+    std::string missionFailurePolicyPath_;
     oem::MissionIssuerRegistry missionIssuerRegistry_;
     std::string missionIssuerRegistryPath_;
-    std::string missionFailurePolicyPath_;
     oem::LedgerConfigStore ledgerConfigStore_;
     oem::CargoCatalogConfigStore cargoCatalogConfigStore_;
     std::string accountsPath_;
