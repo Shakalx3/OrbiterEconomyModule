@@ -47,6 +47,7 @@ public:
     const PrimaryResourceSource* find(const std::string& sourceId) const;
     Result restoreCommitted(const std::string& sourceId, const std::string& locationId,
         const std::string& cargoId, double unitMassKg, SimulationSeconds productionTime);
+    Result initializeUnsetTimes(SimulationSeconds now, bool& changed);
     Result planDue(SimulationSeconds now,
         const std::map<std::string,CargoServiceInventory>& inventories,
         std::vector<PrimaryResourceIntent>& intents) const;
