@@ -22,10 +22,20 @@ add_library(OEMCore
     src/core/FlightTransition.cpp
     src/core/DockingTransition.cpp
     src/core/DeliveryContract.cpp
+    src/core/MissionBoard.cpp
+    src/core/MissionObjective.cpp
+    src/core/MissionObjectiveBook.cpp
+    src/core/MissionObjectiveBoard.cpp
+    src/core/MissionIssuerRegistry.cpp
+    src/core/MissionEconomics.cpp
     src/core/SpaceportRegistry.cpp
     src/core/EconomicLocationRegistry.cpp
     src/core/CampaignReset.cpp
     src/core/EconomicStationRegistry.cpp
+    src/core/PropellantPlan.cpp
+    src/core/PropellantQuote.cpp
+    src/core/PropellantTransaction.cpp
+    src/core/PropellantTransactionJournal.cpp
 )
 target_include_directories(OEMCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
 add_executable(OEMCoreTests Tests/core/LedgerTests.cpp)
@@ -67,11 +77,33 @@ target_link_libraries(OEMSimulationEventJournalTests PRIVATE OEMCore)
 add_executable(OEMDockingTransitionTests Tests/core/DockingTransitionTests.cpp)
 target_link_libraries(OEMDockingTransitionTests PRIVATE OEMCore)
 add_executable(OEMDeliveryContractTests Tests/core/DeliveryContractTests.cpp)
+add_executable(OEMMissionBoardTests Tests/core/MissionBoardTests.cpp)
+add_executable(OEMMissionObjectiveTests Tests/core/MissionObjectiveTests.cpp)
+add_executable(OEMMissionObjectiveBookTests Tests/core/MissionObjectiveBookTests.cpp)
+add_executable(OEMMissionObjectiveJournalTests Tests/core/MissionObjectiveJournalTests.cpp)
+add_executable(OEMMissionObjectiveBoardTests Tests/core/MissionObjectiveBoardTests.cpp)
+add_executable(OEMMissionIssuerRegistryTests Tests/core/MissionIssuerRegistryTests.cpp)
+target_link_libraries(OEMMissionIssuerRegistryTests PRIVATE OEMCore)
+add_executable(OEMMissionEconomicsTests Tests/core/MissionEconomicsTests.cpp)
+target_link_libraries(OEMMissionEconomicsTests PRIVATE OEMCore)
+target_link_libraries(OEMMissionBoardTests PRIVATE OEMCore)
+target_link_libraries(OEMMissionObjectiveTests PRIVATE OEMCore)
+target_link_libraries(OEMMissionObjectiveBookTests PRIVATE OEMCore)
+target_link_libraries(OEMMissionObjectiveJournalTests PRIVATE OEMCore)
+target_link_libraries(OEMMissionObjectiveBoardTests PRIVATE OEMCore)
 target_link_libraries(OEMDeliveryContractTests PRIVATE OEMCore)
 add_executable(OEMSpaceportRegistryTests Tests/core/SpaceportRegistryTests.cpp)
 add_executable(OEMEconomicLocationRegistryTests Tests/core/EconomicLocationRegistryTests.cpp)
 add_executable(OEMCampaignResetTests Tests/core/CampaignResetTests.cpp)
 add_executable(OEMEconomicStationRegistryTests Tests/core/EconomicStationRegistryTests.cpp)
+add_executable(OEMPropellantPlanTests Tests/core/PropellantPlanTests.cpp)
+target_link_libraries(OEMPropellantPlanTests PRIVATE OEMCore)
+add_executable(OEMPropellantQuoteTests Tests/core/PropellantQuoteTests.cpp)
+target_link_libraries(OEMPropellantQuoteTests PRIVATE OEMCore)
+add_executable(OEMPropellantTransactionTests Tests/core/PropellantTransactionTests.cpp)
+target_link_libraries(OEMPropellantTransactionTests PRIVATE OEMCore)
+add_executable(OEMPropellantTransactionJournalTests Tests/core/PropellantTransactionJournalTests.cpp)
+target_link_libraries(OEMPropellantTransactionJournalTests PRIVATE OEMCore)
 target_link_libraries(OEMEconomicLocationRegistryTests PRIVATE OEMCore)
 target_link_libraries(OEMCampaignResetTests PRIVATE OEMCore)
 target_link_libraries(OEMEconomicStationRegistryTests PRIVATE OEMCore)
@@ -98,7 +130,18 @@ add_test(NAME OEMSimulationEventTests COMMAND OEMSimulationEventTests)
 add_test(NAME OEMSimulationEventJournalTests COMMAND OEMSimulationEventJournalTests)
 add_test(NAME OEMDockingTransitionTests COMMAND OEMDockingTransitionTests)
 add_test(NAME OEMDeliveryContractTests COMMAND OEMDeliveryContractTests)
+add_test(NAME OEMMissionBoardTests COMMAND OEMMissionBoardTests)
+add_test(NAME OEMMissionObjectiveTests COMMAND OEMMissionObjectiveTests)
+add_test(NAME OEMMissionObjectiveBookTests COMMAND OEMMissionObjectiveBookTests)
+add_test(NAME OEMMissionObjectiveJournalTests COMMAND OEMMissionObjectiveJournalTests)
+add_test(NAME OEMMissionObjectiveBoardTests COMMAND OEMMissionObjectiveBoardTests)
+add_test(NAME OEMMissionIssuerRegistryTests COMMAND OEMMissionIssuerRegistryTests)
+add_test(NAME OEMMissionEconomicsTests COMMAND OEMMissionEconomicsTests)
 add_test(NAME OEMSpaceportRegistryTests COMMAND OEMSpaceportRegistryTests)
 add_test(NAME OEMEconomicLocationRegistryTests COMMAND OEMEconomicLocationRegistryTests)
 add_test(NAME OEMCampaignResetTests COMMAND OEMCampaignResetTests)
 add_test(NAME OEMEconomicStationRegistryTests COMMAND OEMEconomicStationRegistryTests)
+add_test(NAME OEMPropellantPlanTests COMMAND OEMPropellantPlanTests)
+add_test(NAME OEMPropellantQuoteTests COMMAND OEMPropellantQuoteTests)
+add_test(NAME OEMPropellantTransactionTests COMMAND OEMPropellantTransactionTests)
+add_test(NAME OEMPropellantTransactionJournalTests COMMAND OEMPropellantTransactionJournalTests)

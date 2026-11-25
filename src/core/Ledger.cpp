@@ -2,7 +2,8 @@
 
 namespace oem {
 
-Ledger::Ledger() : balances_(), operations_(), entries_() {}
+Ledger::Ledger() : balances_(), operations_(), entries_(), reputations_(),
+    reputationOperations_(), reputationEntries_() {}
 
 Result Ledger::createAccount(const std::string& accountId, Credits openingBalance) {
     if (accountId.empty())
@@ -92,6 +93,55 @@ Result Ledger::transfer(const std::string& operationId,
     entries_.push_back(entry);
     operations_[operationId] = entries_.size() - 1;
     return Result::success();
+}
+
+Result Ledger::applyReputation(const std::string& operationId,
+                               const std::string& accountId,
+                               int delta,
+                               SimulationSeconds simulationTime,
+                               const std::string& reason) {
+    if (operationId.empty() || accountId.empty() || delta == 0 || simulationTime < 0)
+        return Result::failure("INVALID_REPUTATION_ENTRY",
+                               "Operation, account, non-zero delta and non-negative time are required.");
+    std::map<std::string, std::size_t>::const_iterator prior =
+        reputationOperations_.find(operationId);
+    if (prior != reputationOperations_.end()) {
+        const ReputationEntry& old = reputationEntries_[prior->second];
+        if (old.accountId == accountId && old.delta == delta &&
+            old.simulationTime == simulationTime)
+            return Result::success();
+        return Result::failure("REPUTATION_OPERATION_CONFLICT",
+                               "Reputation operation ID was reused with different data.");
+    }
+    std::map<std::string, int>::iterator current = reputations_.find(accountId);
+    if (current == reputations_.end())
+        current = reputations_.insert(std::make_pair(accountId, 50)).first;
+    if (delta < 0 && delta <= -current->second)
+        current->second = 0;
+    else if (delta > 0 && delta >= 100 - current->second)
+        current->second = 100;
+    else
+        current->second += delta;
+    ReputationEntry entry;
+    entry.operationId = operationId;
+    entry.accountId = accountId;
+    entry.delta = delta;
+    entry.simulationTime = simulationTime;
+    entry.reason = reason;
+    reputationEntries_.push_back(entry);
+    reputationOperations_[operationId] = reputationEntries_.size() - 1;
+    return Result::success();
+}
+
+bool Ledger::getReputation(const std::string& accountId, int& reputation) const {
+    std::map<std::string, int>::const_iterator it = reputations_.find(accountId);
+    if (it == reputations_.end()) return false;
+    reputation = it->second;
+    return true;
+}
+
+const std::vector<ReputationEntry>& Ledger::reputationEntries() const {
+    return reputationEntries_;
 }
 
 bool Ledger::hasOperation(const std::string& operationId) const {

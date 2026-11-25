@@ -4,10 +4,16 @@
 #include <stdio.h>
 #include <string.h>
 #include <map>
+#include <algorithm>
 #include <set>
 #include <vector>
 #include <string>
 #include <math.h>
+#include <fstream>
+#include <sstream>
+#include <locale>
+#include <stdlib.h>
+#include <limits.h>
 #include "orbitersdk.h"
 #include "../core/SpaceportLanding.h"
 #include "../core/FlightTransition.h"
@@ -21,10 +27,19 @@
 #include "../core/CargoTransferGate.h"
 #include "../core/CargoServiceInventoryConfig.h"
 #include "../core/EconomyJournal.h"
+#include "../core/MissionBoard.h"
+#include "../core/MissionEconomics.h"
+#include "../core/MissionObjectiveBook.h"
+#include "../core/MissionObjectiveBoard.h"
 #include "../core/LedgerConfig.h"
 #include "../core/CargoCatalogConfig.h"
 #include "../core/EconomicLocationRegistry.h"
 #include "../core/EconomicStationRegistry.h"
+#include "../core/MissionIssuerRegistry.h"
+#include "../core/PropellantPlan.h"
+#include "../core/PropellantQuote.h"
+#include "../core/PropellantTransaction.h"
+#include "../core/PropellantTransactionJournal.h"
 
 namespace {
 
@@ -33,9 +48,22 @@ class OEMLandingBridge;
 OEMLandingBridge *g_bridge = 0;
 int g_flightLogMode = -1;
 int g_cargoManifestMode = -1;
-int g_cargoExchangeTestMode = -1;
 int g_marketMode = -1;
+int g_missionBoardMode = -1;
 int g_economicAdminMode = -1;
+int g_propellantMonitorMode = -1;
+int g_propellantRefuelMode = -1;
+
+unsigned long deliveryDestinationScore(const std::string& seed,
+                                       const std::string& destination) {
+    unsigned long hash = 2166136261UL;
+    const std::string value = seed + "|" + destination;
+    for (std::size_t i = 0; i < value.size(); ++i) {
+        hash ^= static_cast<unsigned char>(value[i]);
+        hash *= 16777619UL;
+    }
+    return hash;
+}
 
 std::string makeJournalPath(HINSTANCE module) {
     char modulePath[MAX_PATH] = {};
@@ -125,6 +153,15 @@ std::string makeCargoServicesPath(HINSTANCE module) {
     return configPath;
 }
 
+
+std::string makeMissionBoardPath(HINSTANCE module) {
+    return makeEconomyDataFilePath(module, "mission_boards.dat");
+}
+
+std::string makeObjectiveMissionBoardPath(HINSTANCE module) {
+    return makeEconomyDataFilePath(module, "objective_mission_boards.dat");
+}
+
 class OEMLandingBridge : public oapi::Module {
 public:
     explicit OEMLandingBridge(HINSTANCE hDLL)
@@ -133,13 +170,17 @@ public:
           cargoServices_(), cargoServicesPath_(makeCargoServicesPath(hDLL)),
           cargoTransferGate_(), cargoManifests_(), cargoManifestLoadAttempted_(),
           cargoStockConfigStore_(), cargoServiceInventories_(), cargoServiceInventoryLoadAttempted_(),
-          economyJournalStore_(), economyJournalPath_(makeEconomyDataFilePath(hDLL, "economy.journal")),
+          economyJournalStore_(), contractBook_(), objectiveBook_(), pendingContractOffers_(), contractOfferSequence_(0), contractOfferDay_(-1), missionBoardStore_(), missionBoards_(), missionBoardPath_(makeMissionBoardPath(hDLL)), missionBoardsReady_(false), objectiveBoardStore_(), objectiveBoards_(), objectiveBoardPath_(makeObjectiveMissionBoardPath(hDLL)), objectiveBoardsReady_(false), economyJournalPath_(makeEconomyDataFilePath(hDLL, "economy.journal")),
+          missionFailurePolicyStore_(), missionFailurePolicy_(),
+          missionFailurePolicyPath_(makeEconomyDataFilePath(hDLL, "mission_failure.cfg")),
+          missionIssuerRegistry_(), missionIssuerRegistryPath_(makeEconomyDataFilePath(hDLL, "mission_issuers.cfg")),
+          propellantTransactionJournal_(), propellantTransactionJournalPath_(makeEconomyDataFilePath(hDLL, "propellant_transactions.journal")), propellantPricePath_(makeEconomyDataFilePath(hDLL, "propellant_prices.cfg")), propellantRecoveryReady_(false), propellantOperationSequence_(0),
           ledgerConfigStore_(), cargoCatalogConfigStore_(), accountsPath_(makeEconomyDataFilePath(hDLL, "accounts.cfg")),
           cargoCatalogPath_(makeEconomyDataFilePath(hDLL, "cargo_catalog.cfg")),
           spaceportRegistryPath_(makeEconomyDataFilePath(hDLL, "spaceports.registry")),
           economicStations_(), economicStationsPath_(makeEconomyDataFilePath(hDLL, "economic_stations.registry")),
           spaceportRegistry_(), economicLocations_(), economicStationsReady_(false), cargoServicesReady_(false), ledger_(), cargoCatalog_(), economyReady_(false), journalReady_(false), sessionId_(),
-          currentSimulationTime_(0), cargoTransferSequence_(0), lastFocus_(0) {
+          currentSimulationTime_(0), cargoTransferSequence_(0), lastFocus_(0), completionNote_(0), notificationUntil_(0) {
         g_bridge = this;
     }
 
@@ -209,12 +250,787 @@ public:
         return vesselId == name;
     }
 
+    oem::Result resolvePropellantContext(const std::string& vesselId,
+            oem::PropellantPriceContext& context, std::string& displayLocation) const {
+        OBJHANDLE focus = oapiGetFocusObject();
+        if (!focus || !oapiIsVessel(focus))
+            return oem::Result::failure("PROPELLANT_NO_FOCUS", "No focused vessel is available.");
+        VESSEL* vessel = oapiGetVesselInterface(focus);
+        if (!vessel || !vessel->GetName() || vesselId != vessel->GetName())
+            return oem::Result::failure("PROPELLANT_VESSEL_MISMATCH", "Refuelling requires the focused vessel.");
+
+        for (UINT i = 0; i < vessel->DockCount(); ++i) {
+            DOCKHANDLE dock = vessel->GetDockHandle(i);
+            if (!dock) continue;
+            OBJHANDLE other = vessel->GetDockStatus(dock);
+            if (!other || !oapiIsVessel(other)) continue;
+            char stationName[128] = {};
+            oapiGetObjectName(other, stationName, sizeof(stationName));
+            if (!stationName[0] || !economicStations_.isStation(stationName)) continue;
+            VESSEL* station = oapiGetVesselInterface(other);
+            if (!station) continue;
+            OBJHANDLE body = station->GetGravityRef();
+            if (!body) continue;
+            char bodyName[128] = {};
+            oapiGetObjectName(body, bodyName, sizeof(bodyName));
+            const oem::EconomicLocation* location =
+                economicLocations_.find(std::string("station:") + stationName);
+            if (!location || location->kind != oem::ECONOMIC_LOCATION_STATION || !bodyName[0])
+                return oem::Result::failure("PROPELLANT_LOCATION_UNKNOWN",
+                    "The registered station has no resolvable celestial-body context.");
+            context.locationId = location->canonicalId;
+            context.locationKind = oem::PROPELLANT_LOCATION_ORBITAL_STATION;
+            context.celestialBody = bodyName;
+            displayLocation = stationName;
+            return oem::Result::success();
+        }
+
+        if (!(vessel->GetFlightStatus() & 1u) || !vessel->GroundContact())
+            return oem::Result::failure("PROPELLANT_NOT_AT_SERVICE",
+                "Dock to a registered economic station or land at a registered planetary spaceport.");
+        OBJHANDLE body = vessel->GetSurfaceRef();
+        if (!body) return oem::Result::failure("PROPELLANT_BODY_UNKNOWN", "Could not resolve the surface body.");
+        char bodyName[128] = {};
+        oapiGetObjectName(body, bodyName, sizeof(bodyName));
+        const std::string baseId = currentMarketLocation(vesselId);
+        if (!bodyName[0] || baseId.empty())
+            return oem::Result::failure("PROPELLANT_NOT_AT_SPACEPORT",
+                "The landed vessel is not within the registered spaceport service radius.");
+        const std::string canonical = std::string("surface:") + bodyName + "/" + baseId;
+        const oem::EconomicLocation* location = economicLocations_.find(canonical);
+        if (!location || location->kind != oem::ECONOMIC_LOCATION_SPACEPORT)
+            return oem::Result::failure("PROPELLANT_LOCATION_UNKNOWN",
+                "The planetary base is not present in the economic spaceport registry.");
+        context.locationId = location->canonicalId;
+        context.locationKind = oem::PROPELLANT_LOCATION_PLANETARY_SPACEPORT;
+        context.celestialBody = bodyName;
+        displayLocation = baseId;
+        return oem::Result::success();
+    }
+
+    oem::Result resolvePropellantUnitPrice(const oem::PropellantPriceContext& context,
+                                            double& unitPrice) const {
+        if (propellantPricePath_.empty())
+            return oem::Result::failure("PROPELLANT_PRICE_PATH", "Could not resolve propellant_prices.cfg.");
+        DWORD attributes = GetFileAttributesA(propellantPricePath_.c_str());
+        if (attributes == INVALID_FILE_ATTRIBUTES) {
+            const DWORD error = GetLastError();
+            if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND)
+                return oem::Result::failure("PROPELLANT_PRICE_ACCESS", "Could not inspect propellant price configuration.");
+            std::ofstream defaults(propellantPricePath_.c_str(), std::ios::out | std::ios::trunc);
+            if (!defaults) return oem::Result::failure("PROPELLANT_PRICE_CREATE", "Could not create default propellant price configuration.");
+            defaults.imbue(std::locale::classic());
+            defaults << "OEM_PROPELLANT_PRICES|1\n"
+                     << "# Optional exact-body rows override the wildcard rate for that location type.\n"
+                     << "ORBITAL|*|2.0\n"
+                     << "PLANETARY|*|3.0\n";
+            defaults.close();
+            if (!defaults) return oem::Result::failure("PROPELLANT_PRICE_CREATE", "Could not finish writing default propellant prices.");
+        }
+        std::ifstream input(propellantPricePath_.c_str());
+        if (!input) return oem::Result::failure("PROPELLANT_PRICE_READ", "Could not read propellant price configuration.");
+        std::string line;
+        if (!std::getline(input, line) || line != "OEM_PROPELLANT_PRICES|1")
+            return oem::Result::failure("PROPELLANT_PRICE_HEADER", "Propellant price configuration header/version is invalid.");
+        const std::string wantedKind = context.locationKind == oem::PROPELLANT_LOCATION_ORBITAL_STATION
+            ? "ORBITAL" : "PLANETARY";
+        bool haveDefault = false, haveExact = false;
+        double defaultPrice = 0.0, exactPrice = 0.0;
+        std::set<std::string> seen;
+        while (std::getline(input, line)) {
+            if (!line.empty() && line[line.size() - 1] == '\r') line.erase(line.size() - 1);
+            if (line.empty() || line[0] == '#') continue;
+            std::istringstream row(line);
+            std::string kind, body, value, extra;
+            if (!std::getline(row, kind, '|') || !std::getline(row, body, '|') ||
+                !std::getline(row, value, '|') || std::getline(row, extra, '|'))
+                return oem::Result::failure("PROPELLANT_PRICE_RECORD", "A propellant price row is malformed.");
+            char* end = 0;
+            const double price = strtod(value.c_str(), &end);
+            if (!end || *end || !_finite(price) || price <= 0.0 ||
+                (kind != "ORBITAL" && kind != "PLANETARY") || body.empty())
+                return oem::Result::failure("PROPELLANT_PRICE_VALUE", "A propellant price row contains an invalid kind, body, or positive rate.");
+            const std::string key = kind + "|" + body;
+            if (!seen.insert(key).second)
+                return oem::Result::failure("PROPELLANT_PRICE_DUPLICATE", "Propellant price configuration contains a duplicate rule.");
+            if (kind != wantedKind) continue;
+            if (body == "*") { haveDefault = true; defaultPrice = price; }
+            else if (body == context.celestialBody) { haveExact = true; exactPrice = price; }
+        }
+        if (input.bad()) return oem::Result::failure("PROPELLANT_PRICE_READ", "An error occurred while reading propellant price configuration.");
+        if (haveExact) unitPrice = exactPrice;
+        else if (haveDefault) unitPrice = defaultPrice;
+        else return oem::Result::failure("PROPELLANT_PRICE_MISSING", "No default or body-specific propellant rate exists for this location type.");
+        return oem::Result::success();
+    }
+
+    oem::Result readPropellantSnapshot(const std::string& vesselId,
+            std::vector<oem::PropellantResourceState>& resources) const {
+        OBJHANDLE focus = oapiGetFocusObject();
+        if (!focus || !oapiIsVessel(focus))
+            return oem::Result::failure("PROPELLANT_NO_FOCUS",
+                "No focused vessel is available.");
+        VESSEL *vessel = oapiGetVesselInterface(focus);
+        if (!vessel || !vessel->GetName() || vesselId != vessel->GetName())
+            return oem::Result::failure("PROPELLANT_VESSEL_MISMATCH",
+                "The MFD vessel is not the current Orbiter focus vessel.");
+
+        std::vector<oem::PropellantResourceState> snapshot;
+        const DWORD count = vessel->GetPropellantCount();
+        snapshot.reserve(count);
+        for (DWORD i = 0; i < count; ++i) {
+            PROPELLANT_HANDLE handle = vessel->GetPropellantHandleByIndex(i);
+            if (!handle)
+                return oem::Result::failure("PROPELLANT_INVALID_HANDLE",
+                    "Orbiter returned an invalid propellant resource handle.");
+            const double current = vessel->GetPropellantMass(handle);
+            const double capacity = vessel->GetPropellantMaxMass(handle);
+            if (!_finite(current) || !_finite(capacity) ||
+                current < 0.0 || capacity < 0.0 || current > capacity)
+                return oem::Result::failure("PROPELLANT_INVALID_RESOURCE",
+                    "Orbiter returned invalid propellant mass or capacity.");
+            snapshot.push_back(oem::PropellantResourceState(current, capacity));
+        }
+        if (!snapshot.empty()) {
+            oem::PropellantTotals totals;
+            const oem::Result checked =
+                oem::inspectPropellantResources(snapshot, totals);
+            if (!checked.ok) return checked;
+        }
+        resources.swap(snapshot);
+        return oem::Result::success();
+    }
+
+    oem::Result performPropellantPurchase(const std::string& vesselId, bool fillAll) {
+        if (!economyReady_ || !propellantRecoveryReady_ || economyJournalPath_.empty() ||
+            propellantTransactionJournalPath_.empty())
+            return oem::Result::failure("PROPELLANT_UNAVAILABLE",
+                "Economy or propellant transaction recovery is not ready.");
+        if (currentSimulationTime_ <= 0 || !isFocusedVessel(vesselId))
+            return oem::Result::failure("PROPELLANT_FOCUS",
+                "Wait for simulation time to advance and keep the purchasing vessel focused.");
+
+        oem::PropellantPriceContext context;
+        std::string locationName;
+        oem::Result result = resolvePropellantContext(vesselId, context, locationName);
+        if (!result.ok) return result;
+        double unitPrice = 0.0;
+        result = resolvePropellantUnitPrice(context, unitPrice);
+        if (!result.ok) return result;
+
+        VESSEL* vessel = oapiGetVesselInterface(oapiGetFocusObject());
+        if (!vessel) return oem::Result::failure("PROPELLANT_VESSEL", "Could not access the focused vessel.");
+        std::vector<oem::PropellantResourceState> before;
+        result = readPropellantSnapshot(vesselId, before);
+        if (!result.ok) return result;
+        oem::PropellantTotals totals;
+        result = oem::inspectPropellantResources(before, totals);
+        if (!result.ok) return result;
+        if (!(totals.freeCapacityKg > 1.0e-9))
+            return oem::Result::failure("PROPELLANT_TANKS_FULL", "All propellant resources are already full.");
+
+        const double requested = fillAll || totals.freeCapacityKg < 100.0
+            ? totals.freeCapacityKg : 100.0;
+        oem::Credits balance = 0;
+        if (!ledger_.getBalance("company", balance))
+            return oem::Result::failure("PROPELLANT_ACCOUNT", "Company account is not configured.");
+        FILETIME fileTime;
+        GetSystemTimeAsFileTime(&fileTime);
+        const unsigned __int64 stamp =
+            (static_cast<unsigned __int64>(fileTime.dwHighDateTime) << 32) |
+            static_cast<unsigned __int64>(fileTime.dwLowDateTime);
+        char operation[256];
+        sprintf(operation, "REFUEL-%s-%I64u-%lu", vesselId.c_str(), stamp,
+            ++propellantOperationSequence_);
+        const std::string operationId(operation);
+        oem::PropellantQuote quote;
+        char quoteId[288];
+        sprintf(quoteId, "QUOTE-%s", operation);
+        result = oem::createPropellantQuote(before, quoteId, context,
+            requested, unitPrice, balance, quote);
+        if (!result.ok) return result;
+
+        oem::PropellantTransaction transaction;
+        result = oem::createPreparedPropellantTransaction(operationId, vesselId,
+            before, quote, transaction, currentSimulationTime_);
+        if (!result.ok) return result;
+        result = propellantTransactionJournal_.prepare(
+            propellantTransactionJournalPath_, transaction);
+        if (!result.ok) return result;
+
+        std::vector<oem::PropellantResourceState> immediate;
+        result = readPropellantSnapshot(vesselId, immediate);
+        std::vector<double> immediateRollback;
+        if (!result.ok || oem::classifyPropellantRecovery(transaction, immediate,
+                immediateRollback) != oem::PROPELLANT_RECOVERY_ABORT_UNCHANGED) {
+            propellantRecoveryReady_ = false;
+            return oem::Result::failure("PROPELLANT_SNAPSHOT_CHANGED",
+                "Tank state changed after PREPARED was recorded; automatic refuelling is stopped for recovery.");
+        }
+
+        const DWORD count = vessel->GetPropellantCount();
+        if (count != before.size()) {
+            propellantRecoveryReady_ = false;
+            return oem::Result::failure("PROPELLANT_RESOURCE_CHANGED",
+                "Propellant resource count changed after PREPARED was recorded.");
+        }
+        for (DWORD i = 0; i < count; ++i) {
+            PROPELLANT_HANDLE resource = vessel->GetPropellantHandleByIndex(i);
+            if (!resource) {
+                propellantRecoveryReady_ = false;
+                return oem::Result::failure("PROPELLANT_INVALID_HANDLE",
+                    "Orbiter returned an invalid resource handle during refuelling.");
+            }
+            vessel->SetPropellantMass(resource, quote.fillPlan.targetMassKg[i]);
+        }
+
+        std::vector<oem::PropellantResourceState> after;
+        result = readPropellantSnapshot(vesselId, after);
+        std::vector<double> rollback;
+        const oem::PropellantRecoveryAction action = result.ok
+            ? oem::classifyPropellantRecovery(transaction, after, rollback)
+            : oem::PROPELLANT_RECOVERY_CONFLICT;
+        if (action == oem::PROPELLANT_RECOVERY_FINALIZE_CHARGE) {
+            result = economyJournalStore_.chargePropellant(economyJournalPath_,
+                operationId, "company", quote.totalCostCredits,
+                currentSimulationTime_, ledger_);
+            if (!result.ok) {
+                propellantRecoveryReady_ = false;
+                return oem::Result::failure("PROPELLANT_CHARGE_PENDING",
+                    "Physical fill is complete, but its durable charge is pending recovery.");
+            }
+            result = propellantTransactionJournal_.setTerminalState(
+                propellantTransactionJournalPath_, operationId, oem::PROPELLANT_TX_COMMITTED);
+            if (!result.ok) {
+                propellantRecoveryReady_ = false;
+                return oem::Result::failure("PROPELLANT_COMMIT_PENDING",
+                    "Fuel and payment are committed; the transaction terminal marker will be recovered on restart.");
+            }
+            char log[512];
+            sprintf(log, "OEM REFUEL COMMITTED: vessel=%s location=%s body=%s mass=%.3f kg cost=%lld cr",
+                vesselId.c_str(), locationName.c_str(), context.celestialBody.c_str(),
+                requested, (long long)quote.totalCostCredits);
+            oapiWriteLog(log);
+            return oem::Result::success();
+        }
+
+        if (action == oem::PROPELLANT_RECOVERY_ROLLBACK_PARTIAL) {
+            for (DWORD i = 0; i < count; ++i) {
+                PROPELLANT_HANDLE resource = vessel->GetPropellantHandleByIndex(i);
+                if (!resource || i >= rollback.size()) {
+                    propellantRecoveryReady_ = false;
+                    return oem::Result::failure("PROPELLANT_ROLLBACK_FAILED",
+                        "Partial fill could not be safely rolled back.");
+                }
+                vessel->SetPropellantMass(resource, rollback[i]);
+            }
+            std::vector<oem::PropellantResourceState> restored;
+            result = readPropellantSnapshot(vesselId, restored);
+            if (!result.ok || oem::classifyPropellantRecovery(transaction, restored,
+                    rollback) != oem::PROPELLANT_RECOVERY_ABORT_UNCHANGED) {
+                propellantRecoveryReady_ = false;
+                return oem::Result::failure("PROPELLANT_ROLLBACK_FAILED",
+                    "Rollback verification failed; transaction remains PREPARED.");
+            }
+            result = propellantTransactionJournal_.setTerminalState(
+                propellantTransactionJournalPath_, operationId, oem::PROPELLANT_TX_ABORTED);
+            if (!result.ok) {
+                propellantRecoveryReady_ = false;
+                return result;
+            }
+            return oem::Result::failure("PROPELLANT_WRITE_PARTIAL",
+                "Partial resource write was rolled back; no charge was made.");
+        }
+        if (action == oem::PROPELLANT_RECOVERY_ABORT_UNCHANGED) {
+            result = propellantTransactionJournal_.setTerminalState(
+                propellantTransactionJournalPath_, operationId, oem::PROPELLANT_TX_ABORTED);
+            if (!result.ok) propellantRecoveryReady_ = false;
+            return oem::Result::failure("PROPELLANT_WRITE_UNCHANGED",
+                "Orbiter did not apply the requested fuel change; no charge was made.");
+        }
+        propellantRecoveryReady_ = false;
+        return oem::Result::failure("PROPELLANT_WRITE_CONFLICT",
+            "Orbiter resource values do not match the prepared transaction; no automatic correction was attempted.");
+    }
+
     const oem::CargoCatalog* marketCatalog() const {
         return economyReady_ ? &cargoCatalog_ : 0;
     }
 
+    const oem::DeliveryContractBook& deliveryContractBook() const {
+        return contractBook_;
+    }
+
+    const oem::MissionObjectiveBook& missionObjectiveBook() const {
+        return objectiveBook_;
+    }
+
+    oem::SimulationSeconds missionSimulationTime() const { return currentSimulationTime_; }
+
+    bool currentMissionOffers(const std::string& vesselId, std::vector<oem::DeliveryContract>& offers) {
+        offers.clear();
+        if (!economyReady_ || !missionBoardsReady_ || sessionId_.empty() ||
+            currentSimulationTime_ <= 0 || vesselId.empty() || !isFocusedVessel(vesselId))
+            return false;
+        const std::vector<oem::DeliveryContract>& accepted = contractBook_.contracts();
+        for (std::size_t i=0;i<accepted.size();++i) {
+            if (accepted[i].vesselId==vesselId &&
+                accepted[i].status!=oem::CONTRACT_SETTLED &&
+                accepted[i].status!=oem::CONTRACT_EXPIRED &&
+                accepted[i].status!=oem::CONTRACT_CANCELLED)
+                return false;
+        }
+        const std::string origin=currentMarketLocation(vesselId);
+        if(origin.empty() || !ensureCargoServiceInventory(origin)) return false;
+        oem::EconomicLocation originLocation;
+        VECTOR3 originGlobal = _V(0,0,0);
+        OBJHANDLE originBody = 0;
+        double originLng=0.0, originLat=0.0, originRadius=0.0;
+        const bool originResolved = resolveCurrentEconomicLocation(vesselId, origin, originLocation) &&
+            resolveEconomicLocationPosition(originLocation, originGlobal, originBody,
+                originLng, originLat, originRadius);
+        if(!originResolved) return false;
+        const long long day=(long long)currentSimulationTime_/86400;
+        std::map<std::string,oem::MissionBoard>::iterator existing=missionBoards_.find(originLocation.canonicalId);
+        if(existing!=missionBoards_.end() && existing->second.simulationDay==day) {
+            offers=existing->second.offers;
+            return !offers.empty();
+        }
+        std::map<std::string,oem::CargoServiceInventory>::const_iterator stock=cargoServiceInventories_.find(origin);
+        if(stock==cargoServiceInventories_.end()) return false;
+        std::vector<oem::MissionCandidate> candidates;
+        const std::vector<oem::EconomicLocation>& locations=economicLocations_.entries();
+        for(std::size_t d=0;d<locations.size();++d) {
+            const std::string& destination=locations[d].storageId;
+            if(locations[d].canonicalId==originLocation.canonicalId || destination==origin || !ensureCargoServiceInventory(destination)) continue;
+            for(std::size_t c=0;c<cargoCatalog_.entries().size();++c) {
+                const oem::CargoDefinition& item=cargoCatalog_.entries()[c];
+                if(stock->second.quantity(item.cargoId)<=0 || item.buyPrice<=0) continue;
+                oem::MissionCandidate candidate;
+                candidate.issuerId=issuerForLocation(originLocation.canonicalId);
+                candidate.cargoId=item.cargoId;
+                candidate.destinationLocationId=destination;
+                candidate.destinationBodyId=locations[d].celestialBody;
+                candidate.destinationCanonicalId=locations[d].canonicalId;
+                candidate.quantity=1;
+                VECTOR3 destinationGlobal = _V(0,0,0);
+                OBJHANDLE destinationBody = 0;
+                double destinationLng=0.0, destinationLat=0.0, destinationRadius=0.0;
+                if (!resolveEconomicLocationPosition(locations[d], destinationGlobal,
+                        destinationBody, destinationLng, destinationLat, destinationRadius))
+                    continue;
+                oem::MissionRouteDistance route;
+                if (locations[d].kind == oem::ECONOMIC_LOCATION_SPACEPORT &&
+                    originLocation.kind == oem::ECONOMIC_LOCATION_SPACEPORT &&
+                    destinationBody == originBody && originRadius > 0.0) {
+                    route.metres = oem::surfaceDistanceMetres(originLat, originLng,
+                        destinationLat, destinationLng, originRadius);
+                    route.kind = oem::MISSION_ROUTE_SURFACE;
+                } else {
+                    const double dx = destinationGlobal.x - originGlobal.x;
+                    const double dy = destinationGlobal.y - originGlobal.y;
+                    const double dz = destinationGlobal.z - originGlobal.z;
+                    route.metres = sqrt(dx*dx + dy*dy + dz*dz);
+                    route.kind = oem::MISSION_ROUTE_ESTIMATE;
+                }
+                route.valid = _finite(route.metres) && route.metres >= 0.0;
+                const oem::MissionEconomicsConfig economicsConfig;
+                const oem::MissionQuote quote = oem::quoteMission(
+                    item.buyPrice, candidate.quantity, route, economicsConfig);
+                if (!quote.valid) continue;
+                candidate.reward = quote.reward;
+                candidate.allowanceSeconds = quote.allowanceSeconds;
+                const unsigned long flavor = deliveryDestinationScore(
+                    sessionId_+"|"+originLocation.canonicalId+"|"+locations[d].canonicalId+"|"+item.cargoId,
+                    "mission-flavor") % 3UL;
+                if (flavor == 0) {
+                    candidate.missionType = "SUPPLY";
+                    candidate.missionTitle = "Routine supply run";
+                    candidate.missionBriefing = "The local operator requests a routine replenishment of "+item.cargoId+
+                        ". Load the specified cargo here and deliver it to "+destination+".";
+                } else if (flavor == 1) {
+                    candidate.missionType = "PRIORITY";
+                    candidate.missionTitle = "Priority cargo delivery";
+                    candidate.missionBriefing = "A reported shortage has made this shipment a priority. Deliver "+
+                        item.cargoId+" to "+destination+" before the quoted deadline.";
+                } else if (route.kind == oem::MISSION_ROUTE_SURFACE) {
+                    candidate.missionType = "REGIONAL";
+                    candidate.missionTitle = "Regional logistics";
+                    candidate.missionBriefing = "A nearby facility needs "+item.cargoId+
+                        ". Complete this regional surface transfer to "+destination+".";
+                } else {
+                    candidate.missionType = "REMOTE";
+                    candidate.missionTitle = "Long-range logistics";
+                    candidate.missionBriefing = "A remote facility has requested "+item.cargoId+
+                        ". Deliver the shipment to "+destination+"; the route allowance is an estimate, not a flight plan.";
+                }
+                candidates.push_back(candidate);
+            }
+        }
+        unsigned long generation=existing==missionBoards_.end()?1:existing->second.generation+1;
+        char gen[32]; sprintf(gen,"%lu",generation);
+        oem::MissionBoard generated;
+        const oem::Result result=missionBoardStore_.generate(origin,originLocation.canonicalId,day,generation,
+            sessionId_+"|"+originLocation.canonicalId+"|"+gen,candidates,generated);
+        if(!result.ok) return false;
+        std::map<std::string,oem::MissionBoard> updated=missionBoards_;
+        updated[originLocation.canonicalId]=generated;
+        const oem::Result saved=missionBoardStore_.save(missionBoardPath_,updated);
+        if(!saved.ok) {
+            char message[512]; sprintf(message,"OEM Mission Board: save failed (%s): %s",
+                saved.code.c_str(),saved.message.c_str()); oapiWriteLog(message);
+            return false;
+        }
+        missionBoards_.swap(updated);
+        offers=generated.offers;
+        return !offers.empty();
+    }
+
+    oem::Result acceptDeliveryOffer(const std::string& vesselId, std::size_t offerIndex) {
+        if(!isFocusedVessel(vesselId))
+            return oem::Result::failure("CONTRACT_FOCUS","Accept a mission from its assigned vessel.");
+        const std::string origin=currentMarketLocation(vesselId);
+        oem::EconomicLocation originLocation;
+        if(origin.empty() || !resolveCurrentEconomicLocation(vesselId,origin,originLocation))
+            return oem::Result::failure("CONTRACT_ORIGIN","Could not resolve the canonical origin location.");
+        std::map<std::string,oem::MissionBoard>::iterator board=missionBoards_.find(originLocation.canonicalId);
+        if(board==missionBoards_.end() || offerIndex>=board->second.offers.size())
+            return oem::Result::failure("CONTRACT_OFFER_UNAVAILABLE","Selected mission is no longer on this location's board.");
+        oem::DeliveryContract selected=board->second.offers[offerIndex];
+        if(selected.originLocationId!=origin)
+            return oem::Result::failure("CONTRACT_ORIGIN","Selected mission belongs to another location.");
+        selected.vesselId=vesselId;
+        if(selected.issuerId.empty()) selected.issuerId="issuer:"+originLocation.canonicalId;
+        if (currentSimulationTime_ < 0 || selected.deadline < selected.acceptedAt)
+            return oem::Result::failure("CONTRACT_TIME","Mission quote contains an invalid deadline window.");
+        const oem::SimulationSeconds allowance = selected.deadline - selected.acceptedAt;
+        if (allowance <= 0 || allowance > LLONG_MAX - currentSimulationTime_)
+            return oem::Result::failure("CONTRACT_TIME","Mission deadline allowance is outside the supported range.");
+        // The quote is generated at the start of the board day; the full quoted
+        // allowance begins when the player actually accepts it.
+        selected.acceptedAt = currentSimulationTime_;
+        selected.deadline = currentSimulationTime_ + allowance;
+        ensureCargoManifest(vesselId);
+        if(!ensureCargoServiceInventory(origin))
+            return oem::Result::failure("CONTRACT_ORIGIN_STOCK",
+                "The origin cargo stock is not available for automatic mission loading.");
+        std::map<std::string,oem::CargoManifest>::iterator manifest=cargoManifests_.find(vesselId);
+        if(manifest==cargoManifests_.end())
+            return oem::Result::failure("CONTRACT_MANIFEST",
+                "The assigned vessel's OEM cargo manifest is unavailable.");
+        oem::CargoDefinition cargoDefinition;
+        if(!cargoCatalog_.find(selected.cargoId,cargoDefinition))
+            return oem::Result::failure("CONTRACT_CARGO",
+                "The mission cargo is missing from the configured cargo catalog.");
+        const oem::Result accepted=economyJournalStore_.acceptContractWithCargo(
+            economyJournalPath_,contractBook_,cargoServiceInventories_,
+            manifest->second,selected,cargoDefinition.unitMassKg);
+        if(!accepted.ok) return accepted;
+        oem::MissionBoard updated=board->second;
+        updated.offers.erase(updated.offers.begin()+offerIndex);
+        std::map<std::string,oem::MissionBoard> candidate=missionBoards_;
+        candidate[originLocation.canonicalId]=updated;
+        const oem::Result saved=missionBoardStore_.save(missionBoardPath_,candidate);
+        if(!saved.ok) {
+            // Acceptance is already durable in the economy journal. Keep the
+            // in-memory board consistent and report the persistence issue.
+            board->second=updated;
+            return oem::Result::failure("MISSION_BOARD_SAVE",
+                "Mission accepted, but the remaining board could not be saved; it will be reconciled on restart.");
+        }
+        missionBoards_.swap(candidate);
+        return oem::Result::success();
+    }
+
+    bool currentObjectiveOffers(const std::string& vesselId,
+                                std::vector<oem::MissionObjectiveOffer>& offers) {
+        offers.clear();
+        oem::Credits companyBalance = 0;
+        if (!economyReady_ || !objectiveBoardsReady_ || sessionId_.empty() ||
+            currentSimulationTime_ <= 0 || vesselId.empty() || !isFocusedVessel(vesselId) ||
+            !ledger_.getBalance("company", companyBalance))
+            return false;
+        std::size_t active = 0;
+        const std::vector<oem::MissionObjectiveContract>& accepted = objectiveBook_.missions();
+        for (std::size_t i = 0; i < accepted.size(); ++i)
+            if (accepted[i].objective.vesselId == vesselId &&
+                (accepted[i].status == oem::MISSION_OBJECTIVE_ACCEPTED ||
+                 accepted[i].status == oem::MISSION_OBJECTIVE_COMPLETED))
+                ++active;
+        if (active >= 3) return false;
+        const std::string origin = currentObjectiveLocation(vesselId);
+        oem::EconomicLocation originLocation;
+        if (origin.empty() || !resolveCurrentEconomicLocation(vesselId, origin, originLocation))
+            return false;
+        const long long day = (long long)currentSimulationTime_ / 86400;
+        std::map<std::string, oem::MissionObjectiveBoard>::iterator existing =
+            objectiveBoards_.find(originLocation.canonicalId);
+        if (existing != objectiveBoards_.end() && existing->second.simulationDay == day) {
+            oem::MissionObjectiveBoard pruned = existing->second;
+            bool changed = false;
+            for (std::size_t i = 0; i < pruned.offers.size();) {
+                const oem::MissionObjectiveOffer& offer = pruned.offers[i];
+                const oem::EconomicLocation* target = economicLocations_.find(offer.targetCanonicalId);
+                const bool targetValid = target && target->storageId == offer.targetLocationId &&
+                    ((offer.kind == oem::MISSION_OBJECTIVE_VISIT_SPACEPORT &&
+                      target->kind == oem::ECONOMIC_LOCATION_SPACEPORT) ||
+                     (offer.kind == oem::MISSION_OBJECTIVE_DOCK_STATION &&
+                      target->kind == oem::ECONOMIC_LOCATION_STATION));
+                if (objectiveBook_.find(offer.missionId) || !targetValid) {
+                    pruned.offers.erase(pruned.offers.begin() + i);
+                    changed = true;
+                } else ++i;
+            }
+            if (changed) {
+                std::map<std::string, oem::MissionObjectiveBoard> updated = objectiveBoards_;
+                updated[originLocation.canonicalId] = pruned;
+                const oem::Result saved = objectiveBoardStore_.save(objectiveBoardPath_, updated);
+                if (!saved.ok) return false;
+                objectiveBoards_.swap(updated);
+            }
+            offers = pruned.offers;
+            return !offers.empty();
+        }
+
+        VECTOR3 originGlobal = _V(0,0,0);
+        OBJHANDLE originBody = 0;
+        double originLng = 0.0, originLat = 0.0, originRadius = 0.0;
+        if (!resolveEconomicLocationPosition(originLocation, originGlobal, originBody,
+                originLng, originLat, originRadius)) return false;
+
+        std::vector<oem::MissionObjectiveCandidate> candidates;
+        const std::vector<oem::EconomicLocation>& locations = economicLocations_.entries();
+        for (std::size_t i = 0; i < locations.size(); ++i) {
+            const oem::EconomicLocation& target = locations[i];
+            if (target.canonicalId == originLocation.canonicalId) continue;
+            if (target.kind != oem::ECONOMIC_LOCATION_SPACEPORT &&
+                target.kind != oem::ECONOMIC_LOCATION_STATION) continue;
+            VECTOR3 targetGlobal = _V(0,0,0);
+            OBJHANDLE targetBody = 0;
+            double targetLng = 0.0, targetLat = 0.0, targetRadius = 0.0;
+            if (!resolveEconomicLocationPosition(target, targetGlobal, targetBody,
+                    targetLng, targetLat, targetRadius)) continue;
+            oem::MissionRouteDistance route;
+            if (target.kind == oem::ECONOMIC_LOCATION_SPACEPORT &&
+                originLocation.kind == oem::ECONOMIC_LOCATION_SPACEPORT &&
+                targetBody == originBody && originRadius > 0.0) {
+                route.metres = oem::surfaceDistanceMetres(originLat, originLng,
+                    targetLat, targetLng, originRadius);
+                route.kind = oem::MISSION_ROUTE_SURFACE;
+            } else {
+                const double dx = targetGlobal.x - originGlobal.x;
+                const double dy = targetGlobal.y - originGlobal.y;
+                const double dz = targetGlobal.z - originGlobal.z;
+                route.metres = sqrt(dx*dx + dy*dy + dz*dz);
+                route.kind = oem::MISSION_ROUTE_ESTIMATE;
+            }
+            route.valid = _finite(route.metres) && route.metres >= 0.0;
+            oem::MissionEconomicsConfig config;
+            if (route.kind == oem::MISSION_ROUTE_SURFACE)
+                config.nominalCruiseSpeedMetresPerSecond = 250.0;
+            const oem::MissionQuote quote = oem::quoteMission(500, 1, route, config);
+            if (!quote.valid) continue;
+            oem::MissionObjectiveCandidate candidate;
+            candidate.issuerId = issuerForLocation(originLocation.canonicalId);
+            candidate.kind = target.kind == oem::ECONOMIC_LOCATION_SPACEPORT
+                ? oem::MISSION_OBJECTIVE_VISIT_SPACEPORT : oem::MISSION_OBJECTIVE_DOCK_STATION;
+            candidate.targetLocationId = target.storageId;
+            candidate.targetBodyId = target.celestialBody;
+            candidate.targetCanonicalId = target.canonicalId;
+            candidate.reward = quote.reward;
+            candidate.allowanceSeconds = quote.allowanceSeconds;
+            if (candidate.kind == oem::MISSION_OBJECTIVE_VISIT_SPACEPORT) {
+                candidate.missionType = "VISIT";
+                candidate.missionTitle = "Spaceport visit";
+                candidate.missionBriefing = "Visit " + target.displayName + " on " +
+                    target.celestialBody + ". Orbiter must record a landing at this exact base with ground contact.";
+            } else {
+                candidate.missionType = "DOCK";
+                candidate.missionTitle = "Station rendezvous";
+                candidate.missionBriefing = "Rendezvous with " + target.displayName +
+                    ". Completion requires an actual Orbiter docking transition with this registered station.";
+            }
+            candidates.push_back(candidate);
+        }
+
+        const unsigned long generation = existing == objectiveBoards_.end()
+            ? 1 : existing->second.generation + 1;
+        char generationText[32]; sprintf(generationText, "%lu", generation);
+        oem::MissionObjectiveBoard generated;
+        const oem::Result result = objectiveBoardStore_.generate(origin, originLocation.canonicalId,
+            day, generation, sessionId_ + "|" + originLocation.canonicalId + "|" +
+            generationText + "|independent", candidates, generated);
+        if (!result.ok) return false;
+        std::map<std::string, oem::MissionObjectiveBoard> updated = objectiveBoards_;
+        updated[originLocation.canonicalId] = generated;
+        const oem::Result saved = objectiveBoardStore_.save(objectiveBoardPath_, updated);
+        if (!saved.ok) {
+            char message[512];
+            sprintf(message, "OEM Independent Mission Board: save failed (%s): %s",
+                saved.code.c_str(), saved.message.c_str());
+            oapiWriteLog(message);
+            return false;
+        }
+        objectiveBoards_.swap(updated);
+        for (std::size_t i = 0; i < generated.offers.size(); ++i)
+            if (!objectiveBook_.find(generated.offers[i].missionId))
+                offers.push_back(generated.offers[i]);
+        return !offers.empty();
+    }
+
+    oem::Result acceptObjectiveOffer(const std::string& vesselId, std::size_t offerIndex) {
+        if (!economyReady_ || economyJournalPath_.empty())
+            return oem::Result::failure("MISSION_ECONOMY_UNAVAILABLE", "The global economy journal is unavailable.");
+        if (!isFocusedVessel(vesselId))
+            return oem::Result::failure("MISSION_FOCUS", "Accept the objective from its assigned vessel.");
+        std::size_t activeObjectives = 0;
+        const std::vector<oem::MissionObjectiveContract>& activeMissions = objectiveBook_.missions();
+        for (std::size_t i = 0; i < activeMissions.size(); ++i)
+            if (activeMissions[i].objective.vesselId == vesselId &&
+                (activeMissions[i].status == oem::MISSION_OBJECTIVE_ACCEPTED ||
+                 activeMissions[i].status == oem::MISSION_OBJECTIVE_COMPLETED))
+                ++activeObjectives;
+        if (activeObjectives >= 3)
+            return oem::Result::failure("MISSION_LIMIT", "This vessel already has three active objective missions.");
+        const std::string origin = currentObjectiveLocation(vesselId);
+        oem::EconomicLocation originLocation;
+        if (origin.empty() || !resolveCurrentEconomicLocation(vesselId, origin, originLocation))
+            return oem::Result::failure("MISSION_ORIGIN", "Could not resolve the current economic location.");
+        std::map<std::string, oem::MissionObjectiveBoard>::iterator board =
+            objectiveBoards_.find(originLocation.canonicalId);
+        if (board == objectiveBoards_.end() || offerIndex >= board->second.offers.size())
+            return oem::Result::failure("MISSION_OFFER_UNAVAILABLE", "Selected objective offer is no longer available.");
+        const oem::MissionObjectiveOffer offer = board->second.offers[offerIndex];
+        if (objectiveBook_.find(offer.missionId))
+            return oem::Result::failure("MISSION_ALREADY_ACCEPTED", "This objective mission has already been accepted.");
+        const oem::EconomicLocation* target = economicLocations_.find(offer.targetCanonicalId);
+        if (!target || target->storageId != offer.targetLocationId ||
+            (offer.kind == oem::MISSION_OBJECTIVE_VISIT_SPACEPORT &&
+             target->kind != oem::ECONOMIC_LOCATION_SPACEPORT) ||
+            (offer.kind == oem::MISSION_OBJECTIVE_DOCK_STATION &&
+             target->kind != oem::ECONOMIC_LOCATION_STATION))
+            return oem::Result::failure("MISSION_TARGET_UNAVAILABLE", "The objective target is no longer a registered location.");
+        oem::Credits companyFunds = 0;
+        if (!ledger_.getBalance("company", companyFunds))
+            return oem::Result::failure("MISSION_ACCOUNT_UNAVAILABLE", "A company account is required before accepting paid missions.");
+        if (currentSimulationTime_ <= 0 || offer.allowanceSeconds <= 0 ||
+            offer.allowanceSeconds > LLONG_MAX - currentSimulationTime_)
+            return oem::Result::failure("MISSION_TIME", "Objective mission deadline is outside the supported range.");
+        oem::MissionObjective objective;
+        objective.missionId = offer.missionId;
+        objective.issuerId = offer.issuerId.empty() ? "issuer:" + originLocation.canonicalId : offer.issuerId;
+        objective.vesselId = vesselId;
+        objective.kind = offer.kind;
+        objective.originLocationId = originLocation.canonicalId;
+        objective.targetLocationId = offer.targetLocationId;
+        objective.targetBodyId = offer.targetBodyId;
+        objective.acceptedAt = currentSimulationTime_;
+        objective.deadline = currentSimulationTime_ + offer.allowanceSeconds;
+        const oem::Result accepted = economyJournalStore_.acceptMissionObjective(
+            economyJournalPath_, objectiveBook_, objective, offer.reward);
+        if (!accepted.ok) return accepted;
+        {
+            char diagnostic[768];
+            sprintf(diagnostic,
+                "OEM MISSION ACCEPTED: id=%s kind=%d vessel=%s targetBody=%s targetBase=%s acceptedAt=%lld deadline=%lld",
+                objective.missionId.c_str(), (int)objective.kind, objective.vesselId.c_str(),
+                objective.targetBodyId.c_str(), objective.targetLocationId.c_str(),
+                (long long)objective.acceptedAt, (long long)objective.deadline);
+            oapiWriteLog(diagnostic);
+        }
+        oem::MissionObjectiveBoard updated = board->second;
+        for (std::size_t i = 0; i < updated.offers.size(); ++i)
+            if (updated.offers[i].missionId == offer.missionId) {
+                updated.offers.erase(updated.offers.begin() + i);
+                break;
+            }
+        std::map<std::string, oem::MissionObjectiveBoard> candidate = objectiveBoards_;
+        candidate[originLocation.canonicalId] = updated;
+        const oem::Result saved = objectiveBoardStore_.save(objectiveBoardPath_, candidate);
+        if (!saved.ok) {
+            board->second = updated;
+            return oem::Result::failure("OBJECTIVE_BOARD_SAVE",
+                "Objective accepted durably, but the remaining board could not be saved; it will be reconciled on restart.");
+        }
+        objectiveBoards_.swap(candidate);
+        return oem::Result::success();
+    }
+
+    oem::Result cancelMissionObjective(const std::string& missionId, const std::string& vesselId) {
+        if (!economyReady_ || economyJournalPath_.empty())
+            return oem::Result::failure("MISSION_ECONOMY_UNAVAILABLE", "The global economy journal is unavailable.");
+        if (!isFocusedVessel(vesselId))
+            return oem::Result::failure("MISSION_FOCUS", "Cancel the objective from its assigned vessel.");
+        const oem::MissionObjectiveContract* mission = objectiveBook_.find(missionId);
+        if (!mission) return oem::Result::failure("MISSION_NOT_FOUND", "Objective mission does not exist.");
+        if (mission->objective.vesselId != vesselId)
+            return oem::Result::failure("MISSION_VESSEL", "This objective belongs to another vessel.");
+        return economyJournalStore_.cancelMissionObjective(
+            economyJournalPath_, objectiveBook_, missionId);
+    }
+
+    oem::Result cancelDeliveryContract(const std::string& contractId, const std::string& vesselId) {
+        if (!economyReady_ || economyJournalPath_.empty())
+            return oem::Result::failure("CONTRACT_ECONOMY_UNAVAILABLE", "Economy journal is unavailable.");
+        if (!isFocusedVessel(vesselId))
+            return oem::Result::failure("CONTRACT_FOCUS", "Cancel the contract from its assigned vessel.");
+        const oem::DeliveryContract *contract = contractBook_.find(contractId);
+        if (!contract) return oem::Result::failure("CONTRACT_NOT_FOUND", "Contract does not exist.");
+        if (contract->vesselId != vesselId)
+            return oem::Result::failure("CONTRACT_VESSEL", "This contract belongs to another vessel.");
+        return economyJournalStore_.cancelContract(economyJournalPath_, contractBook_, contractId);
+    }
+
+    oem::Result settleDeliveryContract(const std::string& contractId) {
+        if (!economyReady_ || economyJournalPath_.empty())
+            return oem::Result::failure("CONTRACT_ECONOMY_UNAVAILABLE", "Economy journal is unavailable.");
+        const oem::DeliveryContract *contract = contractBook_.find(contractId);
+        if (!contract)
+            return oem::Result::failure("CONTRACT_NOT_FOUND", "Contract does not exist.");
+        std::map<std::string, oem::CargoManifest>::iterator manifest =
+            cargoManifests_.find(contract->vesselId);
+        if (manifest == cargoManifests_.end())
+            return oem::Result::failure("CONTRACT_CARGO_MISSING", "Contract vessel cargo manifest is unavailable.");
+        const bool wasSettled = contract->status == oem::CONTRACT_SETTLED;
+        const oem::Credits reward = contract->reward;
+        const std::string vesselId = contract->vesselId;
+        const oem::Result result = economyJournalStore_.settleContract(
+            economyJournalPath_, contractBook_, contractId, "company", ledger_);
+        if (result.ok && !wasSettled) {
+            char notice[512];
+            sprintf(notice, "CONTRACT COMPLETED\nDelivery received\n+ %lld CR",
+                    (long long)reward);
+            showCompletionNotice(notice);
+            char log[512];
+            sprintf(log, "OEM CONTRACT SETTLED: id=%s vessel=%s reward=%lld",
+                    contractId.c_str(), vesselId.c_str(), (long long)reward);
+            oapiWriteLog(log);
+        }
+        return result;
+    }
+
     bool companyBalance(oem::Credits& balance) const {
         return economyReady_ && ledger_.getBalance("company", balance);
+    }
+
+    bool companyReputation(int& reputation) const {
+        if (!economyReady_) return false;
+        if (ledger_.getReputation("company", reputation)) return true;
+        oem::Credits balance = 0;
+        if (!ledger_.getBalance("company", balance)) return false;
+        reputation = 50;
+        return true;
+    }
+
+    std::string issuerForLocation(const std::string& canonicalLocationId) const {
+        return missionIssuerRegistry_.issuerForLocation(canonicalLocationId);
+    }
+
+    bool issuerReputation(const std::string& issuerId, int& reputation) const {
+        if (!economyReady_ || issuerId.empty()) return false;
+        if (ledger_.getReputation(issuerId, reputation)) return true;
+        reputation = 50;
+        return true;
     }
 
     const oem::CargoServiceInventory* cargoServiceInventory(const std::string& serviceId) const {
@@ -241,6 +1057,30 @@ public:
                 return std::string(otherName);
         }
         return std::string();
+    }
+
+    std::string dockedEconomicStation(const std::string& vesselId) const {
+        OBJHANDLE focus = oapiGetFocusObject();
+        if (!focus || !oapiIsVessel(focus)) return std::string();
+        VESSEL* vessel = oapiGetVesselInterface(focus);
+        if (!vessel || !vessel->GetName() || vesselId != vessel->GetName())
+            return std::string();
+        for (UINT i = 0; i < vessel->DockCount(); ++i) {
+            DOCKHANDLE dock = vessel->GetDockHandle(i);
+            if (!dock) continue;
+            OBJHANDLE other = vessel->GetDockStatus(dock);
+            if (!other || !oapiIsVessel(other)) continue;
+            char name[128] = {};
+            oapiGetObjectName(other, name, sizeof(name));
+            if (name[0] && economicStations_.isStation(name)) return std::string(name);
+        }
+        return std::string();
+    }
+
+    std::string currentObjectiveLocation(const std::string& vesselId) const {
+        const std::string service = currentMarketLocation(vesselId);
+        if (!service.empty()) return service;
+        return dockedEconomicStation(vesselId);
     }
 
     std::string currentMarketLocation(const std::string& vesselId) const {
@@ -275,6 +1115,73 @@ public:
             }
         }
         return nearest >= 0.0 && nearest <= 5000.0 ? baseId : std::string();
+    }
+
+    bool resolveEconomicLocationPosition(const oem::EconomicLocation& location,
+            VECTOR3& globalPosition, OBJHANDLE& bodyHandle,
+            double& longitude, double& latitude, double& bodyRadius) const {
+        bodyHandle = 0;
+        longitude = latitude = bodyRadius = 0.0;
+        if (location.kind == oem::ECONOMIC_LOCATION_SPACEPORT) {
+            char bodyName[256] = {};
+            char baseName[256] = {};
+            strncpy(bodyName, location.celestialBody.c_str(), sizeof(bodyName)-1);
+            strncpy(baseName, location.storageId.c_str(), sizeof(baseName)-1);
+            bodyHandle = oapiGetObjectByName(bodyName);
+            if (!bodyHandle || oapiGetObjectType(bodyHandle) != OBJTP_PLANET) return false;
+            OBJHANDLE base = oapiGetBaseByName(bodyHandle, baseName);
+            if (!base) return false;
+            double radius = 0.0;
+            oapiGetBaseEquPos(base, &longitude, &latitude, &radius);
+            bodyRadius = oapiGetSize(bodyHandle);
+            if (!(bodyRadius > 0.0) || !_finite(bodyRadius) ||
+                !_finite(longitude) || !_finite(latitude)) return false;
+            oapiEquToGlobal(bodyHandle, longitude, latitude, radius, &globalPosition);
+            return true;
+        }
+        if (location.kind == oem::ECONOMIC_LOCATION_STATION) {
+            char stationName[256] = {};
+            strncpy(stationName, location.storageId.c_str(), sizeof(stationName)-1);
+            OBJHANDLE stationHandle = oapiGetObjectByName(stationName);
+            if (!stationHandle || !oapiIsVessel(stationHandle)) return false;
+            VESSEL* station = oapiGetVesselInterface(stationHandle);
+            if (!station) return false;
+            bodyHandle = station->GetGravityRef();
+            station->GetGlobalPos(globalPosition);
+            if (bodyHandle) {
+                double radius = 0.0;
+                OBJHANDLE coordinateBody = station->GetEquPos(longitude, latitude, radius);
+                if (coordinateBody == bodyHandle) bodyRadius = oapiGetSize(bodyHandle);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    bool resolveCurrentEconomicLocation(const std::string& vesselId,
+            const std::string& storageId, oem::EconomicLocation& location) const {
+        std::string docked = dockedCargoService(vesselId);
+        if (docked.empty()) docked = dockedEconomicStation(vesselId);
+        if (!docked.empty()) {
+            const oem::EconomicLocation* found =
+                economicLocations_.find(std::string("station:") + docked);
+            if (!found) return false;
+            location = *found;
+            return location.storageId == storageId;
+        }
+        OBJHANDLE focus = oapiGetFocusObject();
+        if (!focus || !oapiIsVessel(focus)) return false;
+        VESSEL* vessel = oapiGetVesselInterface(focus);
+        if (!vessel || !vessel->GetName() || vesselId != vessel->GetName()) return false;
+        OBJHANDLE body = vessel->GetSurfaceRef();
+        if (!body) return false;
+        char bodyName[256] = {};
+        oapiGetObjectName(body, bodyName, sizeof(bodyName));
+        const oem::EconomicLocation* found = economicLocations_.find(
+            std::string("surface:") + bodyName + "/" + storageId);
+        if (!found || found->kind != oem::ECONOMIC_LOCATION_SPACEPORT) return false;
+        location = *found;
+        return true;
     }
 
     oem::Result performCargoExchangeTest(const std::string& vesselId,
@@ -509,11 +1416,51 @@ public:
     }
 
     void clbkSimulationStart(RenderMode mode) override {
+        clearCompletionNotice();
         landingMonitors_.clear();
         flightMonitors_.clear();
         dockingMonitors_.clear();
         cargoManifests_.clear();
         cargoManifestLoadAttempted_.clear();
+        contractBook_ = oem::DeliveryContractBook();
+        objectiveBook_ = oem::MissionObjectiveBook();
+        pendingContractOffers_.clear();
+        contractOfferSequence_ = 0;
+        missionBoards_.clear();
+        missionBoardsReady_ = false;
+        objectiveBoards_.clear();
+        objectiveBoardsReady_ = false;
+        if (!missionBoardPath_.empty()) {
+            const DWORD boardAttributes = GetFileAttributesA(missionBoardPath_.c_str());
+            if (boardAttributes == INVALID_FILE_ATTRIBUTES &&
+                (GetLastError() == ERROR_FILE_NOT_FOUND || GetLastError() == ERROR_PATH_NOT_FOUND)) {
+                missionBoardsReady_ = true;
+            } else if (boardAttributes != INVALID_FILE_ATTRIBUTES) {
+                const oem::Result boardLoad = missionBoardStore_.load(missionBoardPath_, missionBoards_);
+                missionBoardsReady_ = boardLoad.ok;
+                if (!boardLoad.ok) {
+                    char boardError[512]; sprintf(boardError, "OEM Mission Board: load failed (%s): %s", boardLoad.code.c_str(), boardLoad.message.c_str());
+                    oapiWriteLog(boardError);
+                }
+            }
+        }
+        if (!objectiveBoardPath_.empty()) {
+            const DWORD objectiveAttributes = GetFileAttributesA(objectiveBoardPath_.c_str());
+            if (objectiveAttributes == INVALID_FILE_ATTRIBUTES &&
+                (GetLastError() == ERROR_FILE_NOT_FOUND || GetLastError() == ERROR_PATH_NOT_FOUND)) {
+                objectiveBoardsReady_ = true;
+            } else if (objectiveAttributes != INVALID_FILE_ATTRIBUTES) {
+                const oem::Result objectiveLoad = objectiveBoardStore_.load(
+                    objectiveBoardPath_, objectiveBoards_);
+                objectiveBoardsReady_ = objectiveLoad.ok;
+                if (!objectiveLoad.ok) {
+                    char objectiveError[512];
+                    sprintf(objectiveError, "OEM Independent Mission Board: load failed (%s): %s",
+                        objectiveLoad.code.c_str(), objectiveLoad.message.c_str());
+                    oapiWriteLog(objectiveError);
+                }
+            }
+        }
         cargoServiceInventories_.clear();
         cargoServiceInventoryLoadAttempted_.clear();
         ledger_ = oem::Ledger();
@@ -574,12 +1521,18 @@ public:
                     (unsigned long)economicStations_.size());
             oapiWriteLog(message);
         }
+        // Build the economic-location index before journal recovery: replay may
+        // need a planetary destination inventory even when the player is elsewhere.
+        rebuildSpaceportRegistry();
         if (servicesLoaded.ok) {
             const std::set<std::string>& serviceIds = cargoServices_.vesselIds();
             for (std::set<std::string>::const_iterator it = serviceIds.begin(); it != serviceIds.end(); ++it)
                 ensureCargoServiceInventory(*it);
-            // Restore explicit opening stock for previously visited surface bases
-            // before replaying economy.journal, just as for registered stations.
+            const std::vector<oem::EconomicLocation>& locations = economicLocations_.entries();
+            for (std::size_t i = 0; i < locations.size(); ++i)
+                ensureCargoServiceInventory(locations[i].storageId);
+            // Restore opening stock for legacy surface locations already referenced
+            // by the event journal before replaying the global economy journal.
             const std::vector<oem::SimulationEvent>& priorEvents = eventQueue_.events();
             for (std::size_t i = 0; i < priorEvents.size(); ++i)
                 if (priorEvents[i].type == oem::SIM_EVENT_LANDING &&
@@ -587,11 +1540,11 @@ public:
                     ensureCargoServiceInventory(priorEvents[i].baseId);
             initializeEconomyState();
         }
-        rebuildSpaceportRegistry();
         oapiWriteLog((char*)"OEM Landing Bridge: simulation monitoring started.");
     }
 
     void clbkSimulationEnd() override {
+        clearCompletionNotice();
         landingMonitors_.clear();
         flightMonitors_.clear();
         dockingMonitors_.clear();
@@ -618,6 +1571,37 @@ public:
         const long long simMilliseconds = (long long)(simt * 1000.0 + 0.5);
         const oem::SimulationSeconds simSeconds =
             (oem::SimulationSeconds)(simt >= 0.0 ? simt : 0.0);
+        updateCompletionNotice(simSeconds);
+
+        if (economyReady_) {
+            reconcileObjectiveEvents();
+            settleCompletedContracts();
+            settleCompletedObjectives();
+            oem::MissionObjectiveBook objectiveDue = objectiveBook_;
+            const std::vector<std::string> expiredObjectives = objectiveDue.expireDue(simSeconds);
+            for (std::size_t i = 0; i < expiredObjectives.size(); ++i) {
+                const oem::Result committed = economyJournalStore_.expireMissionObjective(
+                    economyJournalPath_, objectiveBook_, expiredObjectives[i], ledger_, "company", simSeconds, missionFailurePolicy_);
+                if (!committed.ok) {
+                    char error[512];
+                    sprintf(error, "OEM MISSION: expiry commit failed id=%s (%s): %s",
+                        expiredObjectives[i].c_str(), committed.code.c_str(), committed.message.c_str());
+                    oapiWriteLog(error);
+                }
+            }
+            oem::DeliveryContractBook due = contractBook_;
+            const std::vector<std::string> expired = due.expireDue(simSeconds);
+            for (std::size_t i = 0; i < expired.size(); ++i) {
+                const oem::Result committed = economyJournalStore_.expireContract(
+                    economyJournalPath_, contractBook_, expired[i], ledger_, "company", simSeconds, missionFailurePolicy_);
+                if (!committed.ok) {
+                    char error[512];
+                    sprintf(error, "OEM CONTRACT: expiry commit failed id=%s (%s): %s",
+                        expired[i].c_str(), committed.code.c_str(), committed.message.c_str());
+                    oapiWriteLog(error);
+                }
+            }
+        }
 
         // OEM follows only Orbiter's current focus vessel. A focus change
         // establishes a fresh baseline so inactive vessels cannot generate events.
@@ -778,7 +1762,21 @@ public:
         }
 
         oem::SpaceportLandingEvent landingEvent;
-        if (landingMonitors_[hVessel].observe(landing, landingEvent)) {
+        const bool landingDetected = landingMonitors_[hVessel].observe(landing, landingEvent);
+        static std::set<std::string> landingDiagnosticLogged;
+        if (!landing.groundContact) landingDiagnosticLogged.erase(landing.vesselId);
+        if (landing.groundContact && landing.landed && landing.proximityKnown &&
+            landingDiagnosticLogged.insert(landing.vesselId).second) {
+            char diagnostic[768];
+            sprintf(diagnostic,
+                "OEM LANDING SAMPLE: vessel=%s landed=%d contact=%d body=%s nearestBase=%s distance=%.1f m detected=%d simt=%lld",
+                landing.vesselId.c_str(), landing.landed ? 1 : 0,
+                landing.groundContact ? 1 : 0, landing.bodyId.c_str(),
+                landing.nearestBaseId.c_str(), landing.nearestBaseDistanceMetres,
+                landingDetected ? 1 : 0, (long long)landing.simulationTime);
+            oapiWriteLog(diagnostic);
+        }
+        if (landingDetected) {
             oem::SimulationEvent event;
             event.type = oem::SIM_EVENT_LANDING;
             event.vesselId = landingEvent.vesselId;
@@ -813,6 +1811,127 @@ public:
     }
 
 private:
+    void showCompletionNotice(const char *text) {
+        if (!text || !*text) return;
+        if (!completionNote_)
+            completionNote_ = oapiCreateAnnotation(false, 1.25, _V(0.25, 1.0, 0.35));
+        if (!completionNote_) {
+            oapiWriteLog((char*)"OEM CONTRACT: could not create completion annotation.");
+            return;
+        }
+        oapiAnnotationSetPos(completionNote_, 0.42, 0.40, 0.86, 0.60);
+        oapiAnnotationSetSize(completionNote_, 1.25);
+        oapiAnnotationSetColour(completionNote_, _V(0.25, 1.0, 0.35));
+        char buffer[512];
+        strncpy(buffer, text, sizeof(buffer) - 1);
+        buffer[sizeof(buffer) - 1] = '\0';
+        oapiAnnotationSetText(completionNote_, buffer);
+        notificationUntil_ = currentSimulationTime_ + 7;
+    }
+
+    void updateCompletionNotice(oem::SimulationSeconds now) {
+        if (completionNote_ && notificationUntil_ > 0 && now >= notificationUntil_)
+            clearCompletionNotice();
+    }
+
+    void clearCompletionNotice() {
+        if (completionNote_) {
+            oapiDelAnnotation(completionNote_);
+            completionNote_ = 0;
+        }
+        notificationUntil_ = 0;
+    }
+
+    void settleCompletedContracts() {
+        std::vector<std::string> pending;
+        const std::vector<oem::DeliveryContract>& contracts = contractBook_.contracts();
+        for (std::size_t i = 0; i < contracts.size(); ++i)
+            if (contracts[i].status == oem::CONTRACT_COMPLETED)
+                pending.push_back(contracts[i].contractId);
+        for (std::size_t i = 0; i < pending.size(); ++i) {
+            const oem::Result settled = settleDeliveryContract(pending[i]);
+            if (!settled.ok) {
+                char error[512];
+                sprintf(error, "OEM CONTRACT: automatic settlement retry failed id=%s (%s): %s",
+                    pending[i].c_str(), settled.code.c_str(), settled.message.c_str());
+                oapiWriteLog(error);
+            }
+        }
+    }
+
+    void reconcileObjectiveEvents() {
+        if (!economyReady_) return;
+        const std::vector<oem::SimulationEvent>& events = eventQueue_.events();
+        std::vector<std::string> acceptedIds;
+        const std::vector<oem::MissionObjectiveContract>& missions = objectiveBook_.missions();
+        for (std::size_t i = 0; i < missions.size(); ++i)
+            if (missions[i].status == oem::MISSION_OBJECTIVE_ACCEPTED)
+                acceptedIds.push_back(missions[i].objective.missionId);
+        for (std::size_t i = 0; i < acceptedIds.size(); ++i) {
+            const oem::MissionObjectiveContract* mission = objectiveBook_.find(acceptedIds[i]);
+            if (!mission) continue;
+            std::map<std::string, oem::CargoManifest>::const_iterator manifest =
+                cargoManifests_.find(mission->objective.vesselId);
+            if (manifest == cargoManifests_.end()) continue;
+            for (std::size_t n = events.size(); n > 0; --n) {
+                const oem::SimulationEvent& event = events[n - 1];
+                if (event.vesselId != mission->objective.vesselId ||
+                    !oem::missionObjectiveMatchesEvent(mission->objective, event, manifest->second))
+                    continue;
+                oem::MissionObjectiveBook candidate = objectiveBook_;
+                const oem::Result marked = candidate.restoreCompleted(
+                    acceptedIds[i], event.eventId, event.simulationTime);
+                if (!marked.ok) break;
+                const oem::MissionObjectiveContract* completed = candidate.find(acceptedIds[i]);
+                const oem::Result committed = completed
+                    ? economyJournalStore_.completeMissionObjective(
+                        economyJournalPath_, candidate, acceptedIds[i],
+                        completed->completionEventId, completed->completedAt)
+                    : oem::Result::failure("MISSION_OBJECTIVE_NOT_FOUND", "Completed objective disappeared.");
+                if (committed.ok) {
+                    objectiveBook_ = candidate;
+                    char message[512];
+                    sprintf(message, "OEM MISSION EVENT RECOVERED: id=%s event=%s",
+                        acceptedIds[i].c_str(), event.eventId.c_str());
+                    oapiWriteLog(message);
+                } else {
+                    char error[512];
+                    sprintf(error, "OEM MISSION: event recovery commit failed id=%s (%s): %s",
+                        acceptedIds[i].c_str(), committed.code.c_str(), committed.message.c_str());
+                    oapiWriteLog(error);
+                }
+                break;
+            }
+        }
+    }
+
+    void settleCompletedObjectives() {
+        std::vector<std::string> pending;
+        const std::vector<oem::MissionObjectiveContract>& missions = objectiveBook_.missions();
+        for (std::size_t i = 0; i < missions.size(); ++i)
+            if (missions[i].status == oem::MISSION_OBJECTIVE_COMPLETED)
+                pending.push_back(missions[i].objective.missionId);
+        for (std::size_t i = 0; i < pending.size(); ++i) {
+            const oem::MissionObjectiveContract* item = objectiveBook_.find(pending[i]);
+            if (!item) continue;
+            const oem::Credits reward = item->reward;
+            const oem::Result settled = economyJournalStore_.settleMissionObjective(
+                economyJournalPath_, objectiveBook_, pending[i], "company", ledger_);
+            if (settled.ok) {
+                char notice[512];
+                sprintf(notice, "MISSION COMPLETED\nObjective verified\n+ %lld CR", (long long)reward);
+                showCompletionNotice(notice);
+                char log[512];
+                sprintf(log, "OEM MISSION SETTLED: id=%s reward=%lld", pending[i].c_str(), (long long)reward);
+                oapiWriteLog(log);
+            } else {
+                char error[512];
+                sprintf(error, "OEM MISSION: automatic settlement retry failed id=%s (%s): %s",
+                    pending[i].c_str(), settled.code.c_str(), settled.message.c_str());
+                oapiWriteLog(error);
+            }
+        }
+    }
 
     // Rebuild from Orbiter handles every scenario start; the saved registry is a derived snapshot.
     void rebuildSpaceportRegistry() {
@@ -982,9 +2101,117 @@ private:
         return true;
     }
 
+    bool recoverPropellantTransactions(oem::Ledger& recoveredLedger) {
+        if (propellantTransactionJournalPath_.empty()) return false;
+        std::map<std::string, oem::PropellantTransaction> transactions;
+        oem::Result loaded = propellantTransactionJournal_.load(
+            propellantTransactionJournalPath_, transactions);
+        if (!loaded.ok) {
+            char message[512];
+            sprintf(message, "OEM Propellant: transaction journal load failed (%s): %s",
+                loaded.code.c_str(), loaded.message.c_str());
+            oapiWriteLog(message);
+            return false;
+        }
+        for (std::map<std::string, oem::PropellantTransaction>::const_iterator it =
+                 transactions.begin(); it != transactions.end(); ++it) {
+            const oem::PropellantTransaction& tx = it->second;
+            const std::string chargeId = "propellant-charge:" + tx.operationId;
+            if (tx.state == oem::PROPELLANT_TX_ABORTED) continue;
+            if (tx.state == oem::PROPELLANT_TX_COMMITTED) {
+                oem::Result charge = economyJournalStore_.chargePropellant(
+                    economyJournalPath_, tx.operationId, "company",
+                    tx.quote.totalCostCredits, tx.simulationTime, recoveredLedger);
+                if (!charge.ok) return false;
+                continue;
+            }
+            char vesselName[128] = {};
+            strncpy(vesselName, tx.vesselId.c_str(), sizeof(vesselName) - 1);
+            OBJHANDLE vesselHandle = oapiGetVesselByName(vesselName);
+            if (!vesselHandle || !oapiIsVessel(vesselHandle)) return false;
+            VESSEL* vessel = oapiGetVesselInterface(vesselHandle);
+            if (!vessel) return false;
+            std::vector<oem::PropellantResourceState> observed;
+            const DWORD count = vessel->GetPropellantCount();
+            observed.reserve(count);
+            for (DWORD n = 0; n < count; ++n) {
+                PROPELLANT_HANDLE resource = vessel->GetPropellantHandleByIndex(n);
+                if (!resource) return false;
+                const double mass = vessel->GetPropellantMass(resource);
+                const double capacity = vessel->GetPropellantMaxMass(resource);
+                if (!_finite(mass) || !_finite(capacity) || mass < 0.0 ||
+                    capacity < 0.0 || mass > capacity) return false;
+                observed.push_back(oem::PropellantResourceState(mass, capacity));
+            }
+            std::vector<double> rollback;
+            const oem::PropellantRecoveryAction action =
+                oem::classifyPropellantRecovery(tx, observed, rollback);
+            if (action == oem::PROPELLANT_RECOVERY_FINALIZE_CHARGE) {
+                oem::Result charge = economyJournalStore_.chargePropellant(
+                    economyJournalPath_, tx.operationId, "company",
+                    tx.quote.totalCostCredits, tx.simulationTime, recoveredLedger);
+                if (!charge.ok) return false;
+                oem::Result terminal = propellantTransactionJournal_.setTerminalState(
+                    propellantTransactionJournalPath_, tx.operationId, oem::PROPELLANT_TX_COMMITTED);
+                if (!terminal.ok) return false;
+            } else if (action == oem::PROPELLANT_RECOVERY_ABORT_UNCHANGED) {
+                if (recoveredLedger.hasOperation(chargeId)) return false;
+                oem::Result terminal = propellantTransactionJournal_.setTerminalState(
+                    propellantTransactionJournalPath_, tx.operationId, oem::PROPELLANT_TX_ABORTED);
+                if (!terminal.ok) return false;
+            } else if (action == oem::PROPELLANT_RECOVERY_ROLLBACK_PARTIAL) {
+                if (recoveredLedger.hasOperation(chargeId)) return false;
+                for (DWORD n = 0; n < count; ++n) {
+                    PROPELLANT_HANDLE resource = vessel->GetPropellantHandleByIndex(n);
+                    if (!resource || n >= rollback.size()) return false;
+                    vessel->SetPropellantMass(resource, rollback[n]);
+                }
+                bool restored = true;
+                for (DWORD n = 0; n < count; ++n) {
+                    PROPELLANT_HANDLE resource = vessel->GetPropellantHandleByIndex(n);
+                    if (!resource) { restored = false; break; }
+                    const double mass = vessel->GetPropellantMass(resource);
+                    const double target = rollback[n];
+                    const double tolerance = 1.0e-9 * (fabs(target) > 1.0 ? fabs(target) : 1.0);
+                    if (!_finite(mass) || fabs(mass - target) > tolerance) restored = false;
+                }
+                if (!restored) return false;
+                oem::Result terminal = propellantTransactionJournal_.setTerminalState(
+                    propellantTransactionJournalPath_, tx.operationId, oem::PROPELLANT_TX_ABORTED);
+                if (!terminal.ok) return false;
+            } else {
+                char message[384];
+                sprintf(message, "OEM Propellant: recovery conflict for operation %s; no automatic mutation performed.",
+                    tx.operationId.c_str());
+                oapiWriteLog(message);
+                return false;
+            }
+        }
+        return true;
+    }
+
     bool initializeEconomyState() {
-        if (economyJournalPath_.empty() || accountsPath_.empty() || cargoCatalogPath_.empty()) {
+        if (economyJournalPath_.empty() || accountsPath_.empty() || cargoCatalogPath_.empty() || missionFailurePolicyPath_.empty() || missionIssuerRegistryPath_.empty()) {
             oapiWriteLog((char*)"OEM Economy: could not resolve economy configuration paths.");
+            return false;
+        }
+
+        const oem::Result failurePolicy = missionFailurePolicyStore_.loadOrCreate(
+            missionFailurePolicyPath_, missionFailurePolicy_);
+        if (!failurePolicy.ok) {
+            char message[512];
+            sprintf(message, "OEM Economy: mission failure policy failed (%s): %s",
+                    failurePolicy.code.c_str(), failurePolicy.message.c_str());
+            oapiWriteLog(message);
+            return false;
+        }
+
+        const oem::Result issuerRegistry = missionIssuerRegistry_.loadOrCreate(missionIssuerRegistryPath_);
+        if (!issuerRegistry.ok) {
+            char message[512];
+            sprintf(message, "OEM Economy: mission issuer registry failed (%s): %s",
+                    issuerRegistry.code.c_str(), issuerRegistry.message.c_str());
+            oapiWriteLog(message);
             return false;
         }
 
@@ -1024,6 +2251,51 @@ private:
             oapiWriteLog((char*)"OEM Economy: cargo_catalog.cfg missing; market trading remains unavailable until explicitly configured.");
         }
 
+        // Give every planetary spaceport a small, usable opening stock so a
+        // delivery contract can be generated with that base as its origin.
+        // This is a one-time bootstrap only: any non-empty configured inventory
+        // is preserved, and the resulting stock is persisted before journal
+        // replay so recovery sees the same opening state on every launch.
+        if (!openingCatalog.entries().empty()) {
+            const std::vector<oem::EconomicLocation>& locations = economicLocations_.entries();
+            for (std::size_t i = 0; i < locations.size(); ++i) {
+                if (locations[i].kind != oem::ECONOMIC_LOCATION_SPACEPORT) continue;
+                if (!ensureCargoServiceInventory(locations[i].storageId)) {
+                    char message[512];
+                    sprintf(message, "OEM Economy: cannot bootstrap planetary stock for %s.",
+                            locations[i].canonicalId.c_str());
+                    oapiWriteLog(message);
+                    return false;
+                }
+                std::map<std::string, oem::CargoServiceInventory>::iterator stock =
+                    cargoServiceInventories_.find(locations[i].storageId);
+                if (stock == cargoServiceInventories_.end() ||
+                    !stock->second.lines().empty() || !stock->second.history().empty())
+                    continue;
+                const oem::CargoDefinition& starter = openingCatalog.entries()[0];
+                const oem::Result seeded = stock->second.setInitialStock(
+                    starter.cargoId, 1, starter.unitMassKg);
+                if (!seeded.ok) return false;
+                const std::string stockPath =
+                    makeCargoStockConfigPath(module_, locations[i].storageId);
+                if (stockPath.empty()) return false;
+                const oem::Result saved = cargoStockConfigStore_.save(stockPath, stock->second);
+                if (!saved.ok) {
+                    char message[512];
+                    sprintf(message, "OEM Economy: could not persist starter stock for %s (%s): %s",
+                            locations[i].canonicalId.c_str(), saved.code.c_str(),
+                            saved.message.c_str());
+                    oapiWriteLog(message);
+                    return false;
+                }
+                char message[512];
+                sprintf(message, "OEM Economy: seeded 1 unit of %s at planetary base %s (%s).",
+                        starter.cargoId.c_str(), locations[i].displayName.c_str(),
+                        locations[i].celestialBody.c_str());
+                oapiWriteLog(message);
+            }
+        }
+
         // Recovery must start from the opening inventory of every registered
         // cargo service. Loading only the currently encountered location makes
         // valid older journal entries fail when their service is not yet docked.
@@ -1042,7 +2314,7 @@ private:
         std::map<std::string, oem::CargoManifest> openingManifests;
         const oem::Result recovered = economyJournalStore_.load(
             economyJournalPath_, openingCatalog, openingLedger,
-            cargoServiceInventories_, openingManifests);
+            cargoServiceInventories_, openingManifests, &contractBook_, &objectiveBook_);
         if (!recovered.ok) {
             char message[512];
             sprintf(message, "OEM Economy: global journal recovery failed (%s): %s",
@@ -1051,6 +2323,9 @@ private:
             return false;
         }
 
+        propellantRecoveryReady_ = recoverPropellantTransactions(openingLedger);
+        if (!propellantRecoveryReady_)
+            oapiWriteLog((char*)"OEM Propellant: unresolved transaction recovery; new refuelling operations are disabled.");
         ledger_ = openingLedger;
         cargoCatalog_ = openingCatalog;
         cargoManifests_.swap(openingManifests);
@@ -1085,6 +2360,116 @@ private:
         }
         eventQueue_ = candidate;
 
+        // Contract completion is derived from the same verified Orbiter event
+        // and the vessel's durable OEM cargo manifest; no MFD button can fake it.
+        if (economyReady_) {
+            std::map<std::string, oem::CargoManifest>::const_iterator manifest =
+                cargoManifests_.find(event.vesselId);
+            if (manifest != cargoManifests_.end()) {
+                oem::DeliveryContractBook observed = contractBook_;
+                observed.observe(event, manifest->second);
+                const std::vector<oem::DeliveryContract>& updated = observed.contracts();
+                for (std::size_t i = 0; i < updated.size(); ++i) {
+                    const oem::DeliveryContract *before = contractBook_.find(updated[i].contractId);
+                    if (!before || before->status != oem::CONTRACT_ACCEPTED) continue;
+                    oem::Result committed = oem::Result::success();
+                    if (updated[i].status == oem::CONTRACT_COMPLETED) {
+                        std::map<std::string, oem::CargoManifest>::iterator arrivalManifest =
+                            cargoManifests_.find(updated[i].vesselId);
+                        if (arrivalManifest == cargoManifests_.end()) {
+                            committed = oem::Result::failure("CONTRACT_CARGO_MISSING",
+                                "Contract vessel manifest is unavailable at destination.");
+                        } else {
+                            committed = economyJournalStore_.completeContract(
+                                economyJournalPath_, contractBook_, updated[i].contractId,
+                                updated[i].completionEventId, updated[i].completedAt,
+                                cargoServiceInventories_, arrivalManifest->second);
+                            if (committed.ok)
+                                committed = settleDeliveryContract(updated[i].contractId);
+                        }
+                    }
+                    else if (updated[i].status == oem::CONTRACT_EXPIRED)
+                        committed = economyJournalStore_.expireContract(
+                            economyJournalPath_, contractBook_, updated[i].contractId, ledger_, "company", event.simulationTime, missionFailurePolicy_);
+                    if (!committed.ok) {
+                        char contractError[512];
+                        sprintf(contractError, "OEM CONTRACT: journal commit failed id=%s (%s): %s",
+                            updated[i].contractId.c_str(), committed.code.c_str(),
+                            committed.message.c_str());
+                        oapiWriteLog(contractError);
+                    }
+                }
+            }
+        }
+
+        if (economyReady_) {
+            std::map<std::string, oem::CargoManifest>::const_iterator manifest =
+                cargoManifests_.find(event.vesselId);
+            if (manifest != cargoManifests_.end()) {
+                std::vector<std::string> acceptedIds;
+                const std::vector<oem::MissionObjectiveContract>& missions = objectiveBook_.missions();
+                for (std::size_t i = 0; i < missions.size(); ++i)
+                    if (missions[i].status == oem::MISSION_OBJECTIVE_ACCEPTED &&
+                        missions[i].objective.vesselId == event.vesselId)
+                        acceptedIds.push_back(missions[i].objective.missionId);
+                for (std::size_t i = 0; i < acceptedIds.size(); ++i) {
+                    const oem::MissionObjectiveContract* current = objectiveBook_.find(acceptedIds[i]);
+                    if (!current || current->status != oem::MISSION_OBJECTIVE_ACCEPTED) continue;
+                    const bool objectiveMatch =
+                        oem::missionObjectiveMatchesEvent(current->objective, event, manifest->second);
+                    if (event.type == oem::SIM_EVENT_LANDING &&
+                        current->objective.kind == oem::MISSION_OBJECTIVE_VISIT_SPACEPORT) {
+                        char diagnostic[1024];
+                        sprintf(diagnostic,
+                            "OEM MISSION LANDING CHECK: id=%s vessel=%s/%s targetBody=%s eventBody=%s targetBase=%s eventBase=%s locationKnown=%d eventTime=%lld acceptedAt=%lld deadline=%lld match=%d",
+                            current->objective.missionId.c_str(), current->objective.vesselId.c_str(),
+                            event.vesselId.c_str(), current->objective.targetBodyId.c_str(),
+                            event.bodyId.c_str(), current->objective.targetLocationId.c_str(),
+                            event.baseId.c_str(), event.locationKnown ? 1 : 0,
+                            (long long)event.simulationTime,
+                            (long long)current->objective.acceptedAt,
+                            (long long)current->objective.deadline, objectiveMatch ? 1 : 0);
+                        oapiWriteLog(diagnostic);
+                    }
+                    if (objectiveMatch) {
+                        oem::MissionObjectiveBook candidate = objectiveBook_;
+                        const oem::Result marked = candidate.restoreCompleted(
+                            acceptedIds[i], event.eventId, event.simulationTime);
+                        if (!marked.ok) continue;
+                        const oem::MissionObjectiveContract* completed = candidate.find(acceptedIds[i]);
+                        const oem::Result committed = completed
+                            ? economyJournalStore_.completeMissionObjective(
+                                economyJournalPath_, candidate, acceptedIds[i],
+                                completed->completionEventId, completed->completedAt)
+                            : oem::Result::failure("MISSION_OBJECTIVE_NOT_FOUND", "Completed objective disappeared.");
+                        if (committed.ok) {
+                            objectiveBook_ = candidate;
+                            char missionMessage[512];
+                            sprintf(missionMessage,
+                                "OEM MISSION OBJECTIVE COMPLETED: id=%s event=%s vessel=%s",
+                                acceptedIds[i].c_str(), event.eventId.c_str(), event.vesselId.c_str());
+                            oapiWriteLog(missionMessage);
+                        } else {
+                            char missionError[512];
+                            sprintf(missionError, "OEM MISSION: completion commit failed id=%s (%s): %s",
+                                acceptedIds[i].c_str(), committed.code.c_str(), committed.message.c_str());
+                            oapiWriteLog(missionError);
+                        }
+                    } else if (current->objective.deadline > 0 &&
+                               event.simulationTime > current->objective.deadline) {
+                        const oem::Result expired = economyJournalStore_.expireMissionObjective(
+                            economyJournalPath_, objectiveBook_, acceptedIds[i], ledger_, "company", event.simulationTime, missionFailurePolicy_);
+                        if (!expired.ok) {
+                            char missionError[512];
+                            sprintf(missionError, "OEM MISSION: expiry commit failed id=%s (%s): %s",
+                                acceptedIds[i].c_str(), expired.code.c_str(), expired.message.c_str());
+                            oapiWriteLog(missionError);
+                        }
+                    }
+                }
+            }
+        }
+
         char message[768];
         sprintf(message,
             "OEM EVENT QUEUED: id=%s type=%s vessel=%s body=%s base=%s simt=%lld",
@@ -1114,7 +2499,30 @@ private:
     std::map<std::string, oem::CargoServiceInventory> cargoServiceInventories_;
     std::set<std::string> cargoServiceInventoryLoadAttempted_;
     oem::EconomyJournalStore economyJournalStore_;
+    oem::PropellantTransactionJournal propellantTransactionJournal_;
+    std::string propellantTransactionJournalPath_;
+    std::string propellantPricePath_;
+    bool propellantRecoveryReady_;
+    unsigned long propellantOperationSequence_;
+    oem::DeliveryContractBook contractBook_;
+    oem::MissionObjectiveBook objectiveBook_;
+    std::map<std::string, oem::DeliveryContract> pendingContractOffers_;
+    unsigned long contractOfferSequence_;
+    long long contractOfferDay_;
+    oem::MissionBoardStore missionBoardStore_;
+    std::map<std::string, oem::MissionBoard> missionBoards_;
+    std::string missionBoardPath_;
+    bool missionBoardsReady_;
+    oem::MissionObjectiveBoardStore objectiveBoardStore_;
+    std::map<std::string, oem::MissionObjectiveBoard> objectiveBoards_;
+    std::string objectiveBoardPath_;
+    bool objectiveBoardsReady_;
     std::string economyJournalPath_;
+    oem::MissionFailurePolicyStore missionFailurePolicyStore_;
+    oem::MissionFailurePolicy missionFailurePolicy_;
+    std::string missionFailurePolicyPath_;
+    oem::MissionIssuerRegistry missionIssuerRegistry_;
+    std::string missionIssuerRegistryPath_;
     oem::LedgerConfigStore ledgerConfigStore_;
     oem::CargoCatalogConfigStore cargoCatalogConfigStore_;
     std::string accountsPath_;
@@ -1134,6 +2542,8 @@ private:
     oem::SimulationSeconds currentSimulationTime_;
     unsigned long cargoTransferSequence_;
     OBJHANDLE lastFocus_;
+    NOTEHANDLE completionNote_;
+    oem::SimulationSeconds notificationUntil_;
 };
 
 class OEMFlightLogMFD : public MFD {
@@ -1332,6 +2742,229 @@ private:
     std::string vesselId_;
 };
 
+// Read-only view of Orbiter's real propellant resources. No resource is modified here.
+class OEMPropellantMonitorMFD : public MFD {
+public:
+    OEMPropellantMonitorMFD(DWORD w, DWORD h, VESSEL *vessel)
+        : MFD(w, h, vessel),
+          vesselId_(vessel && vessel->GetName() ? vessel->GetName() : "") {}
+
+    void Update(HDC hDC) override {
+        Title(hDC, "OEM PROPELLANT MONITOR");
+        SelectDefaultFont(hDC, 0);
+        int y = (int)ch + 3;
+        char line[256];
+        sprintf(line, "VESSEL: %.36s", vesselId_.c_str());
+        DrawLine(hDC, y, line);
+        DrawLine(hDC, y, "READ ONLY - ORBITER RESOURCE DATA");
+        if (!g_bridge) {
+            DrawLine(hDC, y, "OEM bridge unavailable.");
+            return;
+        }
+        std::vector<oem::PropellantResourceState> resources;
+        const oem::Result result = g_bridge->readPropellantSnapshot(vesselId_, resources);
+        if (!result.ok) {
+            sprintf(line, "%.30s: %.150s", result.code.c_str(), result.message.c_str());
+            DrawLine(hDC, y, line);
+            return;
+        }
+        double current = 0.0, capacity = 0.0;
+        for (std::size_t i = 0; i < resources.size(); ++i) {
+            current += resources[i].currentMassKg;
+            capacity += resources[i].capacityKg;
+        }
+        sprintf(line, "RESOURCES: %lu", (unsigned long)resources.size());
+        DrawLine(hDC, y, line);
+        sprintf(line, "TOTAL MASS: %.3f kg", current);
+        DrawLine(hDC, y, line);
+        sprintf(line, "TOTAL CAPACITY: %.3f kg", capacity);
+        DrawLine(hDC, y, line);
+        sprintf(line, "FREE CAPACITY: %.3f kg", capacity - current);
+        DrawLine(hDC, y, line);
+        DrawLine(hDC, y, "------------------------------");
+        if (resources.empty()) {
+            DrawLine(hDC, y, "NO PROPELLANT RESOURCES");
+            DrawLine(hDC, y, "Totals are zero; nothing to refuel.");
+            return;
+        }
+        const int available = ((int)H - y - (int)ch) / (int)ch;
+        for (std::size_t i = 0; i < resources.size() && (int)i < available; ++i) {
+            sprintf(line, "TANK %lu: %.3f / %.3f kg",
+                (unsigned long)(i + 1),
+                resources[i].currentMassKg, resources[i].capacityKg);
+            DrawLine(hDC, y, line);
+        }
+    }
+
+    static int MsgProc(UINT msg, UINT mfd, WPARAM wparam, LPARAM lparam) {
+        if (msg == OAPI_MSG_MFD_OPENEDEX && g_bridge) {
+            MFDMODEOPENSPEC *spec = (MFDMODEOPENSPEC*)wparam;
+            return (int)(new OEMPropellantMonitorMFD(
+                spec->w, spec->h, (VESSEL*)lparam));
+        }
+        return 0;
+    }
+
+private:
+    void DrawLine(HDC hDC, int &y, const char *text) {
+        TextOutA(hDC, 4, y, text, (int)strlen(text));
+        y += (int)ch;
+    }
+    std::string vesselId_;
+};
+
+class OEMPropellantRefuelMFD : public MFD {
+public:
+    OEMPropellantRefuelMFD(DWORD w, DWORD h, VESSEL *vessel)
+        : MFD(w, h, vessel),
+          vesselId_(vessel && vessel->GetName() ? vessel->GetName() : ""),
+          status_("B/F: select purchase   Y: confirm   X: cancel"),
+          pendingAction_(0) {}
+
+    void Update(HDC hDC) override {
+        Title(hDC, "OEM REFUELLING");
+        SelectDefaultFont(hDC, 0);
+        int y = (int)ch + 3;
+        if (!g_bridge) {
+            DrawLine(hDC, y, "OEM bridge unavailable.");
+            return;
+        }
+        oem::PropellantPriceContext context;
+        std::string location;
+        oem::Result result = g_bridge->resolvePropellantContext(vesselId_, context, location);
+        if (!result.ok) {
+            DrawLine(hDC, y, "NO ELIGIBLE REFUELLING LOCATION");
+            DrawLine(hDC, y, result.message.c_str());
+            DrawLine(hDC, y, status_.c_str());
+            return;
+        }
+        char line[256];
+        sprintf(line, "LOCATION: %.36s", location.c_str());
+        DrawLine(hDC, y, line);
+        sprintf(line, "BODY: %.40s", context.celestialBody.c_str());
+        DrawLine(hDC, y, line);
+        double unitPrice = 0.0;
+        result = g_bridge->resolvePropellantUnitPrice(context, unitPrice);
+        if (!result.ok) {
+            DrawLine(hDC, y, "PRICE CONFIGURATION ERROR");
+            DrawLine(hDC, y, result.message.c_str());
+            DrawLine(hDC, y, status_.c_str());
+            return;
+        }
+        sprintf(line, "PRICE: %.3f CR / KG", unitPrice);
+        DrawLine(hDC, y, line);
+        std::vector<oem::PropellantResourceState> resources;
+        result = g_bridge->readPropellantSnapshot(vesselId_, resources);
+        if (!result.ok) {
+            DrawLine(hDC, y, result.message.c_str());
+            DrawLine(hDC, y, status_.c_str());
+            return;
+        }
+        oem::PropellantTotals totals;
+        result = oem::inspectPropellantResources(resources, totals);
+        if (!result.ok) {
+            DrawLine(hDC, y, result.message.c_str());
+            return;
+        }
+        sprintf(line, "FUEL: %.3f / %.3f KG", totals.currentMassKg, totals.capacityKg);
+        DrawLine(hDC, y, line);
+        sprintf(line, "FREE CAPACITY: %.3f KG", totals.freeCapacityKg);
+        DrawLine(hDC, y, line);
+        oem::Credits balance = 0;
+        if (g_bridge->companyBalance(balance)) {
+            sprintf(line, "COMPANY BALANCE: %lld CR", (long long)balance);
+            DrawLine(hDC, y, line);
+        } else {
+            DrawLine(hDC, y, "COMPANY ACCOUNT UNAVAILABLE");
+        }
+        const double partialMass = totals.freeCapacityKg < 100.0 ? totals.freeCapacityKg : 100.0;
+        const long double partialCost = ceil((long double)partialMass * (long double)unitPrice);
+        const long double fullCost = ceil((long double)totals.freeCapacityKg * (long double)unitPrice);
+        if (partialMass > 0.0 && partialCost <= (long double)LLONG_MAX) {
+            sprintf(line, "B: %.3f KG  /  %lld CR", partialMass, (long long)partialCost);
+            DrawLine(hDC, y, line);
+        } else DrawLine(hDC, y, "B: PARTIAL QUOTE OVERFLOW");
+        if (totals.freeCapacityKg > 0.0 && fullCost <= (long double)LLONG_MAX) {
+            sprintf(line, "F: %.3f KG  /  %lld CR", totals.freeCapacityKg, (long long)fullCost);
+            DrawLine(hDC, y, line);
+        } else DrawLine(hDC, y, "F: FULL QUOTE OVERFLOW");
+        DrawLine(hDC, y, "Y: CONFIRM SELECTED PURCHASE   X: CANCEL");
+        DrawLine(hDC, y, status_.c_str());
+    }
+
+    bool ConsumeKeyBuffered(DWORD key) override {
+        if (!g_bridge) return false;
+        if (key == OAPI_KEY_B) {
+            pendingAction_ = 1;
+            status_ = "Selected: up to 100 kg. Press Y to confirm or X to cancel.";
+            return true;
+        }
+        if (key == OAPI_KEY_F) {
+            pendingAction_ = 2;
+            status_ = "Selected: fill all tanks. Press Y to confirm or X to cancel.";
+            return true;
+        }
+        if (key == OAPI_KEY_X) {
+            pendingAction_ = 0;
+            status_ = "Purchase cancelled. Select B or F to prepare another quote.";
+            return true;
+        }
+        if (key == OAPI_KEY_Y) {
+            if (pendingAction_ == 0) {
+                status_ = "No purchase selected. Press B or F first.";
+                return true;
+            }
+            const bool fillAll = pendingAction_ == 2;
+            pendingAction_ = 0;
+            const oem::Result result =
+                g_bridge->performPropellantPurchase(vesselId_, fillAll);
+            status_ = result.ok ? "Purchase and physical fill committed."
+                : result.code + ": " + result.message;
+            return true;
+        }
+        return false;
+    }
+
+    bool ConsumeButton(int bt, int event) override {
+        if (!(event & PANEL_MOUSE_LBDOWN)) return false;
+        if (bt == 0) return ConsumeKeyBuffered(OAPI_KEY_B);
+        if (bt == 1) return ConsumeKeyBuffered(OAPI_KEY_F);
+        return false;
+    }
+
+    char *ButtonLabel(int bt) override {
+        static char *labels[2] = { (char*)"100 KG", (char*)"FILL" };
+        return bt >= 0 && bt < 2 ? labels[bt] : 0;
+    }
+
+    int ButtonMenu(const MFDBUTTONMENU **menu) const override {
+        static const MFDBUTTONMENU items[2] = {
+            { "Buy up to 100 kg of fuel", 0, 'B' },
+            { "Fill all available tank capacity", 0, 'F' }
+        };
+        if (menu) *menu = items;
+        return 2;
+    }
+
+    static int MsgProc(UINT msg, UINT mfd, WPARAM wparam, LPARAM lparam) {
+        if (msg == OAPI_MSG_MFD_OPENEDEX && g_bridge) {
+            MFDMODEOPENSPEC *spec = (MFDMODEOPENSPEC*)wparam;
+            return (int)(new OEMPropellantRefuelMFD(
+                spec->w, spec->h, (VESSEL*)lparam));
+        }
+        return 0;
+    }
+
+private:
+    void DrawLine(HDC hDC, int &y, const char *text) {
+        TextOutA(hDC, 4, y, text, (int)strlen(text));
+        y += (int)ch;
+    }
+    std::string vesselId_;
+    std::string status_;
+    int pendingAction_;
+};
+
 // Market operations are committed through EconomyJournalStore; the MFD never changes Orbiter physical cargo.
 class OEMMarketMFD : public MFD {
 public:
@@ -1440,6 +3073,215 @@ private:
     }
     std::string vesselId_;
     std::string status_;
+};
+
+class OEMMissionBoardMFD : public MFD {
+public:
+    OEMMissionBoardMFD(DWORD w, DWORD h, VESSEL *vessel)
+        : MFD(w,h,vessel), vesselId_(vessel&&vessel->GetName()?vessel->GetName():""),
+          selectedOffer_(0) {}
+
+    void Update(HDC hDC) override {
+        Title(hDC,"OEM MISSION BOARD");
+        SelectDefaultFont(hDC,0);
+        int y=(int)ch+3;
+        if(!g_bridge){DrawLine(hDC,y,"OEM bridge unavailable.");return;}
+
+        const oem::SimulationSeconds now=g_bridge->missionSimulationTime();
+        const oem::DeliveryContract* delivery=activeDelivery();
+        const oem::MissionObjectiveContract* objective=activeObjective();
+        const bool showDelivery=delivery&&(!objective||delivery->acceptedAt>=objective->objective.acceptedAt);
+        if(delivery||objective) {
+            DrawLine(hDC,y,"CURRENT MISSION");
+            if(showDelivery) {
+                DrawWrappedText(hDC,y,delivery->missionTitle.empty()?"Cargo delivery":delivery->missionTitle,35);
+                DrawWrappedText(hDC,y,delivery->missionBriefing.empty()?
+                    "Deliver the contracted cargo to the destination.":delivery->missionBriefing,35);
+                DrawRemaining(hDC,y,delivery->deadline,now);
+            } else {
+                const oem::MissionObjective& m=objective->objective;
+                DrawWrappedText(hDC,y,m.kind==oem::MISSION_OBJECTIVE_VISIT_SPACEPORT?"Spaceport visit":"Station rendezvous",35);
+                std::string briefing;
+                if(m.kind==oem::MISSION_OBJECTIVE_VISIT_SPACEPORT)
+                    briefing="Land at "+m.targetLocationId+" and establish ground contact. The landing must be recorded at this exact base.";
+                else
+                    briefing="Rendezvous with "+m.targetLocationId+". Completion requires an actual docking transition with this registered station.";
+                DrawWrappedText(hDC,y,briefing,35);
+                DrawRemaining(hDC,y,m.deadline,now);
+            }
+            DrawLine(hDC,y,"C: CANCEL CURRENT MISSION");
+            return;
+        }
+
+        std::vector<oem::DeliveryContract> cargoOffers;
+        std::vector<oem::MissionObjectiveOffer> objectiveOffers;
+        g_bridge->currentMissionOffers(vesselId_,cargoOffers);
+        g_bridge->currentObjectiveOffers(vesselId_,objectiveOffers);
+        struct Entry { bool delivery; std::size_t index; std::string title; long long reward; };
+        std::vector<Entry> entries;
+        for(std::size_t i=0;i<cargoOffers.size()&&entries.size()<6;++i) {
+            Entry e; e.delivery=true;e.index=i;e.title=cargoOffers[i].missionTitle.empty()?"Cargo delivery":cargoOffers[i].missionTitle;
+            e.reward=cargoOffers[i].reward;entries.push_back(e);
+        }
+        for(std::size_t i=0;i<objectiveOffers.size()&&entries.size()<6;++i) {
+            Entry e;e.delivery=false;e.index=i;e.title=objectiveOffers[i].missionTitle;
+            e.reward=objectiveOffers[i].reward;entries.push_back(e);
+        }
+        if(selectedOffer_>=entries.size()) selectedOffer_=entries.empty()?0:entries.size()-1;
+        if(entries.empty()) {
+            DrawLine(hDC,y,"NO MISSIONS AVAILABLE HERE");
+            DrawLine(hDC,y,"Check back after the next");
+            DrawLine(hDC,y,"daily mission board refresh.");
+            return;
+        }
+        DrawLine(hDC,y,"AVAILABLE MISSIONS (MAX 6)");
+        for(std::size_t i=0;i<entries.size();++i) {
+            char line[128];
+            sprintf(line,"%lu %s %lld CR",(unsigned long)(i+1),
+                entries[i].delivery?"DELIVERY":"OBJECTIVE",entries[i].reward);
+            const COLORREF old=GetTextColor(hDC);
+            if(i==selectedOffer_) SetTextColor(hDC,RGB(255,220,80));
+            std::string marked=(i==selectedOffer_?"> ":"  ")+entries[i].title;
+            DrawWrappedText(hDC,y,marked,35);
+            SetTextColor(hDC,old);
+            DrawLine(hDC,y,line);
+            if(entries[i].delivery) {
+                const oem::DeliveryContract& o=cargoOffers[entries[i].index];
+                DrawWrappedText(hDC,y,"TO: "+o.destinationLocationId,35);
+            } else {
+                const oem::MissionObjectiveOffer& o=objectiveOffers[entries[i].index];
+                DrawWrappedText(hDC,y,"TO: "+o.targetLocationId,35);
+            }
+        }
+        DrawLine(hDC,y,"-------------------");
+        DrawLine(hDC,y,"BRIEFING");
+        if(entries[selectedOffer_].delivery)
+            DrawWrappedText(hDC,y,cargoOffers[entries[selectedOffer_].index].missionBriefing,35);
+        else
+            DrawWrappedText(hDC,y,objectiveOffers[entries[selectedOffer_].index].missionBriefing,35);
+        DrawLine(hDC,y,"UP/DOWN SELECT  A ACCEPT");
+    }
+
+    bool ConsumeKeyBuffered(DWORD key) override {
+        if(!g_bridge) return false;
+        if(key==OAPI_KEY_UP||key==OAPI_KEY_DOWN) {
+            std::vector<oem::DeliveryContract> cargo;
+            std::vector<oem::MissionObjectiveOffer> objectives;
+            g_bridge->currentMissionOffers(vesselId_,cargo);
+            g_bridge->currentObjectiveOffers(vesselId_,objectives);
+            const std::size_t available=cargo.size()+objectives.size();
+            const std::size_t count=available<6?available:6;
+            if(count) {
+                if(key==OAPI_KEY_UP&&selectedOffer_>0)--selectedOffer_;
+                if(key==OAPI_KEY_DOWN&&selectedOffer_+1<count)++selectedOffer_;
+            } else selectedOffer_=0;
+            return true;
+        }
+        if(key==OAPI_KEY_A) {
+            std::vector<oem::DeliveryContract> cargo;
+            std::vector<oem::MissionObjectiveOffer> objectives;
+            g_bridge->currentMissionOffers(vesselId_,cargo);
+            g_bridge->currentObjectiveOffers(vesselId_,objectives);
+            const std::size_t cargoCount=cargo.size()<6?cargo.size():6;
+            const std::size_t available=cargo.size()+objectives.size();
+            const std::size_t total=available<6?available:6;
+            if(selectedOffer_>=total)return true;
+            oem::Result result;
+            if(selectedOffer_<cargoCount)
+                result=g_bridge->acceptDeliveryOffer(vesselId_,selectedOffer_);
+            else
+                result=g_bridge->acceptObjectiveOffer(vesselId_,selectedOffer_-cargoCount);
+            lastResult_=result.ok?"MISSION ACCEPTED":result.code;
+            return true;
+        }
+        if(key==OAPI_KEY_C) {
+            const oem::DeliveryContract* d=activeDelivery();
+            const oem::MissionObjectiveContract* o=activeObjective();
+            if(d&&(!o||d->acceptedAt>=o->objective.acceptedAt))
+                g_bridge->cancelDeliveryContract(d->contractId,vesselId_);
+            else if(o) g_bridge->cancelMissionObjective(o->objective.missionId,vesselId_);
+            return true;
+        }
+        return false;
+    }
+
+    bool ConsumeButton(int bt,int event) override {
+        if(!(event&PANEL_MOUSE_LBDOWN))return false;
+        if(bt==0)return ConsumeKeyBuffered(OAPI_KEY_UP);
+        if(bt==1)return ConsumeKeyBuffered(OAPI_KEY_DOWN);
+        if(bt==2)return ConsumeKeyBuffered(OAPI_KEY_A);
+        if(bt==3)return ConsumeKeyBuffered(OAPI_KEY_C);
+        return false;
+    }
+    char* ButtonLabel(int bt) override {
+        static char* labels[4]={(char*)"UP",(char*)"DOWN",(char*)"ACCEPT",(char*)"CANCEL"};
+        return bt>=0&&bt<4?labels[bt]:0;
+    }
+    int ButtonMenu(const MFDBUTTONMENU** menu) const override {
+        static const MFDBUTTONMENU items[4]={
+            {"Select previous mission",0,0},{"Select next mission",0,0},
+            {"Accept selected mission",0,'A'},{"Cancel active mission",0,'C'}};
+        if(menu)*menu=items;return 4;
+    }
+    static int MsgProc(UINT msg,UINT mfd,WPARAM wparam,LPARAM lparam) {
+        if(msg==OAPI_MSG_MFD_OPENEDEX&&g_bridge) {
+            MFDMODEOPENSPEC* spec=(MFDMODEOPENSPEC*)wparam;
+            return (int)(new OEMMissionBoardMFD(spec->w,spec->h,(VESSEL*)lparam));
+        }
+        return 0;
+    }
+private:
+    const oem::DeliveryContract* activeDelivery() const {
+        if(!g_bridge)return 0;
+        const std::vector<oem::DeliveryContract>& all=g_bridge->deliveryContractBook().contracts();
+        for(std::size_t i=all.size();i>0;--i)
+            if(all[i-1].vesselId==vesselId_&&all[i-1].status==oem::CONTRACT_ACCEPTED)return &all[i-1];
+        return 0;
+    }
+    const oem::MissionObjectiveContract* activeObjective() const {
+        if(!g_bridge)return 0;
+        const std::vector<oem::MissionObjectiveContract>& all=g_bridge->missionObjectiveBook().missions();
+        for(std::size_t i=all.size();i>0;--i)
+            if(all[i-1].objective.vesselId==vesselId_&&all[i-1].status==oem::MISSION_OBJECTIVE_ACCEPTED)return &all[i-1];
+        return 0;
+    }
+    void DrawLine(HDC hDC,int& y,const char* text) {
+        std::string line=text?text:""; if(line.size()>35)line.resize(35);
+        TextOutA(hDC,4,y,line.c_str(),(int)line.size());y+=(int)ch;
+    }
+    void DrawWrappedText(HDC hDC,int& y,const std::string& text,std::size_t width) {
+        std::size_t pos=0;
+        while(pos<text.size()) {
+            while(pos<text.size()&&(text[pos]==' '||text[pos]=='\t'||text[pos]=='\r'||text[pos]=='\n'))++pos;
+            if(pos>=text.size())break;
+            std::string line;
+            while(pos<text.size()&&text[pos]!='\r'&&text[pos]!='\n') {
+                while(pos<text.size()&&(text[pos]==' '||text[pos]=='\t'))++pos;
+                if(pos>=text.size()||text[pos]=='\r'||text[pos]=='\n')break;
+                std::size_t begin=pos;
+                while(pos<text.size()&&text[pos]!=' '&&text[pos]!='\t'&&text[pos]!='\r'&&text[pos]!='\n')++pos;
+                std::string word=text.substr(begin,pos-begin);
+                if(!line.empty()&&line.size()+1+word.size()>width){DrawLine(hDC,y,line.c_str());line.clear();}
+                while(word.size()>width) {
+                    if(!line.empty()){DrawLine(hDC,y,line.c_str());line.clear();}
+                    DrawLine(hDC,y,word.substr(0,width).c_str());word.erase(0,width);
+                }
+                if(!word.empty()){if(!line.empty())line+=" ";line+=word;}
+            }
+            if(!line.empty())DrawLine(hDC,y,line.c_str());
+            while(pos<text.size()&&(text[pos]=='\r'||text[pos]=='\n'))++pos;
+        }
+    }
+    void DrawRemaining(HDC hDC,int& y,oem::SimulationSeconds deadline,oem::SimulationSeconds now) {
+        const oem::SimulationSeconds left=deadline>now?deadline-now:0;
+        char line[64];
+        if(left>=86400)sprintf(line,"TIME LEFT: %lldD %lldH",(long long)(left/86400),(long long)((left%86400)/3600));
+        else sprintf(line,"TIME LEFT: %lldH %lldM",(long long)(left/3600),(long long)((left%3600)/60));
+        DrawLine(hDC,y,line);
+    }
+    std::string vesselId_;
+    std::string lastResult_;
+    std::size_t selectedOffer_;
 };
 
 class OEMCargoExchangeTestMFD : public MFD {
@@ -1661,33 +3503,47 @@ DLLCLBK void InitModule(HINSTANCE hDLL) {
     spec.msgproc = OEMCargoManifestMFD::MsgProc;
     g_cargoManifestMode = oapiRegisterMFDMode(spec);
 
-    spec.name = "OEM Cargo Exchange Test";
-    spec.key = OAPI_KEY_E;
-    spec.msgproc = OEMCargoExchangeTestMFD::MsgProc;
-    g_cargoExchangeTestMode = oapiRegisterMFDMode(spec);
-
     spec.name = "OEM Location Market";
     spec.key = OAPI_KEY_M;
     spec.msgproc = OEMMarketMFD::MsgProc;
     g_marketMode = oapiRegisterMFDMode(spec);
 
+    spec.name = "OEM Mission Board";
+    spec.key = OAPI_KEY_D;
+    spec.msgproc = OEMMissionBoardMFD::MsgProc;
+    g_missionBoardMode = oapiRegisterMFDMode(spec);
+
     spec.name = "OEM Economic Admin";
     spec.key = OAPI_KEY_A;
     spec.msgproc = OEMEconomicAdminMFD::MsgProc;
     g_economicAdminMode = oapiRegisterMFDMode(spec);
+
+    spec.name = "OEM Propellant Monitor";
+    spec.key = OAPI_KEY_P;
+    spec.msgproc = OEMPropellantMonitorMFD::MsgProc;
+    g_propellantMonitorMode = oapiRegisterMFDMode(spec);
+
+    spec.name = "OEM Refuelling";
+    spec.key = OAPI_KEY_U;
+    spec.msgproc = OEMPropellantRefuelMFD::MsgProc;
+    g_propellantRefuelMode = oapiRegisterMFDMode(spec);
 }
 
 DLLCLBK void ExitModule(HINSTANCE hDLL) {
     if (g_flightLogMode >= 0) oapiUnregisterMFDMode(g_flightLogMode);
     if (g_cargoManifestMode >= 0) oapiUnregisterMFDMode(g_cargoManifestMode);
-    if (g_cargoExchangeTestMode >= 0) oapiUnregisterMFDMode(g_cargoExchangeTestMode);
     if (g_marketMode >= 0) oapiUnregisterMFDMode(g_marketMode);
+    if (g_missionBoardMode >= 0) oapiUnregisterMFDMode(g_missionBoardMode);
     if (g_economicAdminMode >= 0) oapiUnregisterMFDMode(g_economicAdminMode);
+    if (g_propellantMonitorMode >= 0) oapiUnregisterMFDMode(g_propellantMonitorMode);
+    if (g_propellantRefuelMode >= 0) oapiUnregisterMFDMode(g_propellantRefuelMode);
     g_flightLogMode = -1;
     g_cargoManifestMode = -1;
-    g_cargoExchangeTestMode = -1;
     g_marketMode = -1;
+    g_missionBoardMode = -1;
     g_economicAdminMode = -1;
+    g_propellantMonitorMode = -1;
+    g_propellantRefuelMode = -1;
     g_bridge = 0;
     // Orbiter owns and destroys registered oapi::Module instances.
 }

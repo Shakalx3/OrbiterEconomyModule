@@ -4,8 +4,8 @@
 namespace oem {
 
 DeliveryContract::DeliveryContract()
-    : contractId(), vesselId(), cargoId(), quantity(0), originLocationId(),
-      destinationLocationId(), reward(0), acceptedAt(0), deadline(0),
+    : contractId(), issuerId(), vesselId(), cargoId(), quantity(0), originLocationId(),
+      destinationLocationId(), destinationBodyId(), missionType(), missionTitle(), missionBriefing(), reward(0), acceptedAt(0), deadline(0),
       status(CONTRACT_ACCEPTED), completionEventId(), completedAt(0) {}
 
 DeliveryContractBook::DeliveryContractBook() : indexes_(), contracts_() {}
@@ -20,8 +20,23 @@ Result DeliveryContractBook::accept(const DeliveryContract& c) {
         return Result::failure("CONTRACT_AMOUNT", "Contract quantity and reward must be positive.");
     if (c.acceptedAt < 0 || (c.deadline > 0 && c.deadline < c.acceptedAt))
         return Result::failure("CONTRACT_TIME", "Contract deadline cannot precede acceptance.");
-    if (indexes_.find(c.contractId) != indexes_.end())
-        return Result::failure("CONTRACT_EXISTS", "Contract ID already exists.");
+    std::map<std::string, std::size_t>::const_iterator prior = indexes_.find(c.contractId);
+    if (prior != indexes_.end()) {
+        const DeliveryContract& existing = contracts_[prior->second];
+        const bool same = existing.vesselId == c.vesselId &&
+            existing.cargoId == c.cargoId && existing.quantity == c.quantity &&
+            existing.originLocationId == c.originLocationId &&
+            existing.destinationLocationId == c.destinationLocationId &&
+            existing.destinationBodyId == c.destinationBodyId &&
+            existing.issuerId == c.issuerId &&
+            existing.missionType == c.missionType &&
+            existing.missionTitle == c.missionTitle &&
+            existing.missionBriefing == c.missionBriefing &&
+            existing.reward == c.reward && existing.acceptedAt == c.acceptedAt &&
+            existing.deadline == c.deadline;
+        return same ? Result::success() :
+            Result::failure("CONTRACT_CONFLICT", "Contract ID already belongs to different terms.");
+    }
 
     DeliveryContract stored = c;
     stored.status = CONTRACT_ACCEPTED;
@@ -57,7 +72,8 @@ bool DeliveryContractBook::isDestinationEvent(const DeliveryContract& c,
                                                const SimulationEvent& e) const {
     if (e.type == SIM_EVENT_LANDING)
         return e.locationKnown && !e.baseId.empty() &&
-               e.baseId == c.destinationLocationId;
+               e.baseId == c.destinationLocationId &&
+               (c.destinationBodyId.empty() || e.bodyId == c.destinationBodyId);
     if (e.type == SIM_EVENT_DOCK)
         return !e.relatedVesselId.empty() &&
                e.relatedVesselId == c.destinationLocationId;
@@ -74,7 +90,8 @@ Result DeliveryContractBook::observe(const SimulationEvent& e,
         if (c.status != CONTRACT_ACCEPTED || c.vesselId != e.vesselId) continue;
         if (e.simulationTime < c.acceptedAt || !isDestinationEvent(c, e)) continue;
         if (c.deadline > 0 && e.simulationTime > c.deadline) {
-            c.status = CONTRACT_EXPIRED;
+            // Leave the contract accepted here. The economy journal owns the
+            // durable expiry transition and its configured financial penalties.
             continue;
         }
         if (eligibleCargoAt(c, manifest, e.simulationTime) < c.quantity) continue;
@@ -103,6 +120,81 @@ Result DeliveryContractBook::settle(const std::string& id,
     if (!paid.ok) return paid;
     c.status = CONTRACT_SETTLED;
     return Result::success();
+}
+
+Result DeliveryContractBook::restoreCompleted(const std::string& id,
+                                              const std::string& eventId,
+                                              SimulationSeconds completedAt) {
+    std::map<std::string, std::size_t>::iterator it = indexes_.find(id);
+    if (it == indexes_.end())
+        return Result::failure("CONTRACT_NOT_FOUND", "Contract does not exist.");
+    if (eventId.empty() || completedAt < 0)
+        return Result::failure("CONTRACT_COMPLETION_RECORD", "Completion event and non-negative time are required.");
+    DeliveryContract& c = contracts_[it->second];
+    if (c.status == CONTRACT_COMPLETED || c.status == CONTRACT_SETTLED) {
+        if (c.completionEventId == eventId && c.completedAt == completedAt)
+            return Result::success();
+        return Result::failure("CONTRACT_COMPLETION_CONFLICT", "Contract already has different completion evidence.");
+    }
+    if (c.status != CONTRACT_ACCEPTED || completedAt < c.acceptedAt ||
+        (c.deadline > 0 && completedAt > c.deadline))
+        return Result::failure("CONTRACT_COMPLETION_INVALID", "Completion record is inconsistent with contract state or deadline.");
+    c.status = CONTRACT_COMPLETED;
+    c.completionEventId = eventId;
+    c.completedAt = completedAt;
+    return Result::success();
+}
+
+Result DeliveryContractBook::restoreSettled(const std::string& id) {
+    std::map<std::string, std::size_t>::iterator it = indexes_.find(id);
+    if (it == indexes_.end())
+        return Result::failure("CONTRACT_NOT_FOUND", "Contract does not exist.");
+    DeliveryContract& c = contracts_[it->second];
+    if (c.status == CONTRACT_SETTLED) return Result::success();
+    if (c.status != CONTRACT_COMPLETED)
+        return Result::failure("CONTRACT_NOT_COMPLETE", "Only a completed contract can be restored as settled.");
+    c.status = CONTRACT_SETTLED;
+    return Result::success();
+}
+
+Result DeliveryContractBook::cancel(const std::string& id) {
+    std::map<std::string, std::size_t>::iterator it = indexes_.find(id);
+    if (it == indexes_.end()) return Result::failure("CONTRACT_NOT_FOUND", "Contract does not exist.");
+    DeliveryContract& c = contracts_[it->second];
+    if (c.status == CONTRACT_CANCELLED) return Result::success();
+    if (c.status != CONTRACT_ACCEPTED)
+        return Result::failure("CONTRACT_STATE", "Only an active accepted contract can be cancelled.");
+    c.status = CONTRACT_CANCELLED;
+    return Result::success();
+}
+
+Result DeliveryContractBook::restoreCancelled(const std::string& id) {
+    return cancel(id);
+}
+
+Result DeliveryContractBook::restoreExpired(const std::string& id) {
+    std::map<std::string, std::size_t>::iterator it = indexes_.find(id);
+    if (it == indexes_.end())
+        return Result::failure("CONTRACT_NOT_FOUND", "Contract does not exist.");
+    DeliveryContract& c = contracts_[it->second];
+    if (c.status == CONTRACT_EXPIRED) return Result::success();
+    if (c.status != CONTRACT_ACCEPTED)
+        return Result::failure("CONTRACT_STATE", "Only an accepted contract can expire.");
+    c.status = CONTRACT_EXPIRED;
+    return Result::success();
+}
+
+std::vector<std::string> DeliveryContractBook::expireDue(SimulationSeconds now) {
+    std::vector<std::string> expired;
+    if (now < 0) return expired;
+    for (std::size_t i = 0; i < contracts_.size(); ++i) {
+        DeliveryContract& c = contracts_[i];
+        if (c.status == CONTRACT_ACCEPTED && c.deadline > 0 && now > c.deadline) {
+            c.status = CONTRACT_EXPIRED;
+            expired.push_back(c.contractId);
+        }
+    }
+    return expired;
 }
 
 const DeliveryContract* DeliveryContractBook::find(const std::string& id) const {

@@ -2,9 +2,13 @@ name: OEM native spaceport test build
 
 on:
   push:
-    branches: [development]
+    branches: [development, feature/delivery-contracts]
     paths:
       - "src/orbiter/**"
+      - "Tests/core/**"
+      - "CMakeLists.txt"
+      - "src/core/MissionIssuerRegistry.h"
+      - "src/core/MissionIssuerRegistry.cpp"
       - "src/core/SurfaceDistance.h"
       - "src/core/SpaceportRegistry.h"
       - "src/core/SpaceportRegistry.cpp"
@@ -14,6 +18,14 @@ on:
       - "src/core/EconomicStationRegistry.cpp"
       - "src/core/SpaceportLanding.h"
       - "src/core/SpaceportLanding.cpp"
+      - "src/core/PropellantPlan.h"
+      - "src/core/PropellantPlan.cpp"
+      - "src/core/PropellantQuote.h"
+      - "src/core/PropellantQuote.cpp"
+      - "src/core/PropellantTransaction.h"
+      - "src/core/PropellantTransaction.cpp"
+      - "src/core/PropellantTransactionJournal.h"
+      - "src/core/PropellantTransactionJournal.cpp"
       - "src/core/SimulationEvent.h"
       - "src/core/SimulationEvent.cpp"
       - "src/core/SimulationEventJournal.h"
@@ -48,6 +60,18 @@ on:
       - "src/core/MarketTrade.cpp"
       - "src/core/EconomyJournal.h"
       - "src/core/EconomyJournal.cpp"
+      - "src/core/DeliveryContract.h"
+      - "src/core/DeliveryContract.cpp"
+      - "src/core/MissionBoard.h"
+      - "src/core/MissionBoard.cpp"
+      - "src/core/MissionObjective.h"
+      - "src/core/MissionObjective.cpp"
+      - "src/core/MissionObjectiveBook.h"
+      - "src/core/MissionObjectiveBook.cpp"
+      - "src/core/MissionObjectiveBoard.h"
+      - "src/core/MissionObjectiveBoard.cpp"
+      - "src/core/MissionEconomics.h"
+      - "src/core/MissionEconomics.cpp"
       - "OEMData/cargo_services.cfg"
       - "OEMData/cargo_stock_495353.cfg"
       - "OEMData/accounts.cfg"
@@ -58,11 +82,23 @@ on:
   pull_request:
     paths:
       - "src/orbiter/**"
+      - "Tests/core/**"
+      - "CMakeLists.txt"
+      - "src/core/MissionIssuerRegistry.h"
+      - "src/core/MissionIssuerRegistry.cpp"
       - "src/core/SurfaceDistance.h"
       - "src/core/SpaceportRegistry.h"
       - "src/core/SpaceportRegistry.cpp"
       - "src/core/SpaceportLanding.h"
       - "src/core/SpaceportLanding.cpp"
+      - "src/core/PropellantPlan.h"
+      - "src/core/PropellantPlan.cpp"
+      - "src/core/PropellantQuote.h"
+      - "src/core/PropellantQuote.cpp"
+      - "src/core/PropellantTransaction.h"
+      - "src/core/PropellantTransaction.cpp"
+      - "src/core/PropellantTransactionJournal.h"
+      - "src/core/PropellantTransactionJournal.cpp"
       - "src/core/SimulationEvent.h"
       - "src/core/SimulationEvent.cpp"
       - "src/core/SimulationEventJournal.h"
@@ -97,6 +133,12 @@ on:
       - "src/core/MarketTrade.cpp"
       - "src/core/EconomyJournal.h"
       - "src/core/EconomyJournal.cpp"
+      - "src/core/MissionObjective.h"
+      - "src/core/MissionObjective.cpp"
+      - "src/core/MissionObjectiveBook.h"
+      - "src/core/MissionObjectiveBook.cpp"
+      - "src/core/MissionObjectiveBoard.h"
+      - "src/core/MissionObjectiveBoard.cpp"
       - "SDK/Orbitersdk/include/**"
       - "SDK/Orbitersdk/lib/**"
       - ".github/workflows/oem-native-test.yml"
@@ -113,9 +155,34 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify checked-out source revision for PR DLL
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        env:
+          BUILD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:BUILD_SHA) { throw "Checked-out source $actual does not match PR head $env:BUILD_SHA" }
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x86
+      - name: Configure portable core tests
+        shell: pwsh
+        run: |
+          cmake -S . -B build -A Win32
+          if ($LASTEXITCODE -ne 0) { throw "Could not configure portable core tests" }
+      - name: Build portable core tests
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --parallel
+          if ($LASTEXITCODE -ne 0) { throw "Portable core test build failed" }
+      - name: Run portable core tests before DLL publication
+        shell: pwsh
+        run: |
+          ctest --test-dir build -C Release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw "Portable core tests failed; refusing to publish test DLL" }
       - name: Compile Orbiter Launchpad resources
         shell: cmd
         run: |
@@ -127,7 +194,43 @@ jobs:
         run: |
           cl /nologo /LD /EHsc /O2 /MD /DWIN32 /D_WINDOWS /D_USRDLL /I"SDK\Orbitersdk\include" src\orbiter\OEMSpaceportTest.cpp OEMSpaceportTest.res /link /LIBPATH:"SDK\Orbitersdk\lib" orbiter.lib orbitersdk.lib gdi32.lib user32.lib /OUT:OEMSpaceportTest.dll
           cl /nologo /LD /EHsc /O2 /MD /DWIN32 /D_WINDOWS /D_USRDLL /I"SDK\Orbitersdk\include" src\orbiter\OEMGroundContactTest.cpp OEMGroundContactTest.res /link /LIBPATH:"SDK\Orbitersdk\lib" orbiter.lib orbitersdk.lib gdi32.lib user32.lib /OUT:OEMGroundContactTest.dll
-          cl /nologo /LD /EHsc /O2 /MD /DWIN32 /D_WINDOWS /D_USRDLL /I"SDK\Orbitersdk\include" /I"src\core" src\orbiter\OEMLandingBridge.cpp src\core\SpaceportLanding.cpp src\core\SimulationEvent.cpp src\core\SimulationEventJournal.cpp src\core\FlightTransition.cpp src\core\DockingTransition.cpp src\core\CargoServiceRegistry.cpp src\core\CargoManifest.cpp src\core\CargoTransferGate.cpp src\core\CargoServiceInventory.cpp src\core\CargoServiceInventoryConfig.cpp src\core\Ledger.cpp src\core\LedgerConfig.cpp src\core\CargoCatalogConfig.cpp src\core\Market.cpp src\core\MarketTrade.cpp src\core\EconomyJournal.cpp src\core\SpaceportRegistry.cpp src\core\EconomicLocationRegistry.cpp src\core\EconomicStationRegistry.cpp OEMLandingBridge.res /link /LIBPATH:"SDK\Orbitersdk\lib" orbiter.lib orbitersdk.lib gdi32.lib user32.lib /OUT:OEMLandingBridge.dll
+          cl /nologo /LD /EHsc /O2 /MD /DWIN32 /D_WINDOWS /D_USRDLL /I"SDK\Orbitersdk\include" /I"src\core" src\orbiter\OEMLandingBridge.cpp src\core\SpaceportLanding.cpp src\core\SimulationEvent.cpp src\core\SimulationEventJournal.cpp src\core\FlightTransition.cpp src\core\DockingTransition.cpp src\core\CargoServiceRegistry.cpp src\core\CargoManifest.cpp src\core\CargoTransferGate.cpp src\core\CargoServiceInventory.cpp src\core\CargoServiceInventoryConfig.cpp src\core\Ledger.cpp src\core\LedgerConfig.cpp src\core\CargoCatalogConfig.cpp src\core\Market.cpp src\core\MarketTrade.cpp src\core\DeliveryContract.cpp src\core\MissionBoard.cpp src\core\MissionObjective.cpp src\core\MissionObjectiveBook.cpp src\core\MissionObjectiveBoard.cpp src\core\MissionEconomics.cpp src\core\EconomyJournal.cpp src\core\SpaceportRegistry.cpp src\core\EconomicLocationRegistry.cpp src\core\EconomicStationRegistry.cpp src\core\MissionIssuerRegistry.cpp src/core/PropellantPlan.cpp src/core/PropellantQuote.cpp src/core/PropellantTransaction.cpp src/core/PropellantTransactionJournal.cpp OEMLandingBridge.res /link /LIBPATH:"SDK\Orbitersdk\lib" orbiter.lib orbitersdk.lib gdi32.lib user32.lib /OUT:OEMLandingBridge.dll
+      - name: Publish delivery-contracts test DLL
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:BUILD_SHA) { throw "DLL source revision mismatch: expected $env:BUILD_SHA, got $actual" }
+          $tag = "oem-delivery-contracts-test"
+          git tag -f $tag $env:BUILD_SHA
+          if ($LASTEXITCODE -ne 0) { throw "Could not point the test tag at the build commit" }
+          git push --force origin "refs/tags/$tag"
+          if ($LASTEXITCODE -ne 0) { throw "Could not publish the exact test tag" }
+          $remoteTagLine = git ls-remote origin "refs/tags/$tag"
+          if ($LASTEXITCODE -ne 0 -or -not $remoteTagLine) { throw "Could not verify the remote test tag" }
+          $remoteTag = ($remoteTagLine -split '\s+')[0]
+          if ($remoteTag -ne $env:BUILD_SHA) { throw "Remote test tag $remoteTag does not match build commit $env:BUILD_SHA" }
+          $title = "OEM Delivery Contracts Test (pre-release)"
+          $notes = "Experimental Win32 Orbiter 2010 DLL built from commit $($env:BUILD_SHA) for testing delivery contracts and independent VISIT/DOCK missions. Keep the existing OEMData directory and configuration files; replace only OEMLandingBridge.dll. All OEM cargo is accounting-manifest data and does not change Orbiter physical cargo or vessel mass. DELIVERY TEST: open OEM Delivery Contracts (MFD key D) at a stocked origin and accept an offer; the required quantity is loaded automatically into the OEM vessel manifest and debited from origin stock. Reach the offered destination; on verified arrival the manifest cargo is transferred to destination stock and the reward is paid automatically. OBJECTIVE TEST: open OEM Independent Missions (MFD key I), accept a VISIT offer and land at its exact named base/body, or accept a DOCK offer and dock with its exact registered station. Orbital target stations must first be registered with OEM Economic Admin (key A). FAILURE TEST: OEMData/mission_failure.cfg defaults to P|1000|-5 (10% of reward and -5 reputation); adjust it while Orbiter is stopped, let an accepted delivery/VISIT/DOCK mission pass its deadline, then verify the capped fee and reputation decrease. Cancel another accepted mission and verify that no penalty is applied. Expiry, completion, cancellation and payouts are stored in economy.journal; objective_mission_boards.dat stores generated offers. Test restart recovery and verify no duplicate fee or payout. Do not delete OEMData or existing journals when updating the DLL. CI success verifies compilation and automated core tests, not behaviour in the Orbiter simulator."
+          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release edit $tag --repo $env:GITHUB_REPOSITORY --title $title --notes $notes --target $env:BUILD_SHA --prerelease
+            if ($LASTEXITCODE -ne 0) { throw "Could not update delivery-contracts test release metadata" }
+            gh release upload $tag OEMLandingBridge.dll --repo $env:GITHUB_REPOSITORY --clobber
+          } else {
+            gh release create $tag OEMLandingBridge.dll --repo $env:GITHUB_REPOSITORY --title $title --notes $notes --target $env:BUILD_SHA --prerelease
+          }
+          if ($LASTEXITCODE -ne 0) { throw "Could not publish delivery-contracts test DLL" }
+          $published = gh release view $tag --repo $env:GITHUB_REPOSITORY --json targetCommitish,assets | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw "Could not verify the published delivery-contracts release" }
+          if ($published.targetCommitish -ne $env:BUILD_SHA) { throw "Release target $($published.targetCommitish) does not match build commit $env:BUILD_SHA" }
+          $asset = $published.assets | Where-Object { $_.name -eq "OEMLandingBridge.dll" } | Select-Object -First 1
+          if ($null -eq $asset -or [long]$asset.size -le 0) { throw "Published OEMLandingBridge.dll is missing or empty" }
+          Write-Host "Verified OEMLandingBridge.dll ($($asset.size) bytes) for commit $env:BUILD_SHA"
       - name: Replace the rolling release
         if: github.event_name == 'push'
         shell: pwsh
@@ -137,7 +240,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $tag = "oem-native-diagnostics-current"
           $title = "OEM Native Diagnostics (current)"
-          $notes = "Latest successful Win32 build for Orbiter 2010. OEMLandingBridge includes takeoff/landing and docking/undocking monitoring, the persistent flight event journal, generated OEMData\\spaceports.registry catalogue of Orbiter surface bases and VTOL pads, trusted cargo-service registry loading, and one global durable OEMData\\economy.journal for cargo exchanges and market trades. Old per-service cargo_exchanges and per-vessel cargo_manifests test journals are ignored and left untouched. Explicit opening stock is loaded from OEMData\\cargo_stock_<hex service vessel ID>.cfg; the release includes cargo_services.cfg with ISS registered and cargo_stock_495353.cfg with two TEST units (1 kg each). The release also includes sample accounts.cfg (company opening balance 10000 credits) and cargo_catalog.cfg (TEST cargo, 1 kg, buy 100, sell 60). Edit these examples to set the desired starting balance and market prices. The OEM Economic Admin MFD (key A) can register the focused vessel as an orbital station and independently enable/disable cargo-service access. The OEM Flight Log MFD (key L), read-only Cargo Manifest MFD (key C), ledger-only Cargo Exchange Test MFD (key E), and Location Market MFD (key M) are available. Market BUY/SELL operations require user-created accounts.cfg with a company account named company and cargo_catalog.cfg with explicit item definitions and prices. The sample setup is documented in Docs/ECONOMY_STARTUP.md. Both cargo exchanges and market trades update OEM accounting only; they do not alter Orbiter physical cargo or vessel mass. Station funds are unlimited; the company account is debited for purchases and credited for sales."
+          $notes = "Latest successful Win32 build for Orbiter 2010. OEMLandingBridge includes takeoff/landing and docking/undocking monitoring, the persistent flight event journal, generated OEMData\\spaceports.registry catalogue of Orbiter surface bases and VTOL pads, trusted cargo-service registry loading, and one global durable OEMData\\economy.journal for cargo exchanges and market trades. Old per-service cargo_exchanges and per-vessel cargo_manifests test journals are ignored and left untouched. Explicit opening stock is loaded from OEMData\\cargo_stock_<hex service vessel ID>.cfg; the release includes cargo_services.cfg with ISS registered and cargo_stock_495353.cfg with two TEST units (1 kg each). The release also includes sample accounts.cfg (company opening balance 10000 credits) and cargo_catalog.cfg (TEST cargo, 1 kg, buy 100, sell 60). Edit these examples to set the desired starting balance and market prices. The OEM Economic Admin MFD (key A) can register the focused vessel as an orbital station and independently enable/disable cargo-service access. The OEM Flight Log MFD (key L), read-only Cargo Manifest MFD (key C), Location Market MFD (key M), delivery contracts, independent missions, propellant monitor, refuelling, and Economic Admin are available. Diagnostic test modules are built only for CI and are not included in the user release. Market BUY/SELL operations require user-created accounts.cfg with a company account named company and cargo_catalog.cfg with explicit item definitions and prices. The sample setup is documented in Docs/ECONOMY_STARTUP.md. Both cargo exchanges and market trades update OEM accounting only; they do not alter Orbiter physical cargo or vessel mass. Station funds are unlimited; the company account is debited for purchases and credited for sales."
           git tag -f $tag $env:GITHUB_SHA
           git push --force origin "refs/tags/$tag"
           if ($LASTEXITCODE -ne 0) { throw "Could not update rolling release tag" }
@@ -146,8 +249,15 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             gh release edit $tag --repo $env:GITHUB_REPOSITORY --title $title --notes $notes --target $env:GITHUB_SHA --prerelease
             if ($LASTEXITCODE -ne 0) { throw "Could not update rolling release metadata" }
-            gh release upload $tag OEMSpaceportTest.dll OEMGroundContactTest.dll OEMLandingBridge.dll OEMData\\cargo_services.cfg OEMData\\cargo_stock_495353.cfg OEMData\\accounts.cfg OEMData\\cargo_catalog.cfg --repo $env:GITHUB_REPOSITORY --clobber
+            $oldAssets = gh release view $tag --repo $env:GITHUB_REPOSITORY --json assets | ConvertFrom-Json
+            foreach ($asset in $oldAssets.assets) {
+              if ($asset.name -eq "OEMSpaceportTest.dll" -or $asset.name -eq "OEMGroundContactTest.dll") {
+                gh release delete-asset $tag $asset.name --repo $env:GITHUB_REPOSITORY --yes
+                if ($LASTEXITCODE -ne 0) { throw "Could not remove diagnostic asset $($asset.name)" }
+              }
+            }
+            gh release upload $tag OEMLandingBridge.dll OEMData\\cargo_services.cfg OEMData\\cargo_stock_495353.cfg OEMData\\accounts.cfg OEMData\\cargo_catalog.cfg --repo $env:GITHUB_REPOSITORY --clobber
           } else {
-            gh release create $tag OEMSpaceportTest.dll OEMGroundContactTest.dll OEMLandingBridge.dll OEMData\\cargo_services.cfg OEMData\\cargo_stock_495353.cfg --repo $env:GITHUB_REPOSITORY --title $title --notes $notes --prerelease
+            gh release create $tag OEMLandingBridge.dll OEMData\\cargo_services.cfg OEMData\\cargo_stock_495353.cfg --repo $env:GITHUB_REPOSITORY --title $title --notes $notes --prerelease
           }
           if ($LASTEXITCODE -ne 0) { throw "Could not publish rolling release assets" }

@@ -21,6 +21,23 @@ int main() {
     assert(!ledger.transfer("bad-amount", "company", "station", -1, 11, "Invalid").ok);
     assert(!ledger.transfer("too-expensive", "company", "station", 999999, 12, "Invalid").ok);
 
+    // Reputation starts at 50, is bounded, and is independently idempotent.
+    int reputation = -1;
+    assert(!ledger.getReputation("company", reputation));
+    assert(ledger.applyReputation("failure-001", "company", -7, 20, "Expired mission").ok);
+    assert(ledger.getReputation("company", reputation) && reputation == 43);
+    assert(ledger.applyReputation("failure-001", "company", -7, 20, "Replay").ok);
+    assert(ledger.getReputation("company", reputation) && reputation == 43);
+    assert(ledger.reputationEntries().size() == 1);
+    assert(!ledger.applyReputation("failure-001", "company", -8, 20, "Conflict").ok);
+    assert(ledger.applyReputation("failure-002", "company", -100, 21, "Repeated failures").ok);
+    assert(ledger.getReputation("company", reputation) && reputation == 0);
+    assert(ledger.applyReputation("recovery-001", "company", 500, 22, "Recovery").ok);
+    assert(ledger.getReputation("company", reputation) && reputation == 100);
+    oem::Ledger copied = ledger;
+    assert(copied.getReputation("company", reputation) && reputation == 100);
+    assert(copied.applyReputation("recovery-001", "company", 500, 22, "Replay").ok);
+
     const double earthRadius = 6371000.0;
     const double pi = 3.14159265358979323846;
     const double fiveKmInRadians = 5000.0 / earthRadius;

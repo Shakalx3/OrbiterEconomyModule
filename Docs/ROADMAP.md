@@ -76,40 +76,76 @@
 - [ ] Add stock-vessel cargo adapters only where a documented physical cargo interface exists.
 - [x] Docking and spaceport-location observation through the Orbiter bridge.
 
-### Live vessel refuelling — planned
+### Live vessel refuelling — in progress
 
 - [ ] Treat all propellant resources on a vessel as one unified OEM fuel commodity, regardless of Orbiter resource type or vessel-specific fuel naming. The player sees one aggregate fuel quantity and one aggregate capacity; no per-engine/per-resource fuel selection or chemical-type distinction is exposed.
-- [ ] Use Orbiter's native propellant API to inspect every live resource: `GetPropellantCount`, `GetPropellantHandleByIndex`, `GetPropellantMass`, and `GetPropellantMaxMass`. Calculate vessel-wide current fuel and maximum capacity by summing the masses/capacities of all valid propellant resources.
+- [x] Add a portable, tested aggregate propellant snapshot validator and deterministic multi-resource fill planner (`PropellantPlan`); it rejects invalid values, missing resources, and over-capacity requests without mutating an existing plan.
+- [x] Use Orbiter's native propellant API to inspect every live resource: `GetPropellantCount`, `GetPropellantHandleByIndex`, `GetPropellantMass`, and `GetPropellantMaxMass`. Calculate vessel-wide current fuel and maximum capacity by summing the masses/capacities of all valid propellant resources; the read-only OEM Propellant Monitor was runtime-validated against live vessel data and dynamic fuel consumption.
 - [ ] Refuel the actual running vessel through `SetPropellantMass` on the underlying resource handles (or `SetFuelMass` where appropriate); distribute the purchased aggregate quantity across available free capacity using a deterministic policy. Never simulate refuelling by changing only CargoManifest, vessel empty mass, or an OEM-only counter.
 - [ ] Offer unified-fuel purchases at registered economic stations and verified planetary spaceports. Docking must be to a registered economic station; surface refuelling requires the existing landed + ground-contact + same-body spaceport verification. Arbitrary nearby or docked vessels must not qualify.
-- [ ] Calculate purchasable quantity from aggregate live capacity minus aggregate current mass; reject overfill, invalid handles, non-finite values, negative quantities, and transactions with no available tank capacity. Read back every changed resource and verify the aggregate result.
-- [ ] Add explicit unified-fuel stock and price configuration per station/spaceport. Fuel is one OEM market commodity for the whole vessel, even if Orbiter internally represents propellant in several resources. Missing fuel stock means zero available fuel; never create free or implicit starting stock. Keep fuel stock separate from cargo manifests and cargo exchange accounting.
+- [x] Calculate purchasable quantity from aggregate live capacity minus aggregate current mass; reject overfill, invalid handles, non-finite values, negative quantities, and transactions with no available tank capacity. The portable fill planner is tested; the live read-only monitor validates the Orbiter snapshot path.
+- [ ] Treat fuel availability as unlimited at every eligible economic station and planetary spaceport. Do not maintain fuel stock, fuel inventory, or stock debit/credit records; eligibility and the company balance are the only supply-side constraints.
 - [ ] Calculate the unified-fuel sale price contextually from both the location type (orbital station versus planetary spaceport, with room for station/port class) and the celestial body on which the location is situated. Use the canonical economic location and its registered body metadata; do not price solely by a station name or the player's vessel.
+- [x] Add a portable validated propellant purchase quote model. It carries the canonical location/body context and quoted unit rate, validates the full tank-fill plan and company balance, rounds fractional credit totals upward, and does not depend on fuel stock.
 - [ ] Define transparent, configurable pricing inputs and bounded modifiers for location class and celestial-body context (for example, local supply/logistics conditions); keep the resulting quoted unit price stable for the lifetime of a purchase transaction and record the applied price/context in the durable journal. Do not invent real-world fuel chemistry or assume Orbiter's physical body properties alone determine an economically meaningful price.
-- [ ] Commit each refuelling purchase idempotently to the global economy journal, charging the company account and debiting the location's unified-fuel stock exactly once; persist enough before/after per-resource and aggregate tank state to detect and safely reconcile interrupted operations.
-- [ ] Treat the SDK's `SetPropellantMass` calls as the physical commit operation: validate the full distribution plan before mutation, read back the resulting masses, and define rollback/recovery behavior for partial writes or interrupted transactions before enabling real purchases.
-- [ ] Add an in-game Refuel MFD/terminal flow showing location, aggregate current fuel, aggregate capacity, available station stock, unit price, requested quantity, and total cost; support partial and full refuelling without exposing internal resource types.
-- [ ] Runtime-test live refuelling at both an orbital station and a planetary spaceport, including vessels with multiple propellant resources, full tanks, insufficient stock/funds, save/reload, time acceleration, partial-write failure handling, and duplicate-operation recovery.
+- [ ] Commit each refuelling purchase idempotently to the global economy journal, charging the company account exactly once and persisting enough before/after per-resource and aggregate tank state to detect and safely reconcile interrupted operations.
+- [x] Add a portable prepared-transaction model that captures each resource's before/after mass and capacity alongside the immutable quote; classify restart recovery as finalize-charge, abort-unchanged, rollback-partial, or conflict without guessing.
+- [x] Persist immutable PREPARED intent and one-way COMMITTED/ABORTED terminal records in a dedicated append-only, fsync-backed propellant transaction journal, with operation-ID idempotency, transition validation, and corruption/torn-tail refusal. This is separate from the existing v1 economy journal to preserve backward compatibility.
+- [x] Add an idempotent propellant-charge record to the existing v1 global economy journal; replay debits the company ledger exactly once, and the portable tests cover duplicate calls, restart recovery, and insufficient-funds refusal.
+- [ ] Connect the durable transaction journal to native scenario startup and recover PREPARED operations against re-enumerated Orbiter resources; resource count/order/capacity mismatches must stop for manual resolution.
+- [ ] Treat Orbiter propellant mass mutation as the physical commit operation: validate the full distribution plan before mutation, read back the resulting masses, and define rollback/recovery behavior for partial writes or interrupted transactions before enabling real purchases.
+- [ ] Add an in-game Refuel MFD/terminal flow showing location, aggregate current fuel, aggregate capacity, unit price, requested quantity, and total cost; support partial and full refuelling without exposing internal resource types.
+- [ ] Runtime-test live refuelling at both an orbital station and a planetary spaceport, including vessels with multiple propellant resources, full tanks, insufficient funds, save/reload, time acceleration, partial-write failure handling, and duplicate-operation recovery.
+
+### Delivery-contract runtime coverage — planned
+
+- [x] Runtime-validate delivery, automatic handover, payout, and recovery after scenario restart between orbital stations. The user confirmed the scenario reloads correctly and no duplicate payout occurs.
+- [ ] Runtime-validate a delivery contract whose origin is a verified planetary spaceport and destination is a registered orbital station.
+- [ ] Runtime-validate a delivery contract whose origin is a registered orbital station and destination is a verified planetary spaceport.
+- [ ] Runtime-validate a delivery contract between two planetary spaceports and verify that a same-named base on another celestial body cannot satisfy the destination.
+- [ ] For both planetary directions, verify actual landing + ground contact + same-body spaceport proximity, automatic cargo handover, station/base stock accounting as applicable, contract completion, payout, and no duplicate payout after scenario restart.
+
+
 ## Phase C — contracts
 - [x] Portable delivery contract model with vessel, cargo, quantity, origin, destination, reward and deadline.
 - [x] Evidence-based eligibility using post-acceptance origin loads and verified destination landing/docking events.
 - [x] In-memory idempotent payout through the company ledger.
-- [ ] Durable contract acceptance/completion/payout history in the global economy journal, with station and planetary-base destinations treated equally.
-- [ ] Native bridge integration and contract MFD.
-- [ ] Runtime-validate delivery and payout recovery after scenario restart.
+- [x] Durable contract acceptance/completion/payout history in the global economy journal; settlement and company payout are committed as one journal record and replay exactly once.
+- [x] Native bridge integration and Delivery Contracts MFD (key D), with offers derived from configured source stock and other registered orbital stations or planetary spaceports; planetary destination inventories are available during journal recovery.
+- [x] Runtime-validate delivery and payout recovery after scenario restart in Orbiter 2010. (The user confirmed that the scenario reloads correctly and no duplicate payout occurs.)
 
 ### Mission generation and contract system — planned
 
+Current route-quote defaults are centralized in `MissionEconomicsConfig`: nominal estimate speed 10 km/s, 1.5 deadline margin, six-hour base allowance, one credit per estimated kilometre, 100-credit minimum reward, 500,000-credit reward cap, and a one-year maximum allowance. These are economic tuning assumptions, not Orbiter flight-performance predictions.
+
+- [x] Replace first-match delivery destination selection with a complete eligible-location pool and a session-seeded pseudo-random choice, so registry/file order does not dictate every route; keep the selected destination stable while its pending offer is displayed.
+- [x] Refresh unaccepted delivery offers once per in-game day; accepted contracts retain their original terms.
+- [x] Runtime-test destination distribution across several registered planetary bases and orbital stations, confirming that changing the order of `spaceports.registry` does not change the selection bias. The user confirmed in Orbiter 2010 that destinations are selected randomly with no noticeable directional preference.
+- [x] Give each base/station a variable local mission board with zero to three offers, generated from eligible cargo stock and reachable registered cargo-service destinations; an empty board is a valid result.
+- [x] Resolve and validate the exact canonical origin location (including celestial body for planetary bases) before generating each mission; persist boards under canonical location keys while retaining legacy stock/journal storage IDs, with v1 board-file migration.
+- [x] Use a consistent route-distance model: great-circle surface distance for same-body spaceport routes; Orbiter global endpoint separation as an explicitly typed estimate for station/orbital/inter-body combinations. The latter is a straight-line estimate, never represented as a proven flight path.
+- [x] Derive each mission's deadline/time allowance and reward from its route distance through `MissionEconomicsConfig`, with configurable nominal speed, time margin, base allowance, per-kilometre reward, and minimum/maximum bounds; longer routes generally allow more time and pay more.
+- [x] Persist generated mission-board contents and per-location generation state in `OEMData/mission_boards.dat`; offers remain stable across MFD refresh and scenario reload, and acceptance removes an offer from the shared board. Accepted missions retain their quoted reward/deadline in the economy journal.
 - [ ] Expand the existing delivery-contract prototype into a durable mission system, initially offering standalone missions while keeping the data model extensible to future multi-stage chains and campaigns.
-- [ ] Generate mission offers procedurally from a curated pool of objective definitions and compatible templates; validate every generated offer against actual registered locations, cargo catalogue, available stock, and supported Orbiter observations before publishing it.
-- [ ] Assemble mission flavor text procedurally from reusable, context-aware fragments (issuer, reason, task, instructions, deadline, and optional details); generated prose must never contradict the actual objective or reward.
+- [x] Generate validated delivery offers procedurally from a curated starter pool of four compatible delivery templates (routine supply, priority delivery, regional logistics, and long-range logistics); validate registered locations, cargo catalogue, available stock, and Orbiter route observations before publishing. The starter templates are delivery variants, not yet separate non-delivery objective mechanics.
+- [x] Assemble deterministic mission flavor text from reusable context-aware templates (routine supply, priority shortage, regional logistics, or remote logistics); text is stored with board v3 and carried into the accepted-contract journal, and every briefing matches the actual cargo and destination.
+- [x] Add validated objective rules for cargo delivery, verified spaceport visits, and verified station docking; match the exact vessel, target, body, acceptance time, deadline, and required cargo evidence. Visit/docking offers are generated from registered economic locations and presented in a separate MFD.
+- [x] Add a portable lifecycle book for non-delivery objectives: acceptance, evidence-based completion, deadline expiry, cancellation, idempotent ledger payout, and replay hooks.
+- [x] Add a persistent independent-objective board in `OEMData/objective_mission_boards.dat`, with deterministic zero-to-three visit/docking offers per registered economic origin and daily simulation-time refresh.
+- [x] Add OEM Independent Missions MFD (key I), accept/cancel actions, exact Orbiter event verification, event-history reconciliation after restart, automatic payout, and deadline expiry.
+- [ ] Runtime-test visit and docking objectives in Orbiter, including payout-once recovery after scenario reload.
+- [x] Add durable global-economy-journal records for independent mission acceptance, verified completion evidence, settlement, expiry, and cancellation; replay restores mission state and credits the company ledger exactly once. Portable replay tests pass in CI, and the Win32 Orbiter bridge links successfully with the event-driven objective MFD integration. Runtime testing of the new visit/docking MFD remains pending.
+- [x] Automatically load delivery-contract cargo into the vessel's OEM cargo manifest on acceptance, debit origin stock, and commit acceptance plus loading as one durable, replay-safe journal record. This is an accounting manifest, not a physical Orbiter payload API.
 - [ ] Support two complementary mission classes: player-executed missions verified against actual Orbiter state/events, and abstract missions resolved entirely by the economic simulation without requiring physical NPC vessels.
 - [ ] Do not require physical NPC ships, NPC transporters, escorts, rescue targets, or autonomous NPC piloting. Abstract organizations, carriers, customers, suppliers, and competitors may participate as economic agents without being instantiated as Orbiter vessels.
 - [ ] Initial player-executed objective pool: cargo delivery, base/station supply, urgent delivery, verified spaceport visit, verified station docking, and research/route visits where the required position and dwell-time evidence can be measured reliably.
 - [ ] Keep mission definition, generated mission instance, objective, conditions, reward, penalty, issuer/reputation, and journal/persistence as separate extensible concepts.
-- [ ] Persist generator state and generated offers so a restart does not reroll the mission board; persist accepted mission state and all objective evidence/reward settlement idempotently in the global economy journal.
-- [ ] On mission failure, apply both a monetary penalty and a reputation reduction. Declining an unaccepted offer has no penalty; cancellation/failure rules for accepted contracts must be explicit per mission.
+- [x] Persist delivery and independent-objective board offers and per-location generation state separately; daily refresh is based on Orbiter simulation time, while accepted mission state and objective evidence/payouts replay idempotently from the global economy journal.
+- [x] On mission failure, apply both a monetary penalty and a reputation reduction. Declining an unaccepted offer has no penalty; cancellation/failure rules for accepted contracts must be explicit per mission. Runtime-validated in Orbiter 2010, including scenario reload.
 - [ ] Track reputation independently for each organization/issuer; use it to influence future mission availability and offer quality, without implying the issuer is a physical NPC vessel.
+  - [ ] Add stable issuer IDs to delivery and independent mission definitions and persist them in the global journal with backward-compatible replay of legacy records.
+  - [ ] Apply expiry penalties to the company account while applying reputation changes only to the issuing organization; keep company-wide reputation separate.
+  - [ ] Give generated offers explicit issuer identities, then use issuer reputation to weight mission availability and procedural offer quality without changing already-published offers.
 - [ ] Use Orbiter simulation time for deadlines and mission timing; never use wall-clock time.
 
 ### Abstract economic agents and background trade — planned

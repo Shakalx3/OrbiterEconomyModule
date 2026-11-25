@@ -14,16 +14,24 @@ enum ContractStatus {
     CONTRACT_ACCEPTED = 1,
     CONTRACT_COMPLETED = 2,
     CONTRACT_SETTLED = 3,
-    CONTRACT_EXPIRED = 4
+    CONTRACT_EXPIRED = 4,
+    CONTRACT_CANCELLED = 5
 };
 
 struct DeliveryContract {
     std::string contractId;
+    std::string issuerId; // Stable identity of the organization issuing this contract.
     std::string vesselId;
     std::string cargoId;
     long long quantity;
     std::string originLocationId;
     std::string destinationLocationId;
+    // Optional celestial-body constraint for planetary destination evidence.
+    std::string destinationBodyId;
+    // Procedural, immutable mission presentation metadata.
+    std::string missionType;
+    std::string missionTitle;
+    std::string missionBriefing;
     Credits reward;
     SimulationSeconds acceptedAt;
     SimulationSeconds deadline;
@@ -45,6 +53,15 @@ public:
     Result observe(const SimulationEvent& event, const CargoManifest& manifest);
     Result settle(const std::string& contractId, const std::string& companyAccountId,
                   Ledger& ledger);
+    // Journal replay hooks. These restore already-committed facts without re-evaluating
+    // Orbiter state or issuing a second payment.
+    Result restoreCompleted(const std::string& contractId, const std::string& eventId,
+                            SimulationSeconds completedAt);
+    Result restoreSettled(const std::string& contractId);
+    Result restoreExpired(const std::string& contractId);
+    Result cancel(const std::string& contractId);
+    Result restoreCancelled(const std::string& contractId);
+    std::vector<std::string> expireDue(SimulationSeconds now);
 
     const DeliveryContract* find(const std::string& contractId) const;
     const std::vector<DeliveryContract>& contracts() const;

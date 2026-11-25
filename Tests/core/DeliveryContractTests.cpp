@@ -24,7 +24,9 @@ static oem::DeliveryContract contract() {
 int main() {
     oem::DeliveryContractBook book;oem::DeliveryContract c=contract();
     assert(book.accept(c).ok);
-    assert(!book.accept(c).ok);
+    assert(book.accept(c).ok); // exact acceptance replay is idempotent
+    oem::DeliveryContract conflict=c;conflict.reward++;
+    assert(!book.accept(conflict).ok);
     oem::CargoManifest manifest("GL-NT");
     assert(manifest.load(transfer("too-early",oem::CARGO_LOAD,"ISS",3,99)).ok);
     oem::SimulationEvent e=arrival(oem::SIM_EVENT_LANDING,"arrival-1",200);
@@ -56,6 +58,34 @@ int main() {
     oem::SimulationEvent dockEvent=arrival(oem::SIM_EVENT_DOCK,"dock-arrival",250);
     assert(dockBook.observe(dockEvent,dockManifest).ok);
 
+    // Planetary origin -> orbital station destination.
+    oem::DeliveryContractBook surfaceOriginBook;
+    oem::DeliveryContract surfaceOrigin=contract();
+    surfaceOrigin.contractId="surface-origin";
+    surfaceOrigin.originLocationId="MoonBase";
+    surfaceOrigin.destinationLocationId="MoonStation";
+    assert(surfaceOriginBook.accept(surfaceOrigin).ok);
+    oem::CargoManifest surfaceManifest("GL-NT");
+    assert(surfaceManifest.load(transfer("surface-load",oem::CARGO_LOAD,"MoonBase",3,150)).ok);
+    oem::SimulationEvent stationArrival=arrival(oem::SIM_EVENT_DOCK,"station-arrival",250);
+    assert(surfaceOriginBook.observe(stationArrival,surfaceManifest).ok);
+
+    // A same-named base on another body cannot satisfy a body-bound destination.
+    oem::DeliveryContractBook bodyBook;
+    oem::DeliveryContract bodyContract=contract();
+    bodyContract.contractId="body-bound";
+    bodyContract.destinationBodyId="Moon";
+    assert(bodyBook.accept(bodyContract).ok);
+    oem::CargoManifest bodyManifest("GL-NT");
+    assert(bodyManifest.load(transfer("body-load",oem::CARGO_LOAD,"ISS",3,150)).ok);
+    oem::SimulationEvent wrongBody=arrival(oem::SIM_EVENT_LANDING,"wrong-body",250);
+    wrongBody.bodyId="Mars";
+    assert(!bodyBook.observe(wrongBody,bodyManifest).ok);
+    oem::SimulationEvent rightBody=wrongBody;
+    rightBody.eventId="right-body";
+    rightBody.bodyId="Moon";
+    assert(bodyBook.observe(rightBody,bodyManifest).ok);
+
     oem::DeliveryContractBook expiryBook;oem::DeliveryContract expired=contract();
     expired.contractId="expired";expired.deadline=180;
     assert(expiryBook.accept(expired).ok);
@@ -63,6 +93,9 @@ int main() {
     assert(expiryManifest.load(transfer("expiry-load",oem::CARGO_LOAD,"ISS",3,150)).ok);
     oem::SimulationEvent late=arrival(oem::SIM_EVENT_LANDING,"late-arrival",200);
     assert(!expiryBook.observe(late,expiryManifest).ok);
+    assert(expiryBook.find("expired")->status==oem::CONTRACT_ACCEPTED);
+    const std::vector<std::string> lateExpired=expiryBook.expireDue(200);
+    assert(lateExpired.size()==1&&lateExpired[0]=="expired");
     assert(expiryBook.find("expired")->status==oem::CONTRACT_EXPIRED);
 
     oem::DeliveryContractBook unloadBook;oem::DeliveryContract unloadContract=contract();
@@ -72,5 +105,33 @@ int main() {
     assert(unloadManifest.load(transfer("load",oem::CARGO_LOAD,"ISS",3,150)).ok);
     assert(unloadManifest.unload(transfer("unload",oem::CARGO_UNLOAD,"ISS",3,190)).ok);
     assert(!unloadBook.observe(e,unloadManifest).ok); // cargo not aboard at event time
+    oem::DeliveryContractBook replayBook;
+    oem::DeliveryContract replay=contract();
+    replay.contractId="replay-contract";
+    assert(replayBook.accept(replay).ok);
+    assert(replayBook.restoreCompleted("replay-contract","persisted-arrival",300).ok);
+    assert(replayBook.restoreCompleted("replay-contract","persisted-arrival",300).ok);
+    assert(!replayBook.restoreCompleted("replay-contract","different-arrival",300).ok);
+    assert(replayBook.restoreSettled("replay-contract").ok);
+    assert(replayBook.restoreSettled("replay-contract").ok);
+    assert(replayBook.find("replay-contract")->status==oem::CONTRACT_SETTLED);
+
+    oem::DeliveryContractBook cancelBook;
+    oem::DeliveryContract cancellable=contract();cancellable.contractId="cancel-me";
+    assert(cancelBook.accept(cancellable).ok);
+    assert(cancelBook.cancel("cancel-me").ok);
+    assert(cancelBook.find("cancel-me")->status==oem::CONTRACT_CANCELLED);
+    assert(cancelBook.cancel("cancel-me").ok);
+    assert(!cancelBook.restoreCompleted("cancel-me","arrival-after-cancel",200).ok);
+
+    oem::DeliveryContractBook clockBook;
+    oem::DeliveryContract clockContract=contract();
+    clockContract.contractId="clock-expiry";
+    assert(clockBook.accept(clockContract).ok);
+    assert(clockBook.expireDue(1000).empty());
+    const std::vector<std::string> expiredIds=clockBook.expireDue(1001);
+    assert(expiredIds.size()==1&&expiredIds[0]=="clock-expiry");
+    assert(clockBook.expireDue(2000).empty());
+    assert(clockBook.find("clock-expiry")->status==oem::CONTRACT_EXPIRED);
     return 0;
 }
