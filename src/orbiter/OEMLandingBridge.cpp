@@ -1300,13 +1300,19 @@ public:
         return applyCargoTransfer(transfer, (double)currentSimulationTime_);
     }
 
-    oem::Result performMarketTrade(const std::string& vesselId, oem::MarketSide side) {
+    oem::Result performMarketTrade(const std::string& vesselId,
+                                    const std::string& cargoId,
+                                    oem::MarketSide side,
+                                    long long requestedQuantity) {
         if (!economyReady_ || economyJournalPath_.empty())
             return oem::Result::failure("MARKET_UNAVAILABLE",
                 "The global economy is not ready. Check accounts.cfg, cargo_catalog.cfg and the economy journal.");
         if (sessionId_.empty() || currentSimulationTime_ <= 0)
             return oem::Result::failure("MARKET_NOT_READY",
                 "Wait until the simulation has advanced beyond its initialization frame.");
+        if (cargoId.empty() || requestedQuantity < 0)
+            return oem::Result::failure("MARKET_REQUEST",
+                "A cargo item and a non-negative trade quantity are required.");
         const std::string serviceId = currentMarketLocation(vesselId);
         if (serviceId.empty())
             return oem::Result::failure("MARKET_NO_LOCATION",
@@ -1327,41 +1333,56 @@ public:
             return oem::Result::failure("MARKET_PROJECTION_UNAVAILABLE",
                 "The station inventory or vessel manifest is unavailable.");
 
-        const std::vector<oem::CargoDefinition>& definitions = cargoCatalog_.entries();
-        std::string selectedCargo;
-        bool vesselHasSellCargo = false;
-        bool allSellCargoAtCapacity = true;
-        for (std::size_t i = 0; i < definitions.size(); ++i) {
-            const std::string& cargoId = definitions[i].cargoId;
-            if (side == oem::MARKET_BUY_FROM_STATION) {
-                if (inventory->second.quantity(cargoId) > 0) {
-                    selectedCargo = cargoId;
-                    break;
-                }
-            } else if (side == oem::MARKET_SELL_TO_STATION) {
-                if (manifest->second.quantity(cargoId) > 0) {
-                    vesselHasSellCargo = true;
-                    long long maximumStock = 0;
-                    if (!primaryResources_.maximumStockFor(serviceId, cargoId, maximumStock) ||
-                        inventory->second.quantity(cargoId) < maximumStock) {
-                        allSellCargoAtCapacity = false;
-                        selectedCargo = cargoId;
-                        break;
-                    }
-                }
-            } else {
-                return oem::Result::failure("MARKET_SIDE", "Unknown market operation.");
+        oem::CargoDefinition definition;
+        if (!cargoCatalog_.find(cargoId, definition))
+            return oem::Result::failure("UNKNOWN_CARGO",
+                "The selected cargo is not present in the configured catalog.");
+
+        long long maximumStationStock = (std::numeric_limits<long long>::max)();
+        long long maximumQuantity = 0;
+        if (side == oem::MARKET_BUY_FROM_STATION) {
+            maximumQuantity = inventory->second.quantity(cargoId);
+            if (definition.buyPrice > 0) {
+                const long long affordable = balance > 0 ? balance / definition.buyPrice : 0;
+                if (affordable < maximumQuantity) maximumQuantity = affordable;
             }
+        } else if (side == oem::MARKET_SELL_TO_STATION) {
+            maximumQuantity = manifest->second.quantity(cargoId);
+            if (primaryResources_.maximumStockFor(serviceId, cargoId, maximumStationStock)) {
+                const long long current = inventory->second.quantity(cargoId);
+                const long long freeCapacity = current >= maximumStationStock
+                    ? 0 : maximumStationStock - current;
+                if (freeCapacity < maximumQuantity) maximumQuantity = freeCapacity;
+            } else {
+                const long long current = inventory->second.quantity(cargoId);
+                const long long freeCapacity = current >= maximumStationStock
+                    ? 0 : maximumStationStock - current;
+                if (freeCapacity < maximumQuantity) maximumQuantity = freeCapacity;
+            }
+        } else {
+            return oem::Result::failure("MARKET_SIDE", "Unknown market operation.");
         }
-        if (selectedCargo.empty()) {
-            if (side == oem::MARKET_SELL_TO_STATION && vesselHasSellCargo && allSellCargoAtCapacity)
-                return oem::Result::failure("MARKET_STATION_FULL",
-                    "The station has reached its configured stock capacity for all cargo carried by the vessel.");
+
+        const long long quantity = requestedQuantity == 0 ? maximumQuantity : requestedQuantity;
+        if (quantity <= 0)
             return oem::Result::failure(side == oem::MARKET_BUY_FROM_STATION
                 ? "MARKET_NO_STOCK" : "MARKET_NO_CARGO",
                 side == oem::MARKET_BUY_FROM_STATION
-                ? "No catalog item has available station stock."
-                : "The vessel has no catalog cargo available to sell.");
+                ? "No units are available at this station or the company cannot afford one."
+                : "The vessel has no units to sell, or the station has no free stock capacity.");
+        if (quantity > maximumQuantity) {
+            if (side == oem::MARKET_BUY_FROM_STATION &&
+                quantity > inventory->second.quantity(cargoId))
+                return oem::Result::failure("INSUFFICIENT_STATION_STOCK",
+                    "The station does not have enough stock for the selected quantity.");
+            if (side == oem::MARKET_BUY_FROM_STATION)
+                return oem::Result::failure("INSUFFICIENT_FUNDS",
+                    "The company account cannot afford the selected quantity.");
+            if (quantity > manifest->second.quantity(cargoId))
+                return oem::Result::failure("INSUFFICIENT_CARGO",
+                    "The vessel does not carry the selected quantity.");
+            return oem::Result::failure("MARKET_STATION_FULL",
+                "The station does not have enough free capacity for the selected quantity.");
         }
 
         char operationId[256];
@@ -1369,12 +1390,9 @@ public:
                 ++cargoTransferSequence_);
         oem::MarketQuote quote;
         oem::MarketQuoteEngine quoteEngine;
-        long long maximumStationStock = (std::numeric_limits<long long>::max)();
-        if (side == oem::MARKET_SELL_TO_STATION)
-            primaryResources_.maximumStockFor(serviceId, selectedCargo, maximumStationStock);
         const oem::Result quoted = quoteEngine.createQuote(
             cargoCatalog_, inventory->second, std::string("QUOTE-") + operationId,
-            selectedCargo, side, 1, currentSimulationTime_, quote, maximumStationStock);
+            cargoId, side, quantity, currentSimulationTime_, quote, maximumStationStock);
         if (!quoted.ok) return quoted;
 
         const oem::Result committed = economyJournalStore_.applyTrade(
@@ -1383,9 +1401,9 @@ public:
         if (!committed.ok) return committed;
 
         char message[512];
-        sprintf(message, "OEM MARKET: %s cargo=%s quantity=1 total=%lld company_balance=%lld",
+        sprintf(message, "OEM MARKET: %s cargo=%s quantity=%lld total=%lld company_balance=%lld",
             side == oem::MARKET_BUY_FROM_STATION ? "BUY" : "SELL",
-            selectedCargo.c_str(), (long long)quote.totalPrice,
+            cargoId.c_str(), quantity, (long long)quote.totalPrice,
             (long long)(balance + (side == oem::MARKET_BUY_FROM_STATION
                 ? -quote.totalPrice : quote.totalPrice)));
         oapiWriteLog(message);
@@ -3331,7 +3349,8 @@ public:
     OEMMarketMFD(DWORD w, DWORD h, VESSEL *vessel)
         : MFD(w, h, vessel),
           vesselId_(vessel && vessel->GetName() ? vessel->GetName() : ""),
-          status_("Dock to a registered service to trade.") {}
+          selectedCargo_(0), selectedQuantity_(1),
+          status_("UP/DOWN: cargo  1/5/0: quantity  A: max  B/S: trade") {}
 
     void Update(HDC hDC) override {
         Title(hDC, "OEM LOCATION MARKET");
@@ -3360,6 +3379,7 @@ public:
         } else {
             DrawLine(hDC, y, "COMPANY ACCOUNT MISSING");
         }
+
         const oem::CargoCatalog *catalog = g_bridge->marketCatalog();
         const oem::CargoServiceInventory *stock = serviceId.empty()
             ? 0 : g_bridge->cargoServiceInventory(serviceId);
@@ -3369,32 +3389,83 @@ public:
         } else if (catalog->entries().empty()) {
             DrawLine(hDC, y, "Cargo catalog is empty.");
         } else {
-            DrawLine(hDC, y, "CARGO / STOCK / SHIP / BUY / SELL");
             const std::vector<oem::CargoDefinition>& items = catalog->entries();
-            for (std::size_t i = 0; i < items.size() && i < 4; ++i) {
+            if (selectedCargo_ >= items.size()) selectedCargo_ = 0;
+            const std::size_t first = selectedCargo_ > 2 ? selectedCargo_ - 2 : 0;
+            const std::size_t last = items.size() < first + 5 ? items.size() : first + 5;
+            DrawLine(hDC, y, "UP/DOWN SELECTS CARGO");
+            for (std::size_t i = first; i < last; ++i) {
                 const long long stationQty = stock ? stock->quantity(items[i].cargoId) : 0;
                 const long long vesselQty = manifest ? manifest->quantity(items[i].cargoId) : 0;
                 char line[256];
-                sprintf(line, "%.10s %lld/%lld %lld/%lld",
-                    items[i].cargoId.c_str(), stationQty, (long long)items[i].buyPrice,
+                sprintf(line, "%c %.12s STK:%lld BUY:%lld",
+                    i == selectedCargo_ ? '>' : ' ', items[i].cargoId.c_str(),
+                    stationQty, (long long)items[i].buyPrice);
+                DrawLine(hDC, y, line);
+                sprintf(line, "  SHIP:%lld SELL:%lld",
                     vesselQty, (long long)items[i].sellPrice);
                 DrawLine(hDC, y, line);
             }
+            if (selectedCargo_ < items.size()) {
+                char line[128];
+                sprintf(line, "SELECTED: %.20s  QTY: %s",
+                    items[selectedCargo_].cargoId.c_str(),
+                    selectedQuantity_ == 0 ? "MAX" :
+                    (selectedQuantity_ == 1 ? "1" :
+                    (selectedQuantity_ == 5 ? "5" : "10")));
+                DrawLine(hDC, y, line);
+            }
         }
-        DrawLine(hDC, y, "B: BUY 1 UNIT     S: SELL 1 UNIT");
+        DrawLine(hDC, y, "1/5/0: 1 / 5 / 10 UNITS   A: MAX");
+        DrawLine(hDC, y, "B: BUY SELECTED   S: SELL SELECTED");
         DrawLine(hDC, y, status_.c_str());
     }
 
     bool ConsumeKeyBuffered(DWORD key) override {
         if (!g_bridge) return false;
-        oem::Result result;
-        if (key == OAPI_KEY_B) {
-            result = g_bridge->performMarketTrade(vesselId_, oem::MARKET_BUY_FROM_STATION);
-        } else if (key == OAPI_KEY_S) {
-            result = g_bridge->performMarketTrade(vesselId_, oem::MARKET_SELL_TO_STATION);
-        } else {
-            return false;
+        const oem::CargoCatalog *catalog = g_bridge->marketCatalog();
+        if (key == OAPI_KEY_UP || key == OAPI_KEY_DOWN) {
+            if (!catalog || catalog->entries().empty()) return true;
+            if (key == OAPI_KEY_UP) {
+                selectedCargo_ = selectedCargo_ == 0
+                    ? catalog->entries().size() - 1 : selectedCargo_ - 1;
+            } else {
+                selectedCargo_ = (selectedCargo_ + 1) % catalog->entries().size();
+            }
+            status_ = "Cargo selection changed.";
+            return true;
         }
+        if (key == OAPI_KEY_1) {
+            selectedQuantity_ = 1;
+            status_ = "Trade quantity set to 1.";
+            return true;
+        }
+        if (key == OAPI_KEY_5) {
+            selectedQuantity_ = 5;
+            status_ = "Trade quantity set to 5.";
+            return true;
+        }
+        if (key == OAPI_KEY_0) {
+            selectedQuantity_ = 10;
+            status_ = "Trade quantity set to 10.";
+            return true;
+        }
+        if (key == OAPI_KEY_A) {
+            selectedQuantity_ = 0;
+            status_ = "Trade quantity set to maximum available.";
+            return true;
+        }
+        if (key != OAPI_KEY_B && key != OAPI_KEY_S) return false;
+        if (!catalog || catalog->entries().empty() ||
+            selectedCargo_ >= catalog->entries().size()) {
+            status_ = "No cargo item is selected.";
+            return true;
+        }
+        const std::string cargoId = catalog->entries()[selectedCargo_].cargoId;
+        const oem::MarketSide side = key == OAPI_KEY_B
+            ? oem::MARKET_BUY_FROM_STATION : oem::MARKET_SELL_TO_STATION;
+        const oem::Result result = g_bridge->performMarketTrade(
+            vesselId_, cargoId, side, selectedQuantity_);
         status_ = result.ok ? "Trade durably committed." : result.code + ": " + result.message;
         return true;
     }
@@ -3413,8 +3484,8 @@ public:
 
     int ButtonMenu(const MFDBUTTONMENU **menu) const override {
         static const MFDBUTTONMENU items[2] = {
-            { "Buy one unit at current location", 0, 'B' },
-            { "Sell one unit at current location", 0, 'S' }
+            { "Buy selected quantity at current location", 0, 'B' },
+            { "Sell selected quantity at current location", 0, 'S' }
         };
         if (menu) *menu = items;
         return 2;
@@ -3434,6 +3505,8 @@ private:
         y += (int)ch;
     }
     std::string vesselId_;
+    std::size_t selectedCargo_;
+    long long selectedQuantity_;
     std::string status_;
 };
 
