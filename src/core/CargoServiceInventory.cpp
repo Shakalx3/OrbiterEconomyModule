@@ -8,8 +8,9 @@ CargoServiceInventory::CargoServiceInventory(const std::string& id)
 Result CargoServiceInventory::setInitialStock(const std::string& cargoId, long long quantity, double unitMassKg) {
     if (serviceVesselId_.empty() || cargoId.empty() || quantity < 0 || !(unitMassKg > 0.0) || !std::isfinite(unitMassKg))
         return Result::failure("INVALID_CARGO_STOCK", "Service ID, cargo ID, non-negative quantity and positive finite unit mass are required.");
-    if (!history_.empty())
-        return Result::failure("CARGO_STOCK_ALREADY_ACTIVE", "Initial stock cannot be changed after the first transfer.");
+    for (std::size_t i = 0; i < history_.size(); ++i)
+        if (history_[i].cargoId == cargoId)
+            return Result::failure("CARGO_STOCK_ALREADY_ACTIVE", "Initial stock cannot be changed after a transfer of this cargo.");
     std::map<std::string, std::size_t>::iterator it = lineIndexes_.find(cargoId);
     if (it != lineIndexes_.end()) {
         if (std::fabs(lines_[it->second].unitMassKg - unitMassKg) > 1e-9)
