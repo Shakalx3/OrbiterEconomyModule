@@ -3,6 +3,7 @@
 #include "MarketTrade.h"
 #include "DeliveryContract.h"
 #include "MissionObjectiveBook.h"
+#include "PrimaryResource.h"
 #include <map>
 #include <string>
 namespace oem {
@@ -28,6 +29,7 @@ public:
                 MissionObjectiveBook* objectives = 0) const;
     // A single durable append commits either a non-financial exchange or a market trade.
     // Durable, replay-safe creation of primary resources at a configured source.
+    Result recoverPrimaryProductionTimes(const std::string& path, PrimaryResourceBook& book) const;
     Result applyPrimaryProduction(const std::string& path, const std::string& operationId,
                 const std::string& sourceId, const std::string& locationId,
                 const std::string& cargoId, long long quantity, double unitMassKg,
