@@ -63,6 +63,27 @@ int main() {
     assert(!quotes.createQuote(catalog, cappedStock, "q-cap-full", "oxygen",
         oem::MARKET_SELL_TO_STATION, 1, 202, fullStation, 150).ok);
 
+    // Execution rechecks capacity if inventory changed after a quote was issued.
+    oem::CargoServiceInventory staleStock("ISS");
+    assert(staleStock.setInitialStock("oxygen", 149, 10.0).ok);
+    oem::CargoManifest staleSeller("GL-04");
+    cargo.transferId="load-stale-seller"; cargo.vesselId="GL-04";
+    assert(staleSeller.load(cargo).ok);
+    oem::MarketQuote staleQuote;
+    assert(quotes.createQuote(catalog, staleStock, "q-cap-stale", "oxygen",
+        oem::MARKET_SELL_TO_STATION, 1, 203, staleQuote, 150).ok);
+    oem::CargoTransfer production;
+    production.transferId="production-between-quote-and-trade";
+    production.direction=oem::CARGO_UNLOAD; production.vesselId="OEM-PRODUCER";
+    production.locationId="ISS"; production.cargoId="oxygen";
+    production.quantity=1; production.unitMassKg=10.0; production.simulationTime=203;
+    assert(staleStock.apply(production).ok);
+    const oem::Credits beforeStaleTrade=balance;
+    assert(!trades.execute(catalog, staleQuote, "trade-cap-stale", "company",
+        ledger, staleStock, staleSeller).ok);
+    assert(staleStock.quantity("oxygen")==150 && staleSeller.quantity("oxygen")==2);
+    assert(ledger.getBalance("company", balance) && balance==beforeStaleTrade);
+
     // Insufficient funds leaves all three projections unchanged.
     oem::CargoDefinition costly=oxygen(); costly.cargoId="costly";
     costly.buyPrice=10000; costly.sellPrice=1;
@@ -77,7 +98,7 @@ int main() {
     assert(!trades.execute(second, expensive, "trade-3", "company",
         ledger, richStock, emptyShip).ok);
     assert(richStock.quantity("costly")==beforeStock && emptyShip.quantity("costly")==0);
-    assert(ledger.getBalance("company", balance) && balance==660);
+    assert(ledger.getBalance("company", balance) && balance==740);
 
     // A forged/stale price is rejected before any projection is changed.
     expensive.unitPrice=1; expensive.totalPrice=1;
