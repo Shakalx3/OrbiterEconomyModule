@@ -5,7 +5,6 @@ This checklist is for the complete cargo-market loop in the native Orbiter bridg
 ## Important scope
 
 - The market is an OEM accounting system. Cargo in the OEM manifest is not inserted into or removed from Orbiter's physical vessel payload.
-- Prices are currently fixed per cargo definition in `cargo_catalog.cfg`; they are not yet adjusted dynamically by supply and demand.
 - A stock installation using the original one-item TEST catalogue is expanded in memory with seven built-in commodities. Existing custom catalogues are left unchanged.
 - Every registered cargo service has its own opening stock. The starter market seeds only the new built-in cargo IDs; it preserves all existing stock lines and journal history.
 - Prices are dynamic per station. They respond to that station's current stock; historic trades retain their exact committed quote through journal recovery.
@@ -26,7 +25,7 @@ On an installation using the original OEM starter catalogue (the single TEST lin
 | MACHINERY | Machinery | 25 kg | 500 cr | 300 cr | 20 |
 | MEDICAL | Medical supplies | 1 kg | 180 cr | 110 cr | 30 |
 
-The legacy TEST item remains available with its configured price and primary-resource settings. Starter stock is added only for missing built-in cargo lines. Existing lines are not reset. New stations receive their own opening inventory when their cargo service is first initialized.
+The legacy TEST item remains available with its configured price and primary-resource settings. Built-in commodities are enabled for a single-entry TEST catalogue with 1 kg unit mass, even if its display name or configured prices differ from the original starter values. Starter stock is added only for missing built-in cargo lines that have no prior trade, production, transfer or contract history at that station. Existing active stock and journal history are never reset. New stations receive their own opening inventory when their cargo service is first initialized.
 
 ## Dynamic pricing model
 
