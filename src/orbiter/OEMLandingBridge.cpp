@@ -1369,7 +1369,7 @@ public:
                 ++cargoTransferSequence_);
         oem::MarketQuote quote;
         oem::MarketQuoteEngine quoteEngine;
-        long long maximumStationStock = std::numeric_limits<long long>::max();
+        long long maximumStationStock = (std::numeric_limits<long long>::max)();
         if (side == oem::MARKET_SELL_TO_STATION)
             primaryResources_.maximumStockFor(serviceId, selectedCargo, maximumStationStock);
         const oem::Result quoted = quoteEngine.createQuote(

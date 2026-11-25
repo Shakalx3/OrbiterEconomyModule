@@ -33,7 +33,7 @@ const std::vector<CargoDefinition>& CargoCatalog::entries() const { return entri
 MarketQuote::MarketQuote()
     : quoteId(), stationId(), cargoId(), side(MARKET_BUY_FROM_STATION),
       quantity(0), unitPrice(0), totalPrice(0), stationStockAtQuote(0), simulationTime(0),
-      maximumStationStock(std::numeric_limits<long long>::max()) {}
+      maximumStationStock((std::numeric_limits<long long>::max)()) {}
 
 Result MarketQuoteEngine::createQuote(const CargoCatalog& catalog,
                                       const CargoServiceInventory& inventory,
@@ -59,7 +59,7 @@ Result MarketQuoteEngine::createQuote(const CargoCatalog& catalog,
     if (side == MARKET_BUY_FROM_STATION && stock < quantity)
         return Result::failure("INSUFFICIENT_STATION_STOCK", "The station does not have enough stock for this quote.");
     if (side == MARKET_SELL_TO_STATION &&
-        stock > std::numeric_limits<long long>::max() - quantity)
+        stock > (std::numeric_limits<long long>::max)() - quantity)
         return Result::failure("CARGO_QUANTITY_OVERFLOW", "Station stock would overflow after this sale.");
     if (maximumStationStock < 0)
         return Result::failure("MARKET_STOCK_CAPACITY", "Station stock capacity cannot be negative.");

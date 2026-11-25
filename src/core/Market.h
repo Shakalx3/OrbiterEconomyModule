@@ -58,7 +58,7 @@ public:
                        long long quantity,
                        SimulationSeconds simulationTime,
                        MarketQuote& quote,
-                       long long maximumStationStock = std::numeric_limits<long long>::max()) const;
+                       long long maximumStationStock = (std::numeric_limits<long long>::max)()) const;
 };
 
 } // namespace oem
