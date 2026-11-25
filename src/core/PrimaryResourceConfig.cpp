@@ -45,7 +45,7 @@ Result PrimaryResourceConfigStore::load(const std::string&path,PrimaryResourceBo
 Result PrimaryResourceConfigStore::save(const std::string&path,const PrimaryResourceBook&book)const{
  if(path.empty())return Result::failure("PRIMARY_CONFIG_PATH","Primary resource configuration path is empty.");
  const std::string temp=path+".tmp";
- {std::ofstream out(temp.c_str(),std::ios::binary|std::ios::trunc);if(!out)return Result::failure("PRIMARY_CONFIG_OPEN","Could not create temporary primary resource configuration.");
+ {std::ofstream out(temp.c_str(),std::ios::binary|std::ios::trunc);if(!out)return Result::failure("PRIMARY_CONFIG_OPEN","Could not create temporary primary resource configuration.");out.imbue(std::locale::classic());
   out<<"OEM_PRIMARY_RESOURCES|2\n";const std::vector<PrimaryResourceSource>&v=book.sources();
   for(std::size_t i=0;i<v.size();++i){const PrimaryResourceSource&s=v[i];out<<"S|"<<hex(s.sourceId)<<'|'<<hex(s.locationId)<<'|'<<hex(s.cargoId)<<'|'<<std::setprecision(17)<<s.unitMassKg<<'|'<<s.unitsPerCycle<<'|'<<s.cycleSeconds<<'|'<<s.maximumStock<<'|'<<s.lastProductionTime<<'|'<<(s.enabled?1:0)<<'|'<<s.openingStock<<"\n";}
   out.flush();if(!out.good())return Result::failure("PRIMARY_CONFIG_WRITE","Could not write primary resource configuration.");out.close();if(out.fail())return Result::failure("PRIMARY_CONFIG_CLOSE","Could not close primary resource configuration.");
