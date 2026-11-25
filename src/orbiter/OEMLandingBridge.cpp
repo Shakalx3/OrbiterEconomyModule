@@ -2432,6 +2432,10 @@ private:
             }
         }
         primaryResourcesReady_ = true;
+        char sourceSummary[256];
+        sprintf(sourceSummary, "OEM Primary Resources: loaded %lu configured sources.",
+            (unsigned long)primaryResources_.sources().size());
+        oapiWriteLog(sourceSummary);
         const std::vector<oem::PrimaryResourceSource>& sources = primaryResources_.sources();
         for (std::size_t i = 0; i < sources.size(); ++i) {
             const oem::PrimaryResourceSource& source = sources[i];
