@@ -101,7 +101,7 @@ int main() {
     assert(richStock.quantity("costly")==beforeStock && emptyShip.quantity("costly")==0);
     assert(ledger.getBalance("company", balance) && balance==740);
 
-    // A forged/stale price is rejected before any projection is changed.
+    // A malformed quote total is rejected before any projection is changed.
     expensive.unitPrice=1; expensive.totalPrice=2;
     assert(!trades.execute(second, expensive, "trade-4", "company",
         ledger, richStock, emptyShip).ok);
