@@ -7,21 +7,21 @@ The native bridge now uses one file, `OEMData/economy.journal`, for all future c
 The following files are read beside the module, under `OEMData`:
 
 - `economic_stations.registry`: player-managed orbital station identities. Register or remove the focused vessel in-game using the OEM Economic Admin MFD (key A). OEM creates and maintains this file; do not edit it manually.
-- `cargo_services.cfg`: trusted cargo-service permissions, maintained in-game from the same Admin MFD. A cargo-service vessel is not automatically an orbital station; these are independent roles.
+- `cargo_services.cfg`: trusted cargo-service permissions. On a clean install OEM creates this file with the sample ISS service permission; permissions can then be changed in-game from the Economic Admin MFD. A cargo-service vessel is not automatically an orbital station; these are independent roles.
 - `cargo_stock_<HEX location ID>.cfg`: explicit opening stock for each registered station vessel or planetary surface base. For a planetary base, OEM automatically creates this file on its first confirmed landing, using the exact Orbiter base name; it starts empty unless a matching primary-resource source defines an explicit one-time opening quantity. A configured opening quantity can also initialize an already-existing but still-empty file, provided that the location has no global-journal history. Non-empty or journal-backed stock is never overwritten or refilled.
-- `accounts.cfg`: optional until market trading is enabled. If absent, the company ledger starts with no accounts and market trades cannot be executed.
-- `cargo_catalog.cfg`: optional until market trading is enabled. If absent, there are no defined tradeable cargo types.
-- `primary_resources.cfg`: optional; OEM creates an empty version-2 file when missing. It defines explicit primary-resource sources, one-time opening quantities, production cycles, and local stock caps. No source is inferred from a celestial body's physical properties.
+- `accounts.cfg`: created automatically when missing with a test `company` account and 10,000 opening credits. Edit the balance before starting a new campaign if a different starting amount is desired.
+- `cargo_catalog.cfg`: created automatically when missing with one sample `TEST` cargo definition (1 kg, buy 100 CR, sell 60 CR). Add or edit definitions as needed.
+- `primary_resources.cfg`: created automatically as an empty version-2 file when missing. Add explicit source records after registering the intended economic location. OEM never guesses resource deposits or production locations.
 - `objective_mission_boards.dat`: generated, versioned daily offers for independent visit and docking missions. OEM creates and atomically updates it; do not edit it manually. Accepted mission state and payouts are stored in `economy.journal`, not in this board file.
 - `mission_failure.cfg`: configurable expiry penalties shared by delivery contracts and independent VISIT/DOCK missions. OEM creates it with defaults if absent and preserves existing values.
 
 The native Location Market MFD (key M) uses the company account ID `company`. Market trades are enabled only when `accounts.cfg` defines that account and `cargo_catalog.cfg` defines at least one item. Trade buttons buy or sell one unit of the first catalog item for which the station or vessel has available quantity.
 
-No starting money, cargo definitions, prices, or production sources are invented. Automatic location registration creates an empty stock file; an explicit `openingStock` in a matching `primary_resources.cfg` source may seed an empty location inventory with no journal history exactly once. Existing non-empty or journal-backed stock is never changed. Set `openingStock` to zero when a location should intentionally start empty.
+A clean install receives deliberately small test defaults: 10,000 CR in `company`, one 1 kg TEST cargo type, and ISS enabled as a cargo service. The ISS stock file is created empty. ISS must still be registered as an economic station in-game through Economic Admin before orbital market access is available. A matching explicit `openingStock` in `primary_resources.cfg` can then seed its empty inventory exactly once. Existing files are never overwritten, and non-empty or journal-backed stock is never refilled. Set `openingStock` to zero when a location should intentionally start empty.
 
 ## Example account configuration
 
-This is an example only. Choose the starting balance deliberately before enabling market trading.
+This is the automatically installed clean-install test default. Change the balance before starting a campaign if needed.
 
 ```
 OEM_ACCOUNTS|1
@@ -32,7 +32,7 @@ The hex account ID `636F6D70616E79` is `company`. The example opening balance is
 
 ## Example cargo catalog
 
-This is an example definition, not a built-in game item or default price list.
+This is the automatically installed clean-install test definition. It is a placeholder cargo type, not a claim about a real commodity.
 
 ```
 OEM_CARGO_CATALOG|1
@@ -89,7 +89,7 @@ Do not change a service's opening stock configuration after transactions have be
 
 ## First market test
 
-With the sample ISS stock file, create the two files above in `OEMData`, then restart the scenario so opening configuration is loaded. Dock to ISS and open `OEM Location Market` (key M). At a planetary base, land with ground contact within 5 km of the base and open the same MFD. BUY should reduce ISS TEST stock by one, add one TEST to the vessel manifest, and debit 100 credits from `company`. SELL should reverse the cargo quantities and credit 60 credits. Each operation is appended to the same `economy.journal` used by cargo exchanges. After a scenario restart, verify that balance, station stock, and vessel manifest are replayed consistently. For a planetary base, OEM creates `cargo_stock_<HEX base name>.cfg` automatically on the first confirmed landing. For example, base name `Brighton Beach` becomes `cargo_stock_4272696768746F6E204265616368.cfg` with header `OEM_CARGO_STOCK|1|4272696768746F6E204265616368`. To add opening stock, stop Orbiter and edit the generated file using `S|<HEX cargo ID>|<quantity>|<unit mass kg>` records before any transactions are written for that location. The market is ledger-only: it does not modify Orbiter's physical cargo or vessel mass.
+On a clean install, OEM creates the starter account, TEST catalog, ISS cargo-service permission, empty ISS stock, and empty primary-resource config automatically. Register ISS as an economic station in OEM Economic Admin (key A), then stop Orbiter and add the example source record above to `primary_resources.cfg`. Restart the scenario so the 120-unit one-time opening stock is applied. Dock to ISS and open `OEM Location Market` (key M). At a planetary base, land with ground contact within 5 km of the base and open the same MFD. BUY should reduce ISS TEST stock by one, add one TEST to the vessel manifest, and debit 100 credits from `company`. SELL should reverse the cargo quantities and credit 60 credits. Each operation is appended to the same `economy.journal` used by cargo exchanges. After a scenario restart, verify that balance, station stock, and vessel manifest are replayed consistently. For a planetary base, OEM creates `cargo_stock_<HEX base name>.cfg` automatically on the first confirmed landing. For example, base name `Brighton Beach` becomes `cargo_stock_4272696768746F6E204265616368.cfg` with header `OEM_CARGO_STOCK|1|4272696768746F6E204265616368`. To add opening stock, stop Orbiter and edit the generated file using `S|<HEX cargo ID>|<quantity>|<unit mass kg>` records before any transactions are written for that location. The market is ledger-only: it does not modify Orbiter's physical cargo or vessel mass.
 
 ## Independent objective missions
 
