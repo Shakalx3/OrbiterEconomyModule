@@ -1,5 +1,6 @@
 #include "../../src/core/PrimaryResource.h"
 #include "../../src/core/EconomyJournal.h"
+#include "../../src/core/PrimaryResourceConfig.h"
 #include <cstdio>
 #include <cassert>
 int main(){
@@ -33,6 +34,16 @@ int main(){
  assert(journal.load(journalPath,catalog,ledger,recovered,manifests).ok);
  assert(recovered["MoonBase"].quantity("ore")==140);
  std::remove(journalPath.c_str());
+
+ // Versioned source definitions and scheduling state survive a config round trip.
+ const std::string configPath="OEMPrimaryResourceTests.cfg";std::remove(configPath.c_str());
+ oem::PrimaryResourceBook configBook;assert(configBook.add(source).ok);
+ oem::PrimaryResourceConfigStore configStore;assert(configStore.save(configPath,configBook).ok);
+ oem::PrimaryResourceBook restoredBook;assert(configStore.load(configPath,restoredBook).ok);
+ assert(restoredBook.sources().size()==1);
+ assert(restoredBook.sources()[0].sourceId==source.sourceId);
+ assert(restoredBook.sources()[0].lastProductionTime==source.lastProductionTime);
+ std::remove(configPath.c_str());
  oem::PrimaryResourceSource invalid=source;invalid.sourceId="bad";invalid.maximumStock=0;assert(!book.add(invalid).ok);
  return 0;
 }
