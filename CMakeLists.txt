@@ -5,6 +5,7 @@ add_library(OEMCore
     src/core/LedgerConfig.cpp
     src/core/CargoCatalogConfig.cpp
     src/core/Market.cpp
+    src/core/MarketPricing.cpp
     src/core/MarketTrade.cpp
     src/core/MarketTradeJournal.cpp
     src/core/EconomyJournal.cpp
@@ -47,6 +48,8 @@ target_link_libraries(OEMLedgerConfigTests PRIVATE OEMCore)
 add_executable(OEMCargoCatalogConfigTests Tests/core/CargoCatalogConfigTests.cpp)
 target_link_libraries(OEMCargoCatalogConfigTests PRIVATE OEMCore)
 add_executable(OEMMarketTests Tests/core/MarketTests.cpp)
+add_executable(OEMMarketPricingTests Tests/core/MarketPricingTests.cpp)
+target_link_libraries(OEMMarketPricingTests PRIVATE OEMCore)
 target_link_libraries(OEMMarketTests PRIVATE OEMCore)
 add_executable(OEMMarketTradeTests Tests/core/MarketTradeTests.cpp)
 target_link_libraries(OEMMarketTradeTests PRIVATE OEMCore)
@@ -123,6 +126,7 @@ add_test(NAME OEMCoreTests COMMAND OEMCoreTests)
 add_test(NAME OEMLedgerConfigTests COMMAND OEMLedgerConfigTests)
 add_test(NAME OEMCargoCatalogConfigTests COMMAND OEMCargoCatalogConfigTests)
 add_test(NAME OEMMarketTests COMMAND OEMMarketTests)
+add_test(NAME OEMMarketPricingTests COMMAND OEMMarketPricingTests)
 add_test(NAME OEMMarketTradeTests COMMAND OEMMarketTradeTests)
 add_test(NAME OEMMarketCycleTests COMMAND OEMMarketCycleTests)
 add_test(NAME OEMMarketTradeJournalTests COMMAND OEMMarketTradeJournalTests)
