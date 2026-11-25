@@ -11,20 +11,6 @@ MarketPricingBook::MarketPricingBook(long long targetStock,
       scarcityPremiumBasisPoints_(scarcityPremiumBasisPoints),
       surplusDiscountBasisPoints_(surplusDiscountBasisPoints) {}
 
-Result MarketPricingBook::unitPrice(const CargoDefinition& cargo,
-                                    long long stationStock,
-                                    Credits& price) const {
-    if (cargo.cargoId.empty() || stationStock < 0 || targetStock_ <= 0 ||
-        scarcityPremiumBasisPoints_ < 0 || scarcityPremiumBasisPoints_ > 10000 ||
-        surplusDiscountBasisPoints_ < 0 || surplusDiscountBasisPoints_ > 10000 ||
-        cargo.buyPrice < 0 || cargo.sellPrice < 0)
-        return Result::failure("MARKET_PRICE_INPUT", "Cargo, stock and pricing policy values must be valid.");
-
-    const long long base = cargo.buyPrice; // overwritten below for the selected side by caller helper
-    (void)base;
-    return Result::failure("MARKET_PRICE_SIDE", "Use unitPriceForSide to select the buy or sell base price.");
-}
-
 namespace {
 Result calculate(const CargoDefinition& cargo, long long stationStock,
                  long long targetStock, int scarcityBps, int surplusBps,
