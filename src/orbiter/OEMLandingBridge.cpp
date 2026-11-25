@@ -154,6 +154,58 @@ std::string makeCargoServicesPath(HINSTANCE module) {
     return configPath;
 }
 
+bool createStarterFileIfMissing(const std::string& path, const char *contents,
+                                const char *displayName) {
+    if (path.empty() || !contents) return false;
+    const DWORD attributes = GetFileAttributesA(path.c_str());
+    if (attributes != INVALID_FILE_ATTRIBUTES) {
+        if ((attributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+            char error[256];
+            sprintf(error, "OEM Startup: %s path is a directory.", displayName);
+            oapiWriteLog(error);
+            return false;
+        }
+        return true;
+    }
+    const DWORD inspectError = GetLastError();
+    if (inspectError != ERROR_FILE_NOT_FOUND && inspectError != ERROR_PATH_NOT_FOUND) {
+        char error[256];
+        sprintf(error, "OEM Startup: could not inspect %s (Win32 error %lu).",
+                displayName, (unsigned long)inspectError);
+        oapiWriteLog(error);
+        return false;
+    }
+
+    HANDLE file = CreateFileA(path.c_str(), GENERIC_WRITE, 0, 0, CREATE_NEW,
+                              FILE_ATTRIBUTE_NORMAL, 0);
+    if (file == INVALID_HANDLE_VALUE) {
+        const DWORD createError = GetLastError();
+        if (createError == ERROR_FILE_EXISTS || createError == ERROR_ALREADY_EXISTS)
+            return true; // Another OEM instance created it; never overwrite it.
+        char error[256];
+        sprintf(error, "OEM Startup: could not create %s (Win32 error %lu).",
+                displayName, (unsigned long)createError);
+        oapiWriteLog(error);
+        return false;
+    }
+
+    const DWORD length = (DWORD)strlen(contents);
+    DWORD written = 0;
+    const BOOL writeOk = WriteFile(file, contents, length, &written, 0);
+    const BOOL closeOk = CloseHandle(file);
+    if (!writeOk || written != length || !closeOk) {
+        DeleteFileA(path.c_str());
+        char error[256];
+        sprintf(error, "OEM Startup: could not finish writing %s.", displayName);
+        oapiWriteLog(error);
+        return false;
+    }
+    char message[256];
+    sprintf(message, "OEM Startup: created missing %s with starter defaults.", displayName);
+    oapiWriteLog(message);
+    return true;
+}
+
 
 std::string makeMissionBoardPath(HINSTANCE module) {
     return makeEconomyDataFilePath(module, "mission_boards.dat");
@@ -1421,6 +1473,21 @@ public:
     }
 
     void clbkSimulationStart(RenderMode mode) override {
+        const bool starterFilesReady =
+            createStarterFileIfMissing(accountsPath_,
+                "OEM_ACCOUNTS|1\\nA|636F6D70616E79|10000\\n", "accounts.cfg") &&
+            createStarterFileIfMissing(cargoCatalogPath_,
+                "OEM_CARGO_CATALOG|1\\nC|54455354|5465737420636172676F|1.0|100|60\\n",
+                "cargo_catalog.cfg") &&
+            createStarterFileIfMissing(cargoServicesPath_,
+                "OEM_CARGO_SERVICES|1\\nS|495353\\n", "cargo_services.cfg") &&
+            createStarterFileIfMissing(primaryResourcesPath_,
+                "OEM_PRIMARY_RESOURCES|2\\n", "primary_resources.cfg") &&
+            createStarterFileIfMissing(propellantPricePath_,
+                "OEM_PROPELLANT_PRICES|1\\nORBITAL|*|2.0\\nPLANETARY|*|3.0\\n",
+                "propellant_prices.cfg");
+        if (!starterFilesReady)
+            oapiWriteLog((char*)"OEM Startup: one or more starter files could not be installed; economy initialization will be stopped.");
         clearCompletionNotice();
         landingMonitors_.clear();
         flightMonitors_.clear();
@@ -1569,8 +1636,8 @@ public:
                     openingInventoriesReady = false;
                 }
             }
-            if (openingInventoriesReady) initializeEconomyState();
-            else oapiWriteLog((char*)"OEM Economy: initialization stopped because an opening stock baseline is missing or invalid.");
+            if (openingInventoriesReady && starterFilesReady) initializeEconomyState();
+            else oapiWriteLog((char*)"OEM Economy: initialization stopped because starter configuration or an opening stock baseline is missing or invalid.");
         }
         oapiWriteLog((char*)"OEM Landing Bridge: simulation monitoring started.");
     }
