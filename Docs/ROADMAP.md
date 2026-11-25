@@ -55,6 +55,7 @@
 - [x] Native Location Market MFD (key M) with cargo selection, 1/5/10/MAX quantity selection, BUY/SELL operations, account/stock/manifest display, and registered-station or verified-spaceport access.
 - [x] Add seven built-in commodities to the untouched legacy TEST-only starter catalogue while leaving user-customized catalogues unchanged.
 - [x] Give every registered cargo service an independent opening inventory; add only missing built-in stock lines and preserve existing stock and journal history.
+- [x] Seed built-in opening commodities at planetary spaceports after the cargo catalogue is initialized, including locations whose empty stock files were preloaded earlier during startup; preserve per-cargo history and existing balances.
 - [x] Add stock-driven dynamic buy/sell prices per station: scarcity premium below target stock, surplus discount above target stock, and immutable historical quote values in the trade journal.
 - [x] Display live station-specific buy/sell prices in the Location Market MFD and calculate affordability from the dynamic quote.
 - [x] Add portable tests for dynamic pricing boundaries, bounded scarcity/surplus, station-specific prices and inventory-driven price changes.
