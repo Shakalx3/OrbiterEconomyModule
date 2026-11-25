@@ -239,6 +239,14 @@ jobs:
           $asset = $published.assets | Where-Object { $_.name -eq "OEMLandingBridge.dll" } | Select-Object -First 1
           if ($null -eq $asset -or [long]$asset.size -le 0) { throw "Published OEMLandingBridge.dll is missing or empty" }
           Write-Host "Verified OEMLandingBridge.dll ($($asset.size) bytes) for commit $env:BUILD_SHA"
+      - name: Upload primary-resources test DLL
+        if: github.event_name == 'push' && github.ref == 'refs/heads/feature/economic-agents'
+        uses: actions/upload-artifact@v4
+        with:
+          name: OEM-primary-resources-test-${{ github.sha }}
+          path: OEMLandingBridge.dll
+          if-no-files-found: error
+          retention-days: 14
       - name: Replace the rolling release
         if: github.event_name == 'push' && github.ref == 'refs/heads/development'
         shell: pwsh
