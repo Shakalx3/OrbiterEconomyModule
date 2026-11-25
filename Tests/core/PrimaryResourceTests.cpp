@@ -55,7 +55,8 @@ int main(){
  oem::PrimaryResourceBook restoredBook;assert(configStore.load(configPath,restoredBook).ok);
  assert(restoredBook.sources().size()==1);
  assert(restoredBook.sources()[0].sourceId==source.sourceId);
- assert(restoredBook.sources()[0].lastProductionTime==source.lastProductionTime);\n assert(restoredBook.sources()[0].openingStock==120);
+ assert(restoredBook.sources()[0].lastProductionTime==source.lastProductionTime);
+ assert(restoredBook.sources()[0].openingStock==120);
  std::remove(configPath.c_str());
  oem::PrimaryResourceSource invalid=source;invalid.sourceId="bad";invalid.maximumStock=0;assert(!book.add(invalid).ok);
  return 0;
