@@ -2301,6 +2301,10 @@ private:
         // Seed only an untouched opening inventory. Existing stock and any location
         // with journal history remain authoritative and are never rewritten.
         if (marketGoodsEnabled_ && candidate.history().empty()) {
+            // New commodity IDs have never appeared in the legacy journal because
+            // this compatibility path is enabled only for the untouched OEM TEST
+            // catalogue. Adding those new opening lines does not alter old cargo
+            // balances or replay any prior TEST transactions.
             bool hasHistory = false;
             const oem::Result history = economyJournalStore_.hasLocationHistory(
                 economyJournalPath_, serviceId, hasHistory);
@@ -2308,19 +2312,20 @@ private:
                 oapiWriteLog((char*)"OEM Market: could not inspect station history before starter-stock seeding.");
                 return false;
             }
+            const char* ids[] = {"WATER","OXYGEN","FOOD","METALS","ELECTRONICS","MACHINERY","MEDICAL"};
+            const double masses[] = {1.0,1.0,1.0,10.0,1.0,25.0,1.0};
+            bool changed = false;
+            for (std::size_t i = 0; i < 7; ++i) {
+                if (candidate.quantity(ids[i]) != 0) continue;
+                const oem::Result seeded = candidate.setInitialStock(ids[i],
+                    builtInOpeningQuantity(ids[i]), masses[i]);
+                if (!seeded.ok) return false;
+                changed = true;
+            }
+            // Only carry forward a configured primary-source opening quantity
+            // when the location has no prior journal. Existing economic history
+            // remains authoritative for every previously configured resource.
             if (!hasHistory) {
-                const char* ids[] = {"WATER","OXYGEN","FOOD","METALS","ELECTRONICS","MACHINERY","MEDICAL"};
-                const double masses[] = {1.0,1.0,1.0,10.0,1.0,25.0,1.0};
-                bool changed = false;
-                for (std::size_t i = 0; i < 7; ++i) {
-                    if (candidate.quantity(ids[i]) != 0) continue;
-                    oem::Result seeded = candidate.setInitialStock(ids[i],
-                        builtInOpeningQuantity(ids[i]), masses[i]);
-                    if (!seeded.ok) return false;
-                    changed = true;
-                }
-                // Preserve configured primary-resource opening stock on a clean
-                // station even though the other commodity lines are seeded here.
                 const std::vector<oem::PrimaryResourceSource>& sources = primaryResources_.sources();
                 for (std::size_t i = 0; i < sources.size(); ++i) {
                     const oem::PrimaryResourceSource& source = sources[i];
@@ -2331,15 +2336,15 @@ private:
                     if (!seeded.ok) return false;
                     changed = true;
                 }
-                if (changed) {
-                    const oem::Result saved = cargoStockConfigStore_.save(configPath, candidate);
-                    if (!saved.ok) {
-                        char error[384];
-                        sprintf(error, "OEM Market: starter stock save failed at %s (%s).",
-                            serviceId.c_str(), saved.code.c_str());
-                        oapiWriteLog(error);
-                        return false;
-                    }
+            }
+            if (changed) {
+                const oem::Result saved = cargoStockConfigStore_.save(configPath, candidate);
+                if (!saved.ok) {
+                    char error[384];
+                    sprintf(error, "OEM Market: starter stock save failed at %s (%s).",
+                        serviceId.c_str(), saved.code.c_str());
+                    oapiWriteLog(error);
+                    return false;
                 }
             }
         }
