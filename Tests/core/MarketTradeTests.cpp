@@ -102,7 +102,7 @@ int main() {
     assert(ledger.getBalance("company", balance) && balance==740);
 
     // A forged/stale price is rejected before any projection is changed.
-    expensive.unitPrice=1; expensive.totalPrice=1;
+    expensive.unitPrice=1; expensive.totalPrice=2;
     assert(!trades.execute(second, expensive, "trade-4", "company",
         ledger, richStock, emptyShip).ok);
     assert(richStock.quantity("costly")==1 && emptyShip.quantity("costly")==0);
