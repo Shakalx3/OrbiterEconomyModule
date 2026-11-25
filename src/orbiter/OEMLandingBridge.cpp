@@ -2117,8 +2117,14 @@ private:
         sprintf(message, "OEM Cargo Stock: opening state loaded service=%s lines=%lu.",
                 serviceId.c_str(), (unsigned long)candidate.lines().size());
         oapiWriteLog(message);
-        if (primaryResourcesReady_ && openingStockNewFiles_.find(serviceId) != openingStockNewFiles_.end())
-            return seedPrimaryOpeningStock(serviceId);
+        if (primaryResourcesReady_ && economyReady_ &&
+            openingStockNewFiles_.find(serviceId) != openingStockNewFiles_.end()) {
+            if (!seedPrimaryOpeningStock(serviceId)) {
+                cargoServiceInventories_.erase(serviceId);
+                cargoServiceInventoryLoadAttempted_.erase(serviceId);
+                return false;
+            }
+        }
         return true;
     }
 
@@ -2143,7 +2149,8 @@ private:
             openingStockNewFiles_.erase(locationId);
             return true;
         }
-        const oem::Result seeded = oem::seedStarterStock(profile, stock->second);
+        oem::CargoServiceInventory candidate(stock->second);
+        const oem::Result seeded = oem::seedStarterStock(profile, candidate);
         if (!seeded.ok) {
             char error[512];
             sprintf(error, "OEM Primary Resources: starter stock rejected at %s (%s): %s",
@@ -2153,14 +2160,19 @@ private:
         }
         const std::string path = makeCargoStockConfigPath(module_, locationId);
         if (path.empty()) return false;
-        const oem::Result saved = cargoStockConfigStore_.save(path, stock->second);
+        const oem::Result saved = cargoStockConfigStore_.save(path, candidate);
         if (!saved.ok) {
+            // The file was created by this first-encounter path and has no journal
+            // history (checked before creation). Remove the empty baseline so the
+            // next launch can retry instead of mistaking it for user-owned stock.
+            DeleteFileA(path.c_str());
             char error[512];
             sprintf(error, "OEM Primary Resources: could not save starter stock at %s (%s): %s",
                 locationId.c_str(), saved.code.c_str(), saved.message.c_str());
             oapiWriteLog(error);
             return false;
         }
+        stock->second = candidate;
         openingStockNewFiles_.erase(locationId);
         char message[512];
         sprintf(message, "OEM Primary Resources: seeded opening stock at %s (%lu cargo types).",
