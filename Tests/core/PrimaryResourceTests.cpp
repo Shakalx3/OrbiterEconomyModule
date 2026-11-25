@@ -11,6 +11,12 @@ int main(){
  assert(!oem::seedStarterStock(profile,stock).ok);
  oem::PrimaryResourceSource source;source.sourceId="lunar-ore-vein";source.locationId="MoonBase";source.cargoId="ore";source.unitMassKg=1.5;source.unitsPerCycle=20;source.cycleSeconds=86400;source.maximumStock=150;source.openingStock=120;
  oem::PrimaryResourceBook book;assert(book.add(source).ok);oem::PrimaryResourceSource duplicate=source;duplicate.sourceId="duplicate";assert(!book.add(duplicate).ok);std::map<std::string,oem::CargoServiceInventory> locations;locations["MoonBase"]=stock;
+ bool initialized=false;
+ oem::PrimaryResourceBook clockBook;assert(clockBook.add(source).ok);
+ assert(clockBook.initializeUnsetTimes(100000,initialized).ok&&initialized);
+ assert(clockBook.sources()[0].lastProductionTime==100000);
+ initialized=true;assert(clockBook.initializeUnsetTimes(120000,initialized).ok&&!initialized);
+ assert(clockBook.sources()[0].lastProductionTime==100000);
  std::vector<oem::PrimaryResourceIntent> intents;assert(book.planDue(86399,locations,intents).ok&&intents.empty());
  assert(book.planDue(86400,locations,intents).ok&&intents.size()==1&&intents[0].quantity==20);
  assert(book.markCommitted(source.sourceId,86400).ok);std::vector<oem::PrimaryResourceIntent> again;assert(book.planDue(86400,locations,again).ok&&again.empty());
