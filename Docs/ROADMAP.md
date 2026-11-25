@@ -148,6 +148,15 @@ Current route-quote defaults are centralized in `MissionEconomicsConfig`: nomina
   - [ ] Give generated offers explicit issuer identities, then use issuer reputation to weight mission availability and procedural offer quality without changing already-published offers.
 - [ ] Use Orbiter simulation time for deadlines and mission timing; never use wall-clock time.
 
+### Primary resources, starter stock, and background production — in progress
+
+- [x] Add a portable, profile-driven starter-stock initializer that only accepts untouched empty inventories; it never overwrites existing stock or transfer history.
+- [x] Add bounded primary-resource source definitions and deterministic production intents using Orbiter simulation time, per-cycle output, and a maximum local stock cap.
+- [ ] Add versioned persistence for source definitions and production scheduling state; create starter stock only when a location's stock file is first created, never on reload.
+- [ ] Add durable production journal records so resource creation is replay-safe and cannot duplicate after scenario reload or time acceleration.
+- [ ] Configure initial resource profiles and renewable sources for appropriate planetary bases, orbital stations, and resource regions; keep resource types and rates configurable.
+- [ ] Integrate production updates into the native Orbiter bridge and expose production activity in the economy log.
+
 ### Abstract economic agents and background trade — planned
 
 - [ ] Introduce abstract economic agents (organizations, suppliers, customers, carriers, and competitors) that exist only in the OEM economy model and do not require physical Orbiter vessels or NPC navigation AI.
