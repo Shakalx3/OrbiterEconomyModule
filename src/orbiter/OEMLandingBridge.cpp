@@ -2076,8 +2076,20 @@ private:
                 oapiWriteLog((char*)"OEM Cargo Stock: could not inspect stock configuration path.");
                 return false;
             }
+            // Never invent a new opening baseline when the global journal already
+            // contains transactions for this location; replay would be ambiguous.
+            bool hasHistory = false;
+            const oem::Result historyCheck = economyJournalStore_.hasLocationHistory(
+                economyJournalPath_, serviceId, hasHistory);
+            if (!historyCheck.ok || hasHistory) {
+                char error[512];
+                sprintf(error, "OEM Cargo Stock: missing opening stock with journal history service=%s (%s).",
+                    serviceId.c_str(), historyCheck.ok ? "OPENING_STOCK_HISTORY_MISSING" : historyCheck.code.c_str());
+                oapiWriteLog(error);
+                return false;
+            }
             // First encounter with a location: create a durable, explicitly empty
-            // opening inventory. Never synthesize cargo or overwrite an existing file.
+            // opening inventory. A configured primary-resource profile may seed it once.
             const oem::Result created = cargoStockConfigStore_.save(configPath, candidate);
             if (!created.ok) {
                 char message[512];
@@ -2296,7 +2308,7 @@ private:
     }
 
     bool initializeEconomyState() {
-        if (economyJournalPath_.empty() || accountsPath_.empty() || cargoCatalogPath_.empty() || missionFailurePolicyPath_.empty() || missionIssuerRegistryPath_.empty()) {
+        if (economyJournalPath_.empty() || accountsPath_.empty() || cargoCatalogPath_.empty() || primaryResourcesPath_.empty() || missionFailurePolicyPath_.empty() || missionIssuerRegistryPath_.empty()) {
             oapiWriteLog((char*)"OEM Economy: could not resolve economy configuration paths.");
             return false;
         }
@@ -2388,7 +2400,6 @@ private:
             }
         }
         primaryResourcesReady_ = true;
-        std::set<std::string> sourceLocations;
         const std::vector<oem::PrimaryResourceSource>& sources = primaryResources_.sources();
         for (std::size_t i = 0; i < sources.size(); ++i) {
             const oem::PrimaryResourceSource& source = sources[i];
@@ -2414,13 +2425,13 @@ private:
                 return false;
             }
             if (!ensureCargoServiceInventory(source.locationId)) return false;
-            sourceLocations.insert(source.locationId);
         }
         // Starter quantities are applied only to stock files created during
         // this simulation's first encounter with a location. Existing empty
         // files are intentional opening state and are never silently refilled.
-        for (std::set<std::string>::const_iterator it = openingStockNewFiles_.begin();
-             it != openingStockNewFiles_.end(); ++it)
+        const std::set<std::string> pendingOpeningStock(openingStockNewFiles_);
+        for (std::set<std::string>::const_iterator it = pendingOpeningStock.begin();
+             it != pendingOpeningStock.end(); ++it)
             if (!seedPrimaryOpeningStock(*it)) return false;
 
         // Recovery must start from the opening inventory of every registered
