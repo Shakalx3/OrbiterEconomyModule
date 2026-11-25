@@ -63,9 +63,19 @@ Result EconomicAgentTradeEngine::advance(EconomicAgentRegistry& agents,
     for (std::size_t aIndex = 0; aIndex < candidateAgents.entries().size(); ++aIndex) {
         EconomicAgent agent = candidateAgents.entries()[aIndex];
         for (std::map<std::string, long long>::const_iterator buy = agent.buyTargets.begin();
-             buy != agent.buyTargets.end(); ++buy)
+             buy != agent.buyTargets.end(); ++buy) {
             if (agent.sellTargets.find(buy->first) != agent.sellTargets.end())
                 return Result::failure("AGENT_TRADE_TARGET_CONFLICT", "A cargo type cannot have both a buy target and a sell reserve.");
+            CargoDefinition definition;
+            if (!catalog.find(buy->first, definition))
+                return Result::failure("AGENT_TRADE_CARGO", "Agent buy target references an unknown cargo type.");
+        }
+        for (std::map<std::string, long long>::const_iterator sell = agent.sellTargets.begin();
+             sell != agent.sellTargets.end(); ++sell) {
+            CargoDefinition definition;
+            if (!catalog.find(sell->first, definition))
+                return Result::failure("AGENT_TRADE_CARGO", "Agent sell target references an unknown cargo type.");
+        }
         std::size_t cycles = 0;
         while (agent.nextTradeAt <= now && cycles < maxCycles) {
             const SimulationSeconds cycleTime = agent.nextTradeAt;
