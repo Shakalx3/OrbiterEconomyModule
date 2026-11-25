@@ -1,4 +1,6 @@
 #include "../../src/core/PrimaryResource.h"
+#include "../../src/core/EconomyJournal.h"
+#include <cstdio>
 #include <cassert>
 int main(){
  oem::CargoServiceInventory stock("MoonBase");
@@ -10,6 +12,27 @@ int main(){
  std::vector<oem::PrimaryResourceIntent> intents;assert(book.planDue(86399,locations,intents).ok&&intents.empty());
  assert(book.planDue(86400,locations,intents).ok&&intents.size()==1&&intents[0].quantity==20);
  assert(book.markCommitted(source.sourceId,86400).ok);std::vector<oem::PrimaryResourceIntent> again;assert(book.planDue(86400,locations,again).ok&&again.empty());
+
+ // Production is committed durably and replayed exactly once from the global journal.
+ const std::string journalPath="OEMPrimaryResourceTests.journal";std::remove(journalPath.c_str());
+ oem::EconomyJournalStore journal;
+ assert(journal.applyPrimaryProduction(journalPath,intents[0].operationId,source.sourceId,
+     source.locationId,source.cargoId,intents[0].quantity,intents[0].unitMassKg,
+     intents[0].simulationTime,locations).ok);
+ assert(locations["MoonBase"].quantity("ore")==140);
+ assert(journal.applyPrimaryProduction(journalPath,intents[0].operationId,source.sourceId,
+     source.locationId,source.cargoId,intents[0].quantity,intents[0].unitMassKg,
+     intents[0].simulationTime,locations).ok);
+ assert(locations["MoonBase"].quantity("ore")==140);
+ std::map<std::string,oem::CargoServiceInventory> recovered;
+ recovered["MoonBase"]=oem::CargoServiceInventory("MoonBase");
+ assert(recovered["MoonBase"].setInitialStock("ore",120,1.5).ok);
+ oem::CargoCatalog catalog;oem::Ledger ledger;std::map<std::string,oem::CargoManifest> manifests;
+ assert(journal.load(journalPath,catalog,ledger,recovered,manifests).ok);
+ assert(recovered["MoonBase"].quantity("ore")==140);
+ assert(journal.load(journalPath,catalog,ledger,recovered,manifests).ok);
+ assert(recovered["MoonBase"].quantity("ore")==140);
+ std::remove(journalPath.c_str());
  oem::PrimaryResourceSource invalid=source;invalid.sourceId="bad";invalid.maximumStock=0;assert(!book.add(invalid).ok);
  return 0;
 }
