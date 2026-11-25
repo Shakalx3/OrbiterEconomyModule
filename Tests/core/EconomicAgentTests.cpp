@@ -28,10 +28,10 @@ int main() {
     assert(found.inventory["oxygen"]==100);
     assert(!agents.find("missing",found));
 
-    oem::EconomicAgent invalid=supplier;
+    oem::EconomicAgent invalid=supplier;invalid.agentId="invalid-inventory";
     invalid.inventory["water"]=-1;
     assert(!agents.add(invalid).ok);
-    invalid=supplier;invalid.tradeIntervalSeconds=0;
+    invalid=supplier;invalid.agentId="invalid-schedule";invalid.tradeIntervalSeconds=0;
     assert(!agents.add(invalid).ok);
 
     oem::EconomicAgentConfigStore store;
@@ -48,7 +48,7 @@ int main() {
     assert(found.sellTargets["oxygen"]==200);
     {
         std::ofstream bad(path.c_str(),std::ios::binary|std::ios::trunc);
-        bad<<"OEM_ECONOMIC_AGENTS|99\\n";
+        bad<<"OEM_ECONOMIC_AGENTS|99\n";
     }
     assert(!store.load(path,loaded).ok);
     std::remove(path.c_str());
