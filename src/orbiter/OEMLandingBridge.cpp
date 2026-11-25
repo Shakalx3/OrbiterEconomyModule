@@ -1583,7 +1583,11 @@ public:
             reconcileObjectiveEvents();
             settleCompletedContracts();
             settleCompletedObjectives();
-            updatePrimaryProduction(simSeconds);
+            const oem::SimulationSeconds primaryTime =
+                (mjd > 0.0 && _finite(mjd))
+                    ? (oem::SimulationSeconds)(mjd * 86400.0 + 0.5)
+                    : simSeconds;
+            updatePrimaryProduction(primaryTime);
             oem::MissionObjectiveBook objectiveDue = objectiveBook_;
             const std::vector<std::string> expiredObjectives = objectiveDue.expireDue(simSeconds);
             for (std::size_t i = 0; i < expiredObjectives.size(); ++i) {
@@ -2183,6 +2187,22 @@ private:
 
     void updatePrimaryProduction(oem::SimulationSeconds now) {
         if (!economyReady_ || !primaryResourcesReady_ || primaryResources_.sources().empty()) return;
+        bool clockInitialized = false;
+        const oem::Result clockResult = primaryResources_.initializeUnsetTimes(now, clockInitialized);
+        if (!clockResult.ok) {
+            oapiWriteLog((char*)"OEM Primary Resources: invalid simulation clock; production paused.");
+            return;
+        }
+        if (clockInitialized) {
+            const oem::Result savedClock = primaryResourceConfigStore_.save(primaryResourcesPath_, primaryResources_);
+            if (!savedClock.ok) {
+                char error[512];
+                sprintf(error, "OEM Primary Resources: could not persist initial simulation clock (%s): %s",
+                    savedClock.code.c_str(), savedClock.message.c_str());
+                oapiWriteLog(error);
+                return;
+            }
+        }
         std::vector<oem::PrimaryResourceIntent> intents;
         const oem::Result planned = primaryResources_.planDue(now, cargoServiceInventories_, intents);
         if (!planned.ok) {
