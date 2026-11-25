@@ -31,6 +31,7 @@ add_library(OEMCore
     src/core/SpaceportRegistry.cpp
     src/core/EconomicLocationRegistry.cpp
     src/core/EconomicAgent.cpp
+    src/core/EconomicAgentTrade.cpp
     src/core/CampaignReset.cpp
     src/core/EconomicStationRegistry.cpp
     src/core/PropellantPlan.cpp
@@ -97,6 +98,8 @@ add_executable(OEMSpaceportRegistryTests Tests/core/SpaceportRegistryTests.cpp)
 add_executable(OEMEconomicLocationRegistryTests Tests/core/EconomicLocationRegistryTests.cpp)
 add_executable(OEMEconomicAgentTests Tests/core/EconomicAgentTests.cpp)
 target_link_libraries(OEMEconomicAgentTests PRIVATE OEMCore)
+add_executable(OEMEconomicAgentTradeTests Tests/core/EconomicAgentTradeTests.cpp)
+target_link_libraries(OEMEconomicAgentTradeTests PRIVATE OEMCore)
 add_executable(OEMCampaignResetTests Tests/core/CampaignResetTests.cpp)
 add_executable(OEMEconomicStationRegistryTests Tests/core/EconomicStationRegistryTests.cpp)
 add_executable(OEMPropellantPlanTests Tests/core/PropellantPlanTests.cpp)
@@ -143,6 +146,7 @@ add_test(NAME OEMMissionEconomicsTests COMMAND OEMMissionEconomicsTests)
 add_test(NAME OEMSpaceportRegistryTests COMMAND OEMSpaceportRegistryTests)
 add_test(NAME OEMEconomicLocationRegistryTests COMMAND OEMEconomicLocationRegistryTests)
 add_test(NAME OEMEconomicAgentTests COMMAND OEMEconomicAgentTests)
+add_test(NAME OEMEconomicAgentTradeTests COMMAND OEMEconomicAgentTradeTests)
 add_test(NAME OEMCampaignResetTests COMMAND OEMCampaignResetTests)
 add_test(NAME OEMEconomicStationRegistryTests COMMAND OEMEconomicStationRegistryTests)
 add_test(NAME OEMPropellantPlanTests COMMAND OEMPropellantPlanTests)

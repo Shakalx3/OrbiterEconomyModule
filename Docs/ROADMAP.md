@@ -148,15 +148,16 @@ Current route-quote defaults are centralized in `MissionEconomicsConfig`: nomina
   - [ ] Give generated offers explicit issuer identities, then use issuer reputation to weight mission availability and procedural offer quality without changing already-published offers.
 - [ ] Use Orbiter simulation time for deadlines and mission timing; never use wall-clock time.
 
-### Abstract economic agents and background trade — planned
+### Abstract economic agents and background trade — in progress
 
-- [ ] Introduce abstract economic agents (organizations, suppliers, customers, carriers, and competitors) that exist only in the OEM economy model and do not require physical Orbiter vessels or NPC navigation AI.
-- [ ] Simulate background trade between abstract agents and registered orbital stations/planetary spaceports so the player is not the only economic actor in the solar system.
-- [ ] Model each agent's role, home/operating locations, cargo demand/supply, trading preferences, available funds or agreed unlimited-credit policy, and configurable activity cadence.
-- [ ] Execute background purchases and sales as real economic transactions: update the relevant location stock, agent inventory/balance where applicable, and market supply/demand using deterministic, auditable transaction records.
-- [ ] Never create cargo from nowhere or allow stock to become negative. Every abstract trade must have a valid source, destination, quantity, cargo definition, and sufficient source stock; any production or consumption must be a separate explicitly modelled process.
-- [ ] Distinguish abstract economic stock movement from physical vessel cargo and player CargoManifest transfers. Background trade must never imply that a physical ship loaded, flew, docked, or landed.
-- [ ] Use simulation time for trade scheduling and resolve elapsed simulation intervals safely after time acceleration or scenario reload, without duplicate transactions or unbounded catch-up bursts.
+- [x] Introduce abstract economic agents (organizations, suppliers, customers, carriers, and competitors) that exist only in the OEM economy model and do not require physical Orbiter vessels or NPC navigation AI. The portable registry and versioned configuration store are implemented.
+- [ ] Simulate background trade between abstract agents and registered orbital stations/planetary spaceports so the player is not the only economic actor in the solar system. The portable execution engine exists; native bridge scheduling and live location-stock binding remain pending.
+- [x] Model each agent's role, home/operating locations, cargo demand/supply, trading preferences, available funds, and configurable activity cadence through the agent registry and buy/sell targets.
+- [x] Add a portable in-memory trade engine: suppliers sell inventory above configured reserves, customers buy toward configured targets, and location stock plus agent inventory/balance are updated together. Each operation produces a deterministic transaction record.
+- [x] Bound catch-up by a per-agent cycle budget and use Orbiter simulation timestamps; invalid cargo, stock, funds, schedule, or overflow conditions reject the whole candidate update without partial state mutation.
+- [x] Never create cargo from nowhere or allow stock to become negative in the portable trade engine. Every executed trade requires a known cargo definition and sufficient source stock.
+- [x] Distinguish abstract economic stock movement from physical vessel cargo and player CargoManifest transfers. The new engine changes only abstract location-stock projections and agent inventory; it does not create or move Orbiter vessel cargo.
+- [ ] Resolve elapsed simulation intervals safely after scenario reload without duplicate transactions or unbounded catch-up bursts; durable scheduling recovery is pending.
 - [ ] Persist agent definitions/state, background trade history, and scheduling progress with versioned, corruption-safe, idempotent recovery; integrate durable economic effects with the global economy journal.
 - [ ] Make background activity configurable, including an option to disable it or tune its intensity, while preserving a coherent economy when disabled.
 - [ ] Add observable market activity/history so the player can see that stations and spaceports trade with other economic participants even when no player transaction occurs.
