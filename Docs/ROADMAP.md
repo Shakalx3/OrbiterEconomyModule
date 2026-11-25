@@ -152,8 +152,10 @@ Current route-quote defaults are centralized in `MissionEconomicsConfig`: nomina
 
 - [x] Add a portable, profile-driven starter-stock initializer that only accepts untouched empty inventories; it never overwrites existing stock or transfer history.
 - [x] Add bounded primary-resource source definitions and deterministic production intents using Orbiter simulation time, per-cycle output, and a maximum local stock cap.
-- [ ] Add versioned persistence for source definitions and production scheduling state; create starter stock only when a location's stock file is first created, never on reload.
-- [ ] Add durable production journal records so resource creation is replay-safe and cannot duplicate after scenario reload or time acceleration.
+- [x] Add versioned, atomically replaced persistence for primary-resource source definitions and scheduling state.
+- [x] Add durable primary-production records to the global economy journal; replay adds stock exactly once, and duplicate operation IDs cannot create cargo twice.
+- [ ] Recover each source's last committed production timestamp from the journal before scheduling resumes, so a crash between journal commit and config save cannot cause an early extra cycle.
+- [ ] Create starter stock only when a location's stock file is first created, never on reload.
 - [ ] Configure initial resource profiles and renewable sources for appropriate planetary bases, orbital stations, and resource regions; keep resource types and rates configurable.
 - [ ] Integrate production updates into the native Orbiter bridge and expose production activity in the economy log.
 
