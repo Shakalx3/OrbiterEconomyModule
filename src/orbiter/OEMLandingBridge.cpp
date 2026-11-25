@@ -173,7 +173,7 @@ public:
           cargoStockConfigStore_(), cargoServiceInventories_(), cargoServiceInventoryLoadAttempted_(),
           economyJournalStore_(), primaryResourceConfigStore_(), primaryResources_(),
           primaryResourcesPath_(makeEconomyDataFilePath(hDLL, "primary_resources.cfg")),
-          primaryResourcesReady_(false), openingStockNewFiles_(), contractBook_(), objectiveBook_(), pendingContractOffers_(), contractOfferSequence_(0), contractOfferDay_(-1), missionBoardStore_(), missionBoards_(), missionBoardPath_(makeMissionBoardPath(hDLL)), missionBoardsReady_(false), objectiveBoardStore_(), objectiveBoards_(), objectiveBoardPath_(makeObjectiveMissionBoardPath(hDLL)), objectiveBoardsReady_(false), economyJournalPath_(makeEconomyDataFilePath(hDLL, "economy.journal")),
+          primaryResourcesReady_(false), contractBook_(), objectiveBook_(), pendingContractOffers_(), contractOfferSequence_(0), contractOfferDay_(-1), missionBoardStore_(), missionBoards_(), missionBoardPath_(makeMissionBoardPath(hDLL)), missionBoardsReady_(false), objectiveBoardStore_(), objectiveBoards_(), objectiveBoardPath_(makeObjectiveMissionBoardPath(hDLL)), objectiveBoardsReady_(false), economyJournalPath_(makeEconomyDataFilePath(hDLL, "economy.journal")),
           missionFailurePolicyStore_(), missionFailurePolicy_(),
           missionFailurePolicyPath_(makeEconomyDataFilePath(hDLL, "mission_failure.cfg")),
           missionIssuerRegistry_(), missionIssuerRegistryPath_(makeEconomyDataFilePath(hDLL, "mission_issuers.cfg")),
@@ -1466,7 +1466,6 @@ public:
         }
         cargoServiceInventories_.clear();
         cargoServiceInventoryLoadAttempted_.clear();
-        openingStockNewFiles_.clear();
         primaryResources_ = oem::PrimaryResourceBook();
         primaryResourcesReady_ = false;
         ledger_ = oem::Ledger();
@@ -2103,7 +2102,6 @@ private:
                 return false;
             }
             char message[512];
-            openingStockNewFiles_.insert(serviceId);
             sprintf(message, "OEM Cargo Stock: created empty opening inventory service=%s.", serviceId.c_str());
             oapiWriteLog(message);
         } else {
@@ -2121,19 +2119,15 @@ private:
         sprintf(message, "OEM Cargo Stock: opening state loaded service=%s lines=%lu.",
                 serviceId.c_str(), (unsigned long)candidate.lines().size());
         oapiWriteLog(message);
-        if (primaryResourcesReady_ && economyReady_ &&
-            openingStockNewFiles_.find(serviceId) != openingStockNewFiles_.end()) {
-            if (!seedPrimaryOpeningStock(serviceId)) {
-                cargoServiceInventories_.erase(serviceId);
-                cargoServiceInventoryLoadAttempted_.erase(serviceId);
-                return false;
-            }
+        if (primaryResourcesReady_ && economyReady_ && !seedPrimaryOpeningStock(serviceId)) {
+            cargoServiceInventories_.erase(serviceId);
+            cargoServiceInventoryLoadAttempted_.erase(serviceId);
+            return false;
         }
         return true;
     }
 
     bool seedPrimaryOpeningStock(const std::string& locationId) {
-        if (openingStockNewFiles_.find(locationId) == openingStockNewFiles_.end()) return true;
         std::map<std::string, oem::CargoServiceInventory>::iterator stock =
             cargoServiceInventories_.find(locationId);
         if (stock == cargoServiceInventories_.end()) return false;
@@ -2149,10 +2143,40 @@ private:
             line.unitMassKg = source.unitMassKg;
             profile.lines.push_back(line);
         }
-        if (profile.lines.empty()) {
-            openingStockNewFiles_.erase(locationId);
+        if (profile.lines.empty()) return true;
+
+        bool hasHistory = false;
+        const oem::Result history = economyJournalStore_.hasLocationHistory(
+            economyJournalPath_, locationId, hasHistory);
+        if (!history.ok) {
+            char error[512];
+            sprintf(error, "OEM Primary Resources: could not inspect history at %s (%s): %s",
+                locationId.c_str(), history.code.c_str(), history.message.c_str());
+            oapiWriteLog(error);
+            return false;
+        }
+
+        // Existing inventory or journal history is authoritative. Consume the
+        // one-time opening quantity so it cannot be applied to a later empty state.
+        if (!stock->second.lines().empty() || !stock->second.history().empty() || hasHistory) {
+            oem::PrimaryResourceBook updated = primaryResources_;
+            bool consumed = false;
+            const oem::Result cleared = updated.consumeOpeningStock(locationId, consumed);
+            if (!cleared.ok) return false;
+            if (consumed) {
+                const oem::Result saved = primaryResourceConfigStore_.save(
+                    primaryResourcesPath_, updated);
+                if (!saved.ok) {
+                    char warning[512];
+                    sprintf(warning, "OEM Primary Resources: could not clear consumed opening stock at %s (%s): %s",
+                        locationId.c_str(), saved.code.c_str(), saved.message.c_str());
+                    oapiWriteLog(warning);
+                }
+                primaryResources_ = updated;
+            }
             return true;
         }
+
         oem::CargoServiceInventory candidate(stock->second);
         const oem::Result seeded = oem::seedStarterStock(profile, candidate);
         if (!seeded.ok) {
@@ -2164,20 +2188,31 @@ private:
         }
         const std::string path = makeCargoStockConfigPath(module_, locationId);
         if (path.empty()) return false;
-        const oem::Result saved = cargoStockConfigStore_.save(path, candidate);
-        if (!saved.ok) {
-            // The file was created by this first-encounter path and has no journal
-            // history (checked before creation). Remove the empty baseline so the
-            // next launch can retry instead of mistaking it for user-owned stock.
-            DeleteFileA(path.c_str());
+        const oem::Result savedStock = cargoStockConfigStore_.save(path, candidate);
+        if (!savedStock.ok) {
             char error[512];
             sprintf(error, "OEM Primary Resources: could not save starter stock at %s (%s): %s",
-                locationId.c_str(), saved.code.c_str(), saved.message.c_str());
+                locationId.c_str(), savedStock.code.c_str(), savedStock.message.c_str());
             oapiWriteLog(error);
             return false;
         }
+
+        oem::PrimaryResourceBook updated = primaryResources_;
+        bool consumed = false;
+        const oem::Result cleared = updated.consumeOpeningStock(locationId, consumed);
+        if (!cleared.ok) return false;
+        if (consumed) {
+            const oem::Result savedConfig = primaryResourceConfigStore_.save(
+                primaryResourcesPath_, updated);
+            if (!savedConfig.ok) {
+                char warning[512];
+                sprintf(warning, "OEM Primary Resources: opening stock was applied at %s but its one-time marker could not be saved (%s): %s",
+                    locationId.c_str(), savedConfig.code.c_str(), savedConfig.message.c_str());
+                oapiWriteLog(warning);
+            }
+            primaryResources_ = updated;
+        }
         stock->second = candidate;
-        openingStockNewFiles_.erase(locationId);
         char message[512];
         sprintf(message, "OEM Primary Resources: seeded opening stock at %s (%lu cargo types).",
             locationId.c_str(), (unsigned long)profile.lines.size());
@@ -2462,12 +2497,13 @@ private:
             }
             if (!ensureCargoServiceInventory(source.locationId)) return false;
         }
-        // Starter quantities are applied only to stock files created during
-        // this simulation's first encounter with a location. Existing empty
-        // files are intentional opening state and are never silently refilled.
-        const std::set<std::string> pendingOpeningStock(openingStockNewFiles_);
-        for (std::set<std::string>::const_iterator it = pendingOpeningStock.begin();
-             it != pendingOpeningStock.end(); ++it)
+        std::set<std::string> sourceLocations;
+        for (std::size_t i = 0; i < sources.size(); ++i)
+            sourceLocations.insert(sources[i].locationId);
+        // Only empty locations with no journal history can consume configured
+        // opening stock. The source quantity is then cleared and persisted.
+        for (std::set<std::string>::const_iterator it = sourceLocations.begin();
+             it != sourceLocations.end(); ++it)
             if (!seedPrimaryOpeningStock(*it)) return false;
 
         // Recovery must start from the opening inventory of every registered
@@ -2696,7 +2732,6 @@ private:
     oem::PrimaryResourceBook primaryResources_;
     std::string primaryResourcesPath_;
     bool primaryResourcesReady_;
-    std::set<std::string> openingStockNewFiles_;
     oem::PropellantTransactionJournal propellantTransactionJournal_;
     std::string propellantTransactionJournalPath_;
     std::string propellantPricePath_;
