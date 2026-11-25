@@ -148,9 +148,10 @@ Result EconomyJournalStore::hasLocationHistory(const std::string&p,const std::st
   if(!line.empty()&&line[line.size()-1]=='\r')line.erase(line.size()-1);
   if(line.empty())continue;
   Entry r;if(!decode(line,r))return Result::failure("ECONOMY_JOURNAL_CORRUPT","Invalid complete record while checking location history.");
-  if(r.station==location||r.transfer.locationId==location||
-     r.contract.originLocationId==location||r.contract.destinationLocationId==location||
-     r.objective.originLocationId==location||r.objective.targetLocationId==location){hasHistory=true;return Result::success();}
+  // Only records that actually mutate location stock establish an opening
+  // inventory baseline: production/market station records and cargo transfers.
+  // Contract destinations and independent mission targets alone do not.
+  if(r.station==location||r.transfer.locationId==location){hasHistory=true;return Result::success();}
  }
  return Result::success();
 }
