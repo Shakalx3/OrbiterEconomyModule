@@ -15,12 +15,22 @@ bool multiplyCredits(Credits price, long long quantity, Credits& total) {
     total = price * quantity;
     return true;
 }
+std::string encodeIdPart(const std::string& value) {
+    static const char digits[] = "0123456789ABCDEF";
+    std::string out;
+    for (std::size_t i = 0; i < value.size(); ++i) {
+        const unsigned char c = static_cast<unsigned char>(value[i]);
+        out.push_back(digits[c >> 4]); out.push_back(digits[c & 15]);
+    }
+    return out;
+}
 std::string operationId(const EconomicAgent& agent, const EconomicLocationStock& location,
                         const std::string& cargo, EconomicAgentTradeSide side,
                         SimulationSeconds cycleTime) {
     std::ostringstream out;
-    out << "agent-trade:" << agent.agentId << ":" << location.locationId << ":"
-        << cargo << ":" << static_cast<int>(side) << ":" << cycleTime;
+    out << "agent-trade:" << encodeIdPart(agent.agentId) << ":"
+        << encodeIdPart(location.locationId) << ":" << encodeIdPart(cargo)
+        << ":" << static_cast<int>(side) << ":" << cycleTime;
     return out.str();
 }
 } // namespace
@@ -34,6 +44,17 @@ Result EconomicAgentTradeEngine::advance(EconomicAgentRegistry& agents,
     if (now < 0 || maxCycles == 0)
         return Result::failure("AGENT_TRADE_TIME", "Simulation time must be non-negative and the cycle budget positive.");
 
+    // Validate location identity and quantities before making candidate changes.
+    std::set<std::string> locationIds;
+    for (std::size_t i = 0; i < locations.size(); ++i) {
+        if (locations[i].locationId.empty() || !locationIds.insert(locations[i].locationId).second)
+            return Result::failure("AGENT_TRADE_LOCATION", "Economic location IDs must be non-empty and unique.");
+        for (std::map<std::string, long long>::const_iterator q = locations[i].quantities.begin();
+             q != locations[i].quantities.end(); ++q)
+            if (q->first.empty() || q->second < 0)
+                return Result::failure("AGENT_TRADE_STOCK", "Economic location stock contains an invalid cargo line.");
+    }
+
     // Work on candidate state. Any validation failure leaves all caller state untouched.
     EconomicAgentRegistry candidateAgents = agents;
     std::vector<EconomicLocationStock> candidateLocations = locations;
@@ -41,6 +62,10 @@ Result EconomicAgentTradeEngine::advance(EconomicAgentRegistry& agents,
 
     for (std::size_t aIndex = 0; aIndex < candidateAgents.entries().size(); ++aIndex) {
         EconomicAgent agent = candidateAgents.entries()[aIndex];
+        for (std::map<std::string, long long>::const_iterator buy = agent.buyTargets.begin();
+             buy != agent.buyTargets.end(); ++buy)
+            if (agent.sellTargets.find(buy->first) != agent.sellTargets.end())
+                return Result::failure("AGENT_TRADE_TARGET_CONFLICT", "A cargo type cannot have both a buy target and a sell reserve.");
         std::size_t cycles = 0;
         while (agent.nextTradeAt <= now && cycles < maxCycles) {
             const SimulationSeconds cycleTime = agent.nextTradeAt;
