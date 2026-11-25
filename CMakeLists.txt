@@ -5,7 +5,6 @@ add_library(OEMCore
     src/core/LedgerConfig.cpp
     src/core/CargoCatalogConfig.cpp
     src/core/Market.cpp
-    src/core/MarketPricing.cpp
     src/core/MarketTrade.cpp
     src/core/MarketTradeJournal.cpp
     src/core/EconomyJournal.cpp
