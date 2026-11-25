@@ -27,6 +27,12 @@ public:
                 DeliveryContractBook* contracts = 0,
                 MissionObjectiveBook* objectives = 0) const;
     // A single durable append commits either a non-financial exchange or a market trade.
+    // Durable, replay-safe creation of primary resources at a configured source.
+    Result applyPrimaryProduction(const std::string& path, const std::string& operationId,
+                const std::string& sourceId, const std::string& locationId,
+                const std::string& cargoId, long long quantity, double unitMassKg,
+                SimulationSeconds simulationTime,
+                std::map<std::string, CargoServiceInventory>& inventories) const;
     Result applyExchange(const std::string& path,
                 std::map<std::string, CargoServiceInventory>& inventories,
                 CargoManifest& manifest, const CargoTransfer& transfer) const;
