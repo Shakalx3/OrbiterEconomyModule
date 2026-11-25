@@ -44,6 +44,14 @@ Result PrimaryResourceBook::restoreCommitted(const std::string& id,const std::st
  if(time>s.lastProductionTime)s.lastProductionTime=time;
  return Result::success();
 }
+Result PrimaryResourceBook::initializeUnsetTimes(SimulationSeconds now,bool&changed){
+ if(now<0)return Result::failure("PRIMARY_SOURCE_TIME","Simulation time cannot be negative.");
+ changed=false;
+ if(now==0)return Result::success();
+ for(std::size_t i=0;i<sources_.size();++i)
+  if(sources_[i].lastProductionTime==0){sources_[i].lastProductionTime=now;changed=true;}
+ return Result::success();
+}
 Result PrimaryResourceBook::planDue(SimulationSeconds now,const std::map<std::string,CargoServiceInventory>& inventories,std::vector<PrimaryResourceIntent>& out)const{
  if(now<0)return Result::failure("PRIMARY_SOURCE_TIME","Simulation time cannot be negative.");
  std::vector<PrimaryResourceIntent> pending;
