@@ -45,6 +45,9 @@ Result MarketTradeEngine::execute(const CargoCatalog& catalog,
 
     Result cargoResult = candidateInventory.apply(transfer);
     if (!cargoResult.ok) return cargoResult;
+    if (quote.side == MARKET_SELL_TO_STATION &&
+        candidateInventory.quantity(quote.cargoId) > quote.maximumStationStock)
+        return Result::failure("MARKET_STATION_FULL", "The station stock capacity has been reached since this quote was created.");
     cargoResult = transfer.direction == CARGO_LOAD
         ? candidateManifest.load(transfer) : candidateManifest.unload(transfer);
     if (!cargoResult.ok) return cargoResult;

@@ -41,6 +41,28 @@ int main() {
     assert(!ledger.getBalance("ISS-account", balance));
     assert(station.quantity("oxygen")==8 && ship.quantity("oxygen")==2);
 
+    // A primary-resource stock cap applies to market buybacks as well as production.
+    oem::CargoServiceInventory cappedStock("ISS");
+    assert(cappedStock.setInitialStock("oxygen", 149, 10.0).ok);
+    oem::CargoManifest seller("GL-03");
+    oem::CargoTransfer cargo;
+    cargo.transferId="load-seller"; cargo.direction=oem::CARGO_LOAD;
+    cargo.vesselId="GL-03"; cargo.locationId="ISS"; cargo.cargoId="oxygen";
+    cargo.quantity=2; cargo.unitMassKg=10.0; cargo.simulationTime=200;
+    assert(seller.load(cargo).ok);
+    oem::MarketQuote overCapacity;
+    assert(!quotes.createQuote(catalog, cappedStock, "q-cap-bad", "oxygen",
+        oem::MARKET_SELL_TO_STATION, 2, 201, overCapacity, 150).ok);
+    oem::MarketQuote toCapacity;
+    assert(quotes.createQuote(catalog, cappedStock, "q-cap-good", "oxygen",
+        oem::MARKET_SELL_TO_STATION, 1, 201, toCapacity, 150).ok);
+    assert(trades.execute(catalog, toCapacity, "trade-cap-1", "company",
+        ledger, cappedStock, seller).ok);
+    assert(cappedStock.quantity("oxygen")==150 && seller.quantity("oxygen")==1);
+    oem::MarketQuote fullStation;
+    assert(!quotes.createQuote(catalog, cappedStock, "q-cap-full", "oxygen",
+        oem::MARKET_SELL_TO_STATION, 1, 202, fullStation, 150).ok);
+
     // Insufficient funds leaves all three projections unchanged.
     oem::CargoDefinition costly=oxygen(); costly.cargoId="costly";
     costly.buyPrice=10000; costly.sellPrice=1;

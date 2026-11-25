@@ -1329,6 +1329,8 @@ public:
 
         const std::vector<oem::CargoDefinition>& definitions = cargoCatalog_.entries();
         std::string selectedCargo;
+        bool vesselHasSellCargo = false;
+        bool allSellCargoAtCapacity = true;
         for (std::size_t i = 0; i < definitions.size(); ++i) {
             const std::string& cargoId = definitions[i].cargoId;
             if (side == oem::MARKET_BUY_FROM_STATION) {
@@ -1338,28 +1340,41 @@ public:
                 }
             } else if (side == oem::MARKET_SELL_TO_STATION) {
                 if (manifest->second.quantity(cargoId) > 0) {
-                    selectedCargo = cargoId;
-                    break;
+                    vesselHasSellCargo = true;
+                    long long maximumStock = 0;
+                    if (!primaryResources_.maximumStockFor(serviceId, cargoId, maximumStock) ||
+                        inventory->second.quantity(cargoId) < maximumStock) {
+                        allSellCargoAtCapacity = false;
+                        selectedCargo = cargoId;
+                        break;
+                    }
                 }
             } else {
                 return oem::Result::failure("MARKET_SIDE", "Unknown market operation.");
             }
         }
-        if (selectedCargo.empty())
+        if (selectedCargo.empty()) {
+            if (side == oem::MARKET_SELL_TO_STATION && vesselHasSellCargo && allSellCargoAtCapacity)
+                return oem::Result::failure("MARKET_STATION_FULL",
+                    "The station has reached its configured stock capacity for all cargo carried by the vessel.");
             return oem::Result::failure(side == oem::MARKET_BUY_FROM_STATION
                 ? "MARKET_NO_STOCK" : "MARKET_NO_CARGO",
                 side == oem::MARKET_BUY_FROM_STATION
                 ? "No catalog item has available station stock."
                 : "The vessel has no catalog cargo available to sell.");
+        }
 
         char operationId[256];
         sprintf(operationId, "OEMMARKET-%s-%lu", sessionId_.c_str(),
                 ++cargoTransferSequence_);
         oem::MarketQuote quote;
         oem::MarketQuoteEngine quoteEngine;
+        long long maximumStationStock = std::numeric_limits<long long>::max();
+        if (side == oem::MARKET_SELL_TO_STATION)
+            primaryResources_.maximumStockFor(serviceId, selectedCargo, maximumStationStock);
         const oem::Result quoted = quoteEngine.createQuote(
             cargoCatalog_, inventory->second, std::string("QUOTE-") + operationId,
-            selectedCargo, side, 1, currentSimulationTime_, quote);
+            selectedCargo, side, 1, currentSimulationTime_, quote, maximumStationStock);
         if (!quoted.ok) return quoted;
 
         const oem::Result committed = economyJournalStore_.applyTrade(

@@ -33,6 +33,14 @@ const PrimaryResourceSource* PrimaryResourceBook::find(const std::string& id)con
  std::map<std::string,std::size_t>::const_iterator it=indexes_.find(id);
  return it==indexes_.end()?0:&sources_[it->second];
 }
+bool PrimaryResourceBook::maximumStockFor(const std::string& location,const std::string& cargo,
+ long long& maximum)const{
+ for(std::size_t i=0;i<sources_.size();++i){
+  const PrimaryResourceSource& s=sources_[i];
+  if(s.locationId==location&&s.cargoId==cargo){maximum=s.maximumStock;return true;}
+ }
+ return false;
+}
 Result PrimaryResourceBook::restoreCommitted(const std::string& id,const std::string& location,
  const std::string& cargo,double mass,SimulationSeconds time){
  std::map<std::string,std::size_t>::iterator it=indexes_.find(id);

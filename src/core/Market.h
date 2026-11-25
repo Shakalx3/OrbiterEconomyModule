@@ -4,6 +4,7 @@
 #include "CargoServiceInventory.h"
 #include "Types.h"
 #include <map>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -43,6 +44,7 @@ struct MarketQuote {
     Credits totalPrice;
     long long stationStockAtQuote;
     SimulationSeconds simulationTime;
+    long long maximumStationStock;
     MarketQuote();
 };
 
@@ -55,7 +57,8 @@ public:
                        MarketSide side,
                        long long quantity,
                        SimulationSeconds simulationTime,
-                       MarketQuote& quote) const;
+                       MarketQuote& quote,
+                       long long maximumStationStock = std::numeric_limits<long long>::max()) const;
 };
 
 } // namespace oem

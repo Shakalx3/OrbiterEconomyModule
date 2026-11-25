@@ -45,6 +45,8 @@ public:
     Result add(const PrimaryResourceSource& source);
     const std::vector<PrimaryResourceSource>& sources() const;
     const PrimaryResourceSource* find(const std::string& sourceId) const;
+    bool maximumStockFor(const std::string& locationId, const std::string& cargoId,
+        long long& maximumStock) const;
     Result restoreCommitted(const std::string& sourceId, const std::string& locationId,
         const std::string& cargoId, double unitMassKg, SimulationSeconds productionTime);
     Result initializeUnsetTimes(SimulationSeconds now, bool& changed);

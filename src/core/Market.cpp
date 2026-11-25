@@ -32,7 +32,8 @@ const std::vector<CargoDefinition>& CargoCatalog::entries() const { return entri
 
 MarketQuote::MarketQuote()
     : quoteId(), stationId(), cargoId(), side(MARKET_BUY_FROM_STATION),
-      quantity(0), unitPrice(0), totalPrice(0), stationStockAtQuote(0), simulationTime(0) {}
+      quantity(0), unitPrice(0), totalPrice(0), stationStockAtQuote(0), simulationTime(0),
+      maximumStationStock(std::numeric_limits<long long>::max()) {}
 
 Result MarketQuoteEngine::createQuote(const CargoCatalog& catalog,
                                       const CargoServiceInventory& inventory,
@@ -41,7 +42,8 @@ Result MarketQuoteEngine::createQuote(const CargoCatalog& catalog,
                                       MarketSide side,
                                       long long quantity,
                                       SimulationSeconds simulationTime,
-                                      MarketQuote& quote) const {
+                                      MarketQuote& quote,
+                                      long long maximumStationStock) const {
     if (quoteId.empty() || inventory.serviceVesselId().empty() || cargoId.empty())
         return Result::failure("INVALID_MARKET_QUOTE", "Quote, station and cargo IDs are required.");
     if (quantity <= 0)
@@ -59,6 +61,11 @@ Result MarketQuoteEngine::createQuote(const CargoCatalog& catalog,
     if (side == MARKET_SELL_TO_STATION &&
         stock > std::numeric_limits<long long>::max() - quantity)
         return Result::failure("CARGO_QUANTITY_OVERFLOW", "Station stock would overflow after this sale.");
+    if (maximumStationStock < 0)
+        return Result::failure("MARKET_STOCK_CAPACITY", "Station stock capacity cannot be negative.");
+    if (side == MARKET_SELL_TO_STATION &&
+        (stock >= maximumStationStock || quantity > maximumStationStock - stock))
+        return Result::failure("MARKET_STATION_FULL", "The station has insufficient free capacity for this cargo.");
 
     const Credits unitPrice = side == MARKET_BUY_FROM_STATION
         ? definition.buyPrice : definition.sellPrice;
@@ -76,6 +83,7 @@ Result MarketQuoteEngine::createQuote(const CargoCatalog& catalog,
     candidate.totalPrice = unitPrice * quantity;
     candidate.stationStockAtQuote = stock;
     candidate.simulationTime = simulationTime;
+    candidate.maximumStationStock = maximumStationStock;
     quote = candidate;
     return Result::success();
 }
