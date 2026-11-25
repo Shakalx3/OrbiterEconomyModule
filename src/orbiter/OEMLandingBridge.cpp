@@ -1629,6 +1629,7 @@ public:
         primaryResourcesReady_ = false;
         ledger_ = oem::Ledger();
         cargoCatalog_ = oem::CargoCatalog();
+        marketGoodsEnabled_ = false;
         economyReady_ = false;
         sessionId_.clear();
         currentSimulationTime_ = 0;
