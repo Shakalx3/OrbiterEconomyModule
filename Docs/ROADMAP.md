@@ -52,7 +52,7 @@
 - [ ] Runtime-validate the generated spaceport registry against the active Orbiter installation and compare its entries with the simulator's configured surface bases.
 - [x] Portable market catalog, quote engine, and atomic BUY/SELL transaction engine.
 - [x] Global journal records market trades in the same ordered stream as cargo exchanges.
-- [x] Native Location Market MFD (key M) with one-unit BUY/SELL operations at registered docked stations or verified landed planetary bases.
+- [x] Native Location Market MFD (key M) with cargo selection, 1/5/10/MAX quantity selection, BUY/SELL operations, account/stock/manifest display, and registered-station or verified-spaceport access.
 - [x] Runtime-validate market purchases, sales, and correct opening balance in Orbiter 2010. (The user confirmed BUY/SELL and opening balance; restart recovery remains a separate check.)
 - [x] Add portable abstract cargo manifests with transfer history, mass accounting and idempotent load/unload operations.
 - [x] Add portable station-side stock accounting with explicit initial stock, load debits, unload credits, quantity bounds and idempotent transfer IDs.
