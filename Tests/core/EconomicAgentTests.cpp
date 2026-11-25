@@ -17,7 +17,9 @@ int main() {
     supplier.currentBalance=50000;
     supplier.tradeIntervalSeconds=3600;
     supplier.nextTradeAt=7200;
+    supplier.operatingLocationIds.push_back("station:ISS");
     supplier.inventory["oxygen"]=100;
+    supplier.buyTargets["water"]=25;
     supplier.sellTargets["oxygen"]=200;
     assert(agents.add(supplier).ok);
     assert(!agents.add(supplier).ok);
@@ -40,7 +42,10 @@ int main() {
     assert(found.displayName==supplier.displayName);
     assert(found.currentBalance==50000);
     assert(found.nextTradeAt==7200);
-    assert(found.sellTargets.empty()); // v1 stores identity and schedule; inventories are journal projections.
+    assert(found.operatingLocationIds.size()==1 && found.operatingLocationIds[0]=="station:ISS");
+    assert(found.inventory["oxygen"]==100);
+    assert(found.buyTargets["water"]==25);
+    assert(found.sellTargets["oxygen"]==200);
     {
         std::ofstream bad(path.c_str(),std::ios::binary|std::ios::trunc);
         bad<<"OEM_ECONOMIC_AGENTS|99\\n";
