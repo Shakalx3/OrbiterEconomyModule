@@ -120,7 +120,7 @@ Current route-quote defaults are centralized in `MissionEconomicsConfig`: nomina
 
 - [x] Replace first-match delivery destination selection with a complete eligible-location pool and a session-seeded pseudo-random choice, so registry/file order does not dictate every route; keep the selected destination stable while its pending offer is displayed.
 - [x] Refresh unaccepted delivery offers once per in-game day; accepted contracts retain their original terms.
-- [ ] Runtime-test destination distribution across several registered planetary bases and orbital stations, confirming that changing the order of `spaceports.registry` does not change the selection bias.
+- [x] Runtime-test destination distribution across several registered planetary bases and orbital stations, confirming that changing the order of `spaceports.registry` does not change the selection bias. The user confirmed in Orbiter 2010 that destinations are selected randomly with no noticeable directional preference.
 - [x] Give each base/station a variable local mission board with zero to three offers, generated from eligible cargo stock and reachable registered cargo-service destinations; an empty board is a valid result.
 - [x] Resolve and validate the exact canonical origin location (including celestial body for planetary bases) before generating each mission; persist boards under canonical location keys while retaining legacy stock/journal storage IDs, with v1 board-file migration.
 - [x] Use a consistent route-distance model: great-circle surface distance for same-body spaceport routes; Orbiter global endpoint separation as an explicitly typed estimate for station/orbital/inter-body combinations. The latter is a straight-line estimate, never represented as a proven flight path.
