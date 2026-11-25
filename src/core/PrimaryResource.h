@@ -25,6 +25,7 @@ struct PrimaryResourceSource {
     long long unitsPerCycle;
     SimulationSeconds cycleSeconds;
     long long maximumStock;
+    long long openingStock;
     SimulationSeconds lastProductionTime;
     bool enabled;
     PrimaryResourceSource();
