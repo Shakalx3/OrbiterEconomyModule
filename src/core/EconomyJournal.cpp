@@ -136,6 +136,24 @@ Result EconomyJournalStore::load(const std::string&p,const CargoCatalog&cat,Ledg
  if(!appliedResult.ok)return Result::failure(appliedResult.code,appliedResult.message);
  }
  ledger=nextLedger;inventories.swap(nextInventories);manifests.swap(nextManifests);if(contracts)*contracts=nextContracts;if(objectives)*objectives=nextObjectives;return Result::success();}
+Result EconomyJournalStore::recoverPrimaryProductionTimes(const std::string&p,PrimaryResourceBook&book)const{
+ bool exists=false;std::string data;
+ if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not read or repair the global journal while recovering production timestamps.");
+ if(!exists)return Result::success();
+ std::map<std::string,std::string> ids;
+ Result valid=scanIds(data,ids);if(!valid.ok)return valid;
+ PrimaryResourceBook next(book);
+ std::istringstream in(data);std::string line;std::getline(in,line);
+ while(std::getline(in,line)){
+  if(!line.empty()&&line[line.size()-1]=='\r')line.erase(line.size()-1);
+  if(line.empty())continue;
+  Entry r;if(!decode(line,r))return Result::failure("ECONOMY_JOURNAL_CORRUPT","Invalid complete record while recovering production timestamps.");
+  if(r.type!='Z')continue;
+  Result restored=next.restoreCommitted(r.vessel,r.station,r.cargo,r.unitMassKg,r.time);
+  if(!restored.ok)return restored;
+ }
+ book=next;return Result::success();
+}
 Result EconomyJournalStore::applyPrimaryProduction(const std::string&p,const std::string&op,const std::string&source,const std::string&location,const std::string&cargo,long long qty,double mass,SimulationSeconds time,std::map<std::string,CargoServiceInventory>&inventories)const{
  if(op.empty()||source.empty()||location.empty()||cargo.empty()||qty<=0||!(mass>0.0)||!std::isfinite(mass)||time<0)return Result::failure("PRIMARY_PRODUCTION_INVALID","Primary production requires IDs, positive quantity and mass, and non-negative simulation time.");
  std::map<std::string,CargoServiceInventory>::iterator it=inventories.find(location);if(it==inventories.end())return Result::failure("ECONOMY_UNKNOWN_STATION","Primary production location has no configured inventory.");
