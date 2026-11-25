@@ -38,6 +38,7 @@ add_library(OEMCore
     src/core/PropellantTransactionJournal.cpp
     src/core/EconomicAgent.cpp
     src/core/PrimaryResource.cpp
+    src/core/PrimaryResourceConfig.cpp
 )
 target_include_directories(OEMCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
 add_executable(OEMCoreTests Tests/core/LedgerTests.cpp)
