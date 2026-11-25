@@ -2299,8 +2299,8 @@ private:
                 return false;
             }
         }
-        // Seed only an untouched opening inventory. Existing stock and any location
-        // with journal history remain authoritative and are never rewritten.
+        // Add only the newly introduced built-in commodity IDs. Existing stock
+        // lines and all journaled transactions remain unchanged.
         if (marketGoodsEnabled_ && candidate.history().empty()) {
             // New commodity IDs have never appeared in the legacy journal because
             // this compatibility path is enabled only for the untouched OEM TEST
@@ -3505,7 +3505,7 @@ public:
             if (selectedCargo_ >= items.size()) selectedCargo_ = 0;
             const std::size_t first = selectedCargo_ > 2 ? selectedCargo_ - 2 : 0;
             const std::size_t last = items.size() < first + 5 ? items.size() : first + 5;
-            DrawLine(hDC, y, "UP/DOWN SELECTS CARGO - PRICES FOLLOW STOCK");
+            DrawLine(hDC, y, "UP/DOWN: CARGO / LIVE PRICES");
             for (std::size_t i = first; i < last; ++i) {
                 const long long stationQty = stock ? stock->quantity(items[i].cargoId) : 0;
                 const long long vesselQty = manifest ? manifest->quantity(items[i].cargoId) : 0;
