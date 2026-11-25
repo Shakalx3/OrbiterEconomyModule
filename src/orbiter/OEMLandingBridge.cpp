@@ -2245,6 +2245,51 @@ private:
         oapiWriteLog(summary);
     }
 
+    bool seedBuiltInMarketStock(const std::string& serviceId,
+                                oem::CargoServiceInventory& candidate) {
+        if (!marketGoodsEnabled_) return true;
+
+        const char* ids[] = {"WATER","OXYGEN","FOOD","METALS","ELECTRONICS","MACHINERY","MEDICAL"};
+        const double masses[] = {1.0,1.0,1.0,10.0,1.0,25.0,1.0};
+        bool changed = false;
+        for (std::size_t i = 0; i < 7; ++i) {
+            bool cargoHistory = false;
+            const oem::Result history = economyJournalStore_.hasLocationCargoHistory(
+                economyJournalPath_, serviceId, ids[i], cargoHistory);
+            if (!history.ok) {
+                char error[384];
+                sprintf(error, "OEM Market: could not inspect cargo history at %s (%s).",
+                    serviceId.c_str(), history.code.c_str());
+                oapiWriteLog(error);
+                return false;
+            }
+            // Seed only never-used commodities. Existing quantities and every
+            // journaled transaction remain authoritative for that cargo.
+            if (candidate.quantity(ids[i]) != 0 || cargoHistory) continue;
+            const oem::Result seeded = candidate.setInitialStock(
+                ids[i], builtInOpeningQuantity(ids[i]), masses[i]);
+            if (!seeded.ok) return false;
+            changed = true;
+        }
+
+        if (changed) {
+            const std::string configPath = makeCargoStockConfigPath(module_, serviceId);
+            if (configPath.empty()) return false;
+            const oem::Result saved = cargoStockConfigStore_.save(configPath, candidate);
+            if (!saved.ok) {
+                char error[384];
+                sprintf(error, "OEM Market: starter stock save failed at %s (%s).",
+                    serviceId.c_str(), saved.code.c_str());
+                oapiWriteLog(error);
+                return false;
+            }
+            char message[384];
+            sprintf(message, "OEM Market: seeded built-in opening stock at %s.", serviceId.c_str());
+            oapiWriteLog(message);
+        }
+        return true;
+    }
+
     bool ensureCargoServiceInventory(const std::string& serviceId) {
         if (serviceId.empty()) return false;
         if (cargoServiceInventories_.find(serviceId) != cargoServiceInventories_.end()) return true;
@@ -2298,60 +2343,7 @@ private:
                 return false;
             }
         }
-        // Seed each built-in commodity independently. A station may have years of
-        // TEST transactions while the new cargo IDs have never been used; those
-        // unrelated journal records must not suppress their opening inventory.
-        if (marketGoodsEnabled_) {
-            bool hasLocationHistory = false;
-            const oem::Result history = economyJournalStore_.hasLocationHistory(
-                economyJournalPath_, serviceId, hasLocationHistory);
-            if (!history.ok) {
-                oapiWriteLog((char*)"OEM Market: could not inspect station history before starter-stock seeding.");
-                return false;
-            }
-            const char* ids[] = {"WATER","OXYGEN","FOOD","METALS","ELECTRONICS","MACHINERY","MEDICAL"};
-            const double masses[] = {1.0,1.0,1.0,10.0,1.0,25.0,1.0};
-            bool changed = false;
-            for (std::size_t i = 0; i < 7; ++i) {
-                bool cargoHistory = false;
-                const oem::Result cargoHistoryResult =
-                    economyJournalStore_.hasLocationCargoHistory(
-                        economyJournalPath_, serviceId, ids[i], cargoHistory);
-                if (!cargoHistoryResult.ok) {
-                    oapiWriteLog((char*)"OEM Market: could not inspect per-cargo station history.");
-                    return false;
-                }
-                if (candidate.quantity(ids[i]) != 0 || cargoHistory) continue;
-                const oem::Result seeded = candidate.setInitialStock(ids[i],
-                    builtInOpeningQuantity(ids[i]), masses[i]);
-                if (!seeded.ok) return false;
-                changed = true;
-            }
-            // Configured primary-source opening quantities remain a one-time
-            // location bootstrap. Never replay them over an existing location.
-            if (!hasLocationHistory) {
-                const std::vector<oem::PrimaryResourceSource>& sources = primaryResources_.sources();
-                for (std::size_t i = 0; i < sources.size(); ++i) {
-                    const oem::PrimaryResourceSource& source = sources[i];
-                    if (source.locationId != serviceId || source.openingStock <= 0 ||
-                        candidate.quantity(source.cargoId) != 0) continue;
-                    const oem::Result seeded = candidate.setInitialStock(
-                        source.cargoId, source.openingStock, source.unitMassKg);
-                    if (!seeded.ok) return false;
-                    changed = true;
-                }
-            }
-            if (changed) {
-                const oem::Result saved = cargoStockConfigStore_.save(configPath, candidate);
-                if (!saved.ok) {
-                    char error[384];
-                    sprintf(error, "OEM Market: starter stock save failed at %s (%s).",
-                        serviceId.c_str(), saved.code.c_str());
-                    oapiWriteLog(error);
-                    return false;
-                }
-            }
-        }
+        if (!seedBuiltInMarketStock(serviceId, candidate)) return false;
         cargoServiceInventories_.insert(std::make_pair(serviceId, candidate));
         char message[512];
         sprintf(message, "OEM Cargo Stock: opening state loaded service=%s lines=%lu.",
@@ -2673,6 +2665,32 @@ private:
             oapiWriteLog(message);
         } else {
             oapiWriteLog((char*)"OEM Economy: cargo_catalog.cfg missing; market trading remains unavailable until explicitly configured.");
+        }
+
+        // Surface inventories are preloaded before the cargo catalogue so the
+        // economy journal can recover every location. Once the catalogue is
+        // known, seed their built-in opening market stock in a second pass.
+        // This is deliberately limited to planetary spaceports; it does not
+        // migrate old orbital-station saves as part of this change.
+        if (marketGoodsEnabled_) {
+            const std::vector<oem::EconomicLocation>& locations = economicLocations_.entries();
+            for (std::size_t i = 0; i < locations.size(); ++i) {
+                if (locations[i].kind != oem::ECONOMIC_LOCATION_SPACEPORT) continue;
+                std::map<std::string, oem::CargoServiceInventory>::iterator stock =
+                    cargoServiceInventories_.find(locations[i].storageId);
+                if (stock == cargoServiceInventories_.end()) {
+                    if (!ensureCargoServiceInventory(locations[i].storageId)) return false;
+                    stock = cargoServiceInventories_.find(locations[i].storageId);
+                }
+                if (stock == cargoServiceInventories_.end() ||
+                    !seedBuiltInMarketStock(locations[i].storageId, stock->second)) {
+                    char error[384];
+                    sprintf(error, "OEM Market: planetary opening stock initialization failed at %s.",
+                        locations[i].canonicalId.c_str());
+                    oapiWriteLog(error);
+                    return false;
+                }
+            }
         }
 
         if (primaryResourcesPath_.empty()) {
