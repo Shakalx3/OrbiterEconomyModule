@@ -45,7 +45,7 @@ Each station prices each commodity independently against a target stock of 100 u
 2. At ISS, record each cargo's stock and displayed BUY/SELL prices.
 3. Buy 10 units of WATER. Confirm station stock falls by 10, vessel manifest rises by 10, the balance is charged at the displayed price, and the next WATER quote rises.
 4. Sell 5 WATER. Confirm station stock rises by 5, vessel manifest falls by 5, the account is credited at the displayed sell price, and the next quote falls relative to the scarcity quote.
-5. Open the market at another registered station with its own cargo service. Confirm its stock is independent and the same commodity can have a different price there.
+5. At a second orbital station, open OEM Economic Admin (key A), press R to register station identity and T to enable its cargo/market service. Dock the player vessel there and open the market. Confirm its stock is independent and the same commodity can have a different price there.
 6. Repeat a purchase and sale at the second station. Confirm only that station's inventory changes.
 7. Save, exit and restart Orbiter. Confirm balances, all station stocks, vessel manifests and historic prices are preserved.
 8. Confirm a custom catalogue (one containing entries beyond the untouched starter TEST row) is not augmented or overwritten by the compatibility defaults.
@@ -75,7 +75,7 @@ The MFD shows station stock, dynamically calculated buy/sell prices, vessel mani
 5. Open the market MFD and note the starting company balance, station stock and vessel manifest quantity.
 6. Confirm that the MFD identifies ISS as the current market.
 
-For the starter configuration, the expected reference values are 10,000 credits, 120 units of `TEST` stock, a buy price of 100 credits/unit, a sell price of 60 credits/unit, and a primary-resource stock cap of 150. If the local configuration differs, use its actual values and calculate expected changes from those values.
+For the starter configuration, the expected reference values are 10,000 credits, 120 units of TEST stock, base prices of 100/60 credits per unit, and a primary-resource stock cap of 150. At 120 units the dynamic price is 98 credits to buy and 59 credits to sell (rounded to whole credits). If the local configuration differs, use its actual values and calculate expected changes from those values.
 
 ## Test sequence
 
