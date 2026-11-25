@@ -36,6 +36,7 @@ add_library(OEMCore
     src/core/PropellantQuote.cpp
     src/core/PropellantTransaction.cpp
     src/core/PropellantTransactionJournal.cpp
+    src/core/EconomicAgent.cpp
 )
 target_include_directories(OEMCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
 add_executable(OEMCoreTests Tests/core/LedgerTests.cpp)
@@ -103,6 +104,8 @@ target_link_libraries(OEMPropellantQuoteTests PRIVATE OEMCore)
 add_executable(OEMPropellantTransactionTests Tests/core/PropellantTransactionTests.cpp)
 target_link_libraries(OEMPropellantTransactionTests PRIVATE OEMCore)
 add_executable(OEMPropellantTransactionJournalTests Tests/core/PropellantTransactionJournalTests.cpp)
+add_executable(OEMEconomicAgentTests Tests/core/EconomicAgentTests.cpp)
+target_link_libraries(OEMEconomicAgentTests PRIVATE OEMCore)
 target_link_libraries(OEMPropellantTransactionJournalTests PRIVATE OEMCore)
 target_link_libraries(OEMEconomicLocationRegistryTests PRIVATE OEMCore)
 target_link_libraries(OEMCampaignResetTests PRIVATE OEMCore)
@@ -145,3 +148,4 @@ add_test(NAME OEMPropellantPlanTests COMMAND OEMPropellantPlanTests)
 add_test(NAME OEMPropellantQuoteTests COMMAND OEMPropellantQuoteTests)
 add_test(NAME OEMPropellantTransactionTests COMMAND OEMPropellantTransactionTests)
 add_test(NAME OEMPropellantTransactionJournalTests COMMAND OEMPropellantTransactionJournalTests)
+add_test(NAME OEMEconomicAgentTests COMMAND OEMEconomicAgentTests)
