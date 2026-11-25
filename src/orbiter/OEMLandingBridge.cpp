@@ -2483,11 +2483,27 @@ private:
                 oapiWriteLog(error);
                 return false;
             }
-            const oem::EconomicLocation* location =
+            const oem::EconomicLocation* stationLocation =
                 economicLocations_.find("station:" + source.locationId);
-            if (!location)
-                location = economicLocations_.findStorageId(
-                    source.locationId, oem::ECONOMIC_LOCATION_SPACEPORT);
+            const oem::EconomicLocation* surfaceLocation = 0;
+            std::size_t surfaceMatches = 0;
+            const std::vector<oem::EconomicLocation>& knownLocations = economicLocations_.entries();
+            for (std::size_t locationIndex = 0; locationIndex < knownLocations.size(); ++locationIndex) {
+                if (knownLocations[locationIndex].kind == oem::ECONOMIC_LOCATION_SPACEPORT &&
+                    knownLocations[locationIndex].storageId == source.locationId) {
+                    surfaceLocation = &knownLocations[locationIndex];
+                    ++surfaceMatches;
+                }
+            }
+            if (surfaceMatches > 1 || (stationLocation && surfaceMatches != 0)) {
+                char error[512];
+                sprintf(error, "OEM Primary Resources: source %s uses ambiguous storage ID %s.",
+                    source.sourceId.c_str(), source.locationId.c_str());
+                oapiWriteLog(error);
+                return false;
+            }
+            const oem::EconomicLocation* location =
+                stationLocation ? stationLocation : (surfaceMatches == 1 ? surfaceLocation : 0);
             if (!location) {
                 char error[512];
                 sprintf(error, "OEM Primary Resources: source %s references an unknown or ambiguous location %s.",
