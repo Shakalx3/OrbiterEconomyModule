@@ -150,7 +150,7 @@ Result EconomyJournalStore::hasLocationHistory(const std::string&p,const std::st
   Entry r;if(!decode(line,r))return Result::failure("ECONOMY_JOURNAL_CORRUPT","Invalid complete record while checking location history.");
   if(r.station==location||r.transfer.locationId==location||
      r.contract.originLocationId==location||r.contract.destinationLocationId==location||
-     r.objective.targetLocationId==location){hasHistory=true;return Result::success();}
+     r.objective.originLocationId==location||r.objective.targetLocationId==location){hasHistory=true;return Result::success();}
  }
  return Result::success();
 }
