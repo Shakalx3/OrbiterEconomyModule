@@ -78,6 +78,7 @@ int main() {
     production.locationId="ISS"; production.cargoId="oxygen";
     production.quantity=1; production.unitMassKg=10.0; production.simulationTime=203;
     assert(staleStock.apply(production).ok);
+    assert(ledger.getBalance("company", balance));
     const oem::Credits beforeStaleTrade=balance;
     assert(!trades.execute(catalog, staleQuote, "trade-cap-stale", "company",
         ledger, staleStock, staleSeller).ok);
