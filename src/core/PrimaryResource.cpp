@@ -4,7 +4,7 @@
 #include <limits>
 namespace oem {
 StarterStockLine::StarterStockLine():cargoId(),quantity(0),unitMassKg(0.0){}
-PrimaryResourceSource::PrimaryResourceSource():sourceId(),locationId(),cargoId(),unitMassKg(0.0),unitsPerCycle(0),cycleSeconds(86400),maximumStock(0),lastProductionTime(0),enabled(true){}
+PrimaryResourceSource::PrimaryResourceSource():sourceId(),locationId(),cargoId(),unitMassKg(0.0),unitsPerCycle(0),cycleSeconds(86400),maximumStock(0),openingStock(0),lastProductionTime(0),enabled(true){}
 PrimaryResourceIntent::PrimaryResourceIntent():operationId(),sourceId(),locationId(),cargoId(),quantity(0),unitMassKg(0.0),simulationTime(0){}
 Result seedStarterStock(const StarterStockProfile& profile,CargoServiceInventory& inventory){
  if(profile.profileId.empty()||inventory.serviceVesselId().empty()||!inventory.history().empty()||!inventory.lines().empty())
@@ -20,7 +20,7 @@ Result seedStarterStock(const StarterStockProfile& profile,CargoServiceInventory
  inventory=next;return Result::success();
 }
 Result PrimaryResourceBook::add(const PrimaryResourceSource& s){
- if(s.sourceId.empty()||s.locationId.empty()||s.cargoId.empty()||!(s.unitMassKg>0.0)||!std::isfinite(s.unitMassKg)||s.unitsPerCycle<=0||s.cycleSeconds<=0||s.maximumStock<=0||s.lastProductionTime<0)
+ if(s.sourceId.empty()||s.locationId.empty()||s.cargoId.empty()||!(s.unitMassKg>0.0)||!std::isfinite(s.unitMassKg)||s.unitsPerCycle<=0||s.cycleSeconds<=0||s.maximumStock<=0||s.openingStock<0||s.openingStock>s.maximumStock||s.lastProductionTime<0)
   return Result::failure("PRIMARY_SOURCE_INVALID","Primary resource source requires IDs, positive mass, bounded output, cycle, capacity and non-negative time.");
  if(indexes_.find(s.sourceId)!=indexes_.end())return Result::failure("PRIMARY_SOURCE_DUPLICATE","Primary resource source ID already exists.");
  sources_.push_back(s);indexes_[s.sourceId]=sources_.size()-1;return Result::success();
