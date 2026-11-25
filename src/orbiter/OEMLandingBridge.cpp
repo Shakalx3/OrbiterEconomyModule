@@ -1012,6 +1012,8 @@ public:
         return result;
     }
 
+    bool economyReady() const { return economyReady_; }
+
     bool companyBalance(oem::Credits& balance) const {
         return economyReady_ && ledger_.getBalance("company", balance);
     }
@@ -3145,11 +3147,13 @@ public:
         sprintf(line, "FREE CAPACITY: %.3f KG", totals.freeCapacityKg);
         DrawLine(hDC, y, line);
         oem::Credits balance = 0;
-        if (g_bridge->companyBalance(balance)) {
+        if (!g_bridge->economyReady()) {
+            DrawLine(hDC, y, "ECONOMY NOT READY - CHECK LOG");
+        } else if (g_bridge->companyBalance(balance)) {
             sprintf(line, "COMPANY BALANCE: %lld CR", (long long)balance);
             DrawLine(hDC, y, line);
         } else {
-            DrawLine(hDC, y, "COMPANY ACCOUNT UNAVAILABLE");
+            DrawLine(hDC, y, "COMPANY ACCOUNT MISSING");
         }
         const double partialMass = totals.freeCapacityKg < 100.0 ? totals.freeCapacityKg : 100.0;
         const long double partialCost = ceil((long double)partialMass * (long double)unitPrice);
@@ -3265,12 +3269,14 @@ public:
             DrawLine(hDC, y, line);
         }
         oem::Credits balance = 0;
-        if (g_bridge->companyBalance(balance)) {
+        if (!g_bridge->economyReady()) {
+            DrawLine(hDC, y, "ECONOMY NOT READY - CHECK LOG");
+        } else if (g_bridge->companyBalance(balance)) {
             char line[128];
             sprintf(line, "COMPANY BALANCE: %lld cr", (long long)balance);
             DrawLine(hDC, y, line);
         } else {
-            DrawLine(hDC, y, "COMPANY ACCOUNT: missing (accounts.cfg)");
+            DrawLine(hDC, y, "COMPANY ACCOUNT MISSING");
         }
         const oem::CargoCatalog *catalog = g_bridge->marketCatalog();
         const oem::CargoServiceInventory *stock = serviceId.empty()
