@@ -155,7 +155,7 @@ Current route-quote defaults are centralized in `MissionEconomicsConfig`: nomina
 - [x] Add versioned, atomically replaced persistence for primary-resource source definitions and scheduling state.
 - [x] Add durable primary-production records to the global economy journal; replay adds stock exactly once, and duplicate operation IDs cannot create cargo twice.
 - [x] Recover each source's last committed production timestamp from the global journal before scheduling resumes; reject source-definition conflicts and prevent an early extra cycle after a crash between journal commit and config save.
-- [x] Create configured starter stock only when a location's stock file is first created; preserve existing empty files and refuse to recreate a missing baseline if the global journal already references that location.
+- [x] Apply configured one-time starter stock only to empty, history-free location inventories; preserve non-empty or journal-backed stock, clear the consumed opening quantity, and refuse to recreate a missing baseline if the global journal already references that location.
 - [ ] Configure initial resource profiles and renewable sources for appropriate planetary bases, orbital stations, and resource regions; keep resource types and rates configurable.
 - [x] Load primary-resource source definitions in the native bridge, commit due production using Orbiter simulation time, persist scheduler timestamps, and log each committed production cycle.
 
