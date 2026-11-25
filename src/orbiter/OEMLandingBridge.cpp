@@ -647,7 +647,7 @@ public:
         return economyReady_ ? &cargoCatalog_ : 0;
     }
 
-    Credits marketUnitPrice(const std::string& serviceId, const std::string& cargoId,
+    oem::Credits marketUnitPrice(const std::string& serviceId, const std::string& cargoId,
                             oem::MarketSide side) const {
         oem::CargoDefinition definition;
         const oem::CargoServiceInventory* stock = cargoServiceInventory(serviceId);
@@ -2319,6 +2319,18 @@ private:
                     if (!seeded.ok) return false;
                     changed = true;
                 }
+                // Preserve configured primary-resource opening stock on a clean
+                // station even though the other commodity lines are seeded here.
+                const std::vector<oem::PrimaryResourceSource>& sources = primaryResources_.sources();
+                for (std::size_t i = 0; i < sources.size(); ++i) {
+                    const oem::PrimaryResourceSource& source = sources[i];
+                    if (source.locationId != serviceId || source.openingStock <= 0 ||
+                        candidate.quantity(source.cargoId) != 0) continue;
+                    const oem::Result seeded = candidate.setInitialStock(
+                        source.cargoId, source.openingStock, source.unitMassKg);
+                    if (!seeded.ok) return false;
+                    changed = true;
+                }
                 if (changed) {
                     const oem::Result saved = cargoStockConfigStore_.save(configPath, candidate);
                     if (!saved.ok) {
@@ -3487,17 +3499,23 @@ public:
             if (selectedCargo_ >= items.size()) selectedCargo_ = 0;
             const std::size_t first = selectedCargo_ > 2 ? selectedCargo_ - 2 : 0;
             const std::size_t last = items.size() < first + 5 ? items.size() : first + 5;
-            DrawLine(hDC, y, "UP/DOWN SELECTS CARGO");
+            DrawLine(hDC, y, "UP/DOWN SELECTS CARGO - PRICES FOLLOW STOCK");
             for (std::size_t i = first; i < last; ++i) {
                 const long long stationQty = stock ? stock->quantity(items[i].cargoId) : 0;
                 const long long vesselQty = manifest ? manifest->quantity(items[i].cargoId) : 0;
                 char line[256];
+                const oem::Credits buyPrice = serviceId.empty()
+                    ? items[i].buyPrice : g_bridge->marketUnitPrice(
+                        serviceId, items[i].cargoId, oem::MARKET_BUY_FROM_STATION);
+                const oem::Credits sellPrice = serviceId.empty()
+                    ? items[i].sellPrice : g_bridge->marketUnitPrice(
+                        serviceId, items[i].cargoId, oem::MARKET_SELL_TO_STATION);
                 sprintf(line, "%c %.12s STK:%lld BUY:%lld",
                     i == selectedCargo_ ? '>' : ' ', items[i].cargoId.c_str(),
-                    stationQty, (long long)items[i].buyPrice);
+                    stationQty, (long long)buyPrice);
                 DrawLine(hDC, y, line);
                 sprintf(line, "  SHIP:%lld SELL:%lld",
-                    vesselQty, (long long)items[i].sellPrice);
+                    vesselQty, (long long)sellPrice);
                 DrawLine(hDC, y, line);
             }
             if (selectedCargo_ < items.size()) {
