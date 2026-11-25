@@ -1,4 +1,5 @@
 #include "../../src/core/MarketPricing.h"
+#include "../../src/core/MarketTrade.h"
 #include <cassert>
 
 static oem::CargoDefinition makeCargo() {
@@ -40,5 +41,40 @@ int main() {
     oem::MarketPricingBook invalid(0, 5000, 2500);
     assert(!invalid.unitPriceForSide(cargo, 10, oem::MARKET_BUY_FROM_STATION, buy).ok);
     assert(!pricing.unitPriceForSide(cargo, -1, oem::MARKET_BUY_FROM_STATION, buy).ok);
+
+    // A committed quote keeps the price calculated at the moment of trade.
+    // The next quote sees the changed station stock and therefore a new price.
+    oem::CargoCatalog catalog;
+    assert(catalog.add(cargo).ok);
+    oem::CargoServiceInventory station("ISS");
+    assert(station.setInitialStock("oxygen", 50, 1.0).ok);
+    oem::CargoManifest ship("GL-01");
+    oem::Ledger ledger;
+    assert(ledger.createAccount("company", 100000).ok);
+    oem::MarketQuoteEngine quotes;
+    oem::MarketTradeEngine trades;
+    oem::MarketQuote first;
+    assert(quotes.createQuote(catalog, station, "q1", "oxygen",
+        oem::MARKET_BUY_FROM_STATION, 10, 100, first).ok);
+    assert(pricing.unitPriceForSide(cargo, station.quantity("oxygen"),
+        oem::MARKET_BUY_FROM_STATION, buy).ok);
+    first.unitPrice=buy; first.totalPrice=buy*first.quantity;
+    const oem::Credits firstUnitPrice=first.unitPrice;
+    assert(trades.execute(catalog, first, "trade-1", "company",
+        ledger, station, ship).ok);
+    assert(station.quantity("oxygen")==40 && ship.quantity("oxygen")==10);
+    assert(pricing.unitPriceForSide(cargo, station.quantity("oxygen"),
+        oem::MARKET_BUY_FROM_STATION, buy).ok);
+    assert(buy>firstUnitPrice);
+
+    oem::MarketQuote sale;
+    assert(quotes.createQuote(catalog, station, "q2", "oxygen",
+        oem::MARKET_SELL_TO_STATION, 5, 101, sale).ok);
+    assert(pricing.unitPriceForSide(cargo, station.quantity("oxygen"),
+        oem::MARKET_SELL_TO_STATION, sell).ok);
+    sale.unitPrice=sell; sale.totalPrice=sell*sale.quantity;
+    assert(trades.execute(catalog, sale, "trade-2", "company",
+        ledger, station, ship).ok);
+    assert(station.quantity("oxygen")==45 && ship.quantity("oxygen")==5);
     return 0;
 }
