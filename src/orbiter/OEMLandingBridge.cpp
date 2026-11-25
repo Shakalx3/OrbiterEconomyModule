@@ -1530,20 +1530,45 @@ public:
         // need a planetary destination inventory even when the player is elsewhere.
         rebuildSpaceportRegistry();
         if (servicesLoaded.ok) {
+            bool openingInventoriesReady = true;
             const std::set<std::string>& serviceIds = cargoServices_.vesselIds();
-            for (std::set<std::string>::const_iterator it = serviceIds.begin(); it != serviceIds.end(); ++it)
-                ensureCargoServiceInventory(*it);
+            for (std::set<std::string>::const_iterator it = serviceIds.begin();
+                 it != serviceIds.end(); ++it) {
+                if (!ensureCargoServiceInventory(*it)) {
+                    char error[512];
+                    sprintf(error, "OEM Cargo Stock: opening inventory unavailable for registered service=%s.",
+                        it->c_str());
+                    oapiWriteLog(error);
+                    openingInventoriesReady = false;
+                    break;
+                }
+            }
             const std::vector<oem::EconomicLocation>& locations = economicLocations_.entries();
-            for (std::size_t i = 0; i < locations.size(); ++i)
-                ensureCargoServiceInventory(locations[i].storageId);
+            for (std::size_t i = 0; openingInventoriesReady && i < locations.size(); ++i) {
+                if (!ensureCargoServiceInventory(locations[i].storageId)) {
+                    char error[512];
+                    sprintf(error, "OEM Cargo Stock: opening inventory unavailable for location=%s.",
+                        locations[i].canonicalId.c_str());
+                    oapiWriteLog(error);
+                    openingInventoriesReady = false;
+                }
+            }
             // Restore opening stock for legacy surface locations already referenced
             // by the event journal before replaying the global economy journal.
             const std::vector<oem::SimulationEvent>& priorEvents = eventQueue_.events();
-            for (std::size_t i = 0; i < priorEvents.size(); ++i)
+            for (std::size_t i = 0; openingInventoriesReady && i < priorEvents.size(); ++i) {
                 if (priorEvents[i].type == oem::SIM_EVENT_LANDING &&
-                    priorEvents[i].locationKnown && !priorEvents[i].baseId.empty())
-                    ensureCargoServiceInventory(priorEvents[i].baseId);
-            initializeEconomyState();
+                    priorEvents[i].locationKnown && !priorEvents[i].baseId.empty() &&
+                    !ensureCargoServiceInventory(priorEvents[i].baseId)) {
+                    char error[512];
+                    sprintf(error, "OEM Cargo Stock: opening inventory unavailable for prior landing base=%s.",
+                        priorEvents[i].baseId.c_str());
+                    oapiWriteLog(error);
+                    openingInventoriesReady = false;
+                }
+            }
+            if (openingInventoriesReady) initializeEconomyState();
+            else oapiWriteLog((char*)"OEM Economy: initialization stopped because an opening stock baseline is missing or invalid.");
         }
         oapiWriteLog((char*)"OEM Landing Bridge: simulation monitoring started.");
     }
