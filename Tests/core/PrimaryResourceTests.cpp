@@ -3,13 +3,14 @@
 #include "../../src/core/PrimaryResourceConfig.h"
 #include <cstdio>
 #include <cassert>
+#include <fstream>
 int main(){
  oem::CargoServiceInventory stock("MoonBase");
  oem::StarterStockProfile profile;profile.profileId="lunar-mining";oem::StarterStockLine ore;ore.cargoId="ore";ore.quantity=120;ore.unitMassKg=1.5;profile.lines.push_back(ore);
  assert(oem::seedStarterStock(profile,stock).ok);assert(stock.quantity("ore")==120);
  assert(!oem::seedStarterStock(profile,stock).ok);
  oem::PrimaryResourceSource source;source.sourceId="lunar-ore-vein";source.locationId="MoonBase";source.cargoId="ore";source.unitMassKg=1.5;source.unitsPerCycle=20;source.cycleSeconds=86400;source.maximumStock=150;source.openingStock=120;
- oem::PrimaryResourceBook book;assert(book.add(source).ok);std::map<std::string,oem::CargoServiceInventory> locations;locations["MoonBase"]=stock;
+ oem::PrimaryResourceBook book;assert(book.add(source).ok);oem::PrimaryResourceSource duplicate=source;duplicate.sourceId="duplicate";assert(!book.add(duplicate).ok);std::map<std::string,oem::CargoServiceInventory> locations;locations["MoonBase"]=stock;
  std::vector<oem::PrimaryResourceIntent> intents;assert(book.planDue(86399,locations,intents).ok&&intents.empty());
  assert(book.planDue(86400,locations,intents).ok&&intents.size()==1&&intents[0].quantity==20);
  assert(book.markCommitted(source.sourceId,86400).ok);std::vector<oem::PrimaryResourceIntent> again;assert(book.planDue(86400,locations,again).ok&&again.empty());
@@ -63,6 +64,15 @@ int main(){
  assert(restoredBook.sources()[0].lastProductionTime==source.lastProductionTime);
  assert(restoredBook.sources()[0].openingStock==120);
  std::remove(configPath.c_str());
+ const std::string legacyPath="OEMPrimaryResourceV1Tests.cfg";std::remove(legacyPath.c_str());
+ {
+  std::ofstream legacy(legacyPath.c_str(),std::ios::binary);
+  legacy<<"OEM_PRIMARY_RESOURCES|1\\n";
+  legacy<<"S|6C756E61722D6F72652D7665696E|4D6F6F6E42617365|6F7265|1.5|20|86400|150|0|1\\n";
+ }
+ oem::PrimaryResourceBook legacyBook;assert(configStore.load(legacyPath,legacyBook).ok);
+ assert(legacyBook.sources().size()==1&&legacyBook.sources()[0].openingStock==0);
+ std::remove(legacyPath.c_str());
  oem::PrimaryResourceSource invalid=source;invalid.sourceId="bad";invalid.maximumStock=0;assert(!book.add(invalid).ok);
  return 0;
 }
