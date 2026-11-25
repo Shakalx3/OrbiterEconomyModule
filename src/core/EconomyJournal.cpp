@@ -136,6 +136,24 @@ Result EconomyJournalStore::load(const std::string&p,const CargoCatalog&cat,Ledg
  if(!appliedResult.ok)return Result::failure(appliedResult.code,appliedResult.message);
  }
  ledger=nextLedger;inventories.swap(nextInventories);manifests.swap(nextManifests);if(contracts)*contracts=nextContracts;if(objectives)*objectives=nextObjectives;return Result::success();}
+Result EconomyJournalStore::hasLocationHistory(const std::string&p,const std::string&location,bool&hasHistory)const{
+ if(location.empty())return Result::failure("ECONOMY_LOCATION_ID","Location ID is required for history inspection.");
+ bool exists=false;std::string data;
+ if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not read or repair the global journal while checking location history.");
+ hasHistory=false;if(!exists)return Result::success();
+ std::map<std::string,std::string> ids;
+ Result valid=scanIds(data,ids);if(!valid.ok)return valid;
+ std::istringstream in(data);std::string line;std::getline(in,line);
+ while(std::getline(in,line)){
+  if(!line.empty()&&line[line.size()-1]=='\r')line.erase(line.size()-1);
+  if(line.empty())continue;
+  Entry r;if(!decode(line,r))return Result::failure("ECONOMY_JOURNAL_CORRUPT","Invalid complete record while checking location history.");
+  if(r.station==location||r.transfer.locationId==location||
+     r.contract.originLocationId==location||r.contract.destinationLocationId==location||
+     r.objective.targetLocationId==location){hasHistory=true;return Result::success();}
+ }
+ return Result::success();
+}
 Result EconomyJournalStore::recoverPrimaryProductionTimes(const std::string&p,PrimaryResourceBook&book)const{
  bool exists=false;std::string data;
  if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not read or repair the global journal while recovering production timestamps.");
