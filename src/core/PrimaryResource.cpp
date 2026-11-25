@@ -52,6 +52,13 @@ Result PrimaryResourceBook::initializeUnsetTimes(SimulationSeconds now,bool&chan
   if(sources_[i].lastProductionTime==0){sources_[i].lastProductionTime=now;changed=true;}
  return Result::success();
 }
+Result PrimaryResourceBook::consumeOpeningStock(const std::string&location,bool&changed){
+ if(location.empty())return Result::failure("PRIMARY_SOURCE_LOCATION","Location ID is required to consume opening stock.");
+ changed=false;
+ for(std::size_t i=0;i<sources_.size();++i)
+  if(sources_[i].locationId==location&&sources_[i].openingStock>0){sources_[i].openingStock=0;changed=true;}
+ return Result::success();
+}
 Result PrimaryResourceBook::planDue(SimulationSeconds now,const std::map<std::string,CargoServiceInventory>& inventories,std::vector<PrimaryResourceIntent>& out)const{
  if(now<0)return Result::failure("PRIMARY_SOURCE_TIME","Simulation time cannot be negative.");
  std::vector<PrimaryResourceIntent> pending;
