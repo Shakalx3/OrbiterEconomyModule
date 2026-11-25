@@ -59,8 +59,7 @@ int g_propellantRefuelMode = -1;
 bool addBuiltInMarketCommodities(oem::CargoCatalog& catalog) {
     const std::vector<oem::CargoDefinition>& entries = catalog.entries();
     if (entries.size() != 1 || entries[0].cargoId != "TEST" ||
-        entries[0].displayName != "Test cargo" || entries[0].buyPrice != 100 ||
-        entries[0].sellPrice != 60 || fabs(entries[0].unitMassKg - 1.0) > 1.0e-9)
+        fabs(entries[0].unitMassKg - 1.0) > 1.0e-9)
         return false;
 
     const char* ids[] = {"WATER","OXYGEN","FOOD","METALS","ELECTRONICS","MACHINERY","MEDICAL"};
@@ -2299,16 +2298,13 @@ private:
                 return false;
             }
         }
-        // Add only the newly introduced built-in commodity IDs. Existing stock
-        // lines and all journaled transactions remain unchanged.
-        if (marketGoodsEnabled_ && candidate.history().empty()) {
-            // New commodity IDs have never appeared in the legacy journal because
-            // this compatibility path is enabled only for the untouched OEM TEST
-            // catalogue. Adding those new opening lines does not alter old cargo
-            // balances or replay any prior TEST transactions.
-            bool hasHistory = false;
+        // Seed each built-in commodity independently. A station may have years of
+        // TEST transactions while the new cargo IDs have never been used; those
+        // unrelated journal records must not suppress their opening inventory.
+        if (marketGoodsEnabled_) {
+            bool hasLocationHistory = false;
             const oem::Result history = economyJournalStore_.hasLocationHistory(
-                economyJournalPath_, serviceId, hasHistory);
+                economyJournalPath_, serviceId, hasLocationHistory);
             if (!history.ok) {
                 oapiWriteLog((char*)"OEM Market: could not inspect station history before starter-stock seeding.");
                 return false;
@@ -2317,16 +2313,23 @@ private:
             const double masses[] = {1.0,1.0,1.0,10.0,1.0,25.0,1.0};
             bool changed = false;
             for (std::size_t i = 0; i < 7; ++i) {
-                if (candidate.quantity(ids[i]) != 0) continue;
+                bool cargoHistory = false;
+                const oem::Result cargoHistoryResult =
+                    economyJournalStore_.hasLocationCargoHistory(
+                        economyJournalPath_, serviceId, ids[i], cargoHistory);
+                if (!cargoHistoryResult.ok) {
+                    oapiWriteLog((char*)"OEM Market: could not inspect per-cargo station history.");
+                    return false;
+                }
+                if (candidate.quantity(ids[i]) != 0 || cargoHistory) continue;
                 const oem::Result seeded = candidate.setInitialStock(ids[i],
                     builtInOpeningQuantity(ids[i]), masses[i]);
                 if (!seeded.ok) return false;
                 changed = true;
             }
-            // Only carry forward a configured primary-source opening quantity
-            // when the location has no prior journal. Existing economic history
-            // remains authoritative for every previously configured resource.
-            if (!hasHistory) {
+            // Configured primary-source opening quantities remain a one-time
+            // location bootstrap. Never replay them over an existing location.
+            if (!hasLocationHistory) {
                 const std::vector<oem::PrimaryResourceSource>& sources = primaryResources_.sources();
                 for (std::size_t i = 0; i < sources.size(); ++i) {
                     const oem::PrimaryResourceSource& source = sources[i];
