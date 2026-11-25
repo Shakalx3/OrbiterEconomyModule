@@ -11,12 +11,13 @@ The following files are read beside the module, under `OEMData`:
 - `cargo_stock_<HEX location ID>.cfg`: explicit opening stock for each registered station vessel or planetary surface base. For a planetary base, OEM automatically creates this file on its first confirmed landing, using the exact Orbiter base name; it starts empty unless a matching primary-resource source defines an explicit one-time opening quantity. A configured opening quantity can also initialize an already-existing but still-empty file, provided that the location has no global-journal history. Non-empty or journal-backed stock is never overwritten or refilled.
 - `accounts.cfg`: optional until market trading is enabled. If absent, the company ledger starts with no accounts and market trades cannot be executed.
 - `cargo_catalog.cfg`: optional until market trading is enabled. If absent, there are no defined tradeable cargo types.
+- `primary_resources.cfg`: optional; OEM creates an empty version-2 file when missing. It defines explicit primary-resource sources, one-time opening quantities, production cycles, and local stock caps. No source is inferred from a celestial body's physical properties.
 - `objective_mission_boards.dat`: generated, versioned daily offers for independent visit and docking missions. OEM creates and atomically updates it; do not edit it manually. Accepted mission state and payouts are stored in `economy.journal`, not in this board file.
 - `mission_failure.cfg`: configurable expiry penalties shared by delivery contracts and independent VISIT/DOCK missions. OEM creates it with defaults if absent and preserves existing values.
 
 The native Location Market MFD (key M) uses the company account ID `company`. Market trades are enabled only when `accounts.cfg` defines that account and `cargo_catalog.cfg` defines at least one item. Trade buttons buy or sell one unit of the first catalog item for which the station or vessel has available quantity.
 
-No starting money, cargo definitions, prices, or production sources are invented. Automatic location registration creates an empty stock file; only an explicit `openingStock` in a matching `primary_resources.cfg` source may seed that newly created file. Existing stock files, including intentionally empty ones, are never refilled.
+No starting money, cargo definitions, prices, or production sources are invented. Automatic location registration creates an empty stock file; an explicit `openingStock` in a matching `primary_resources.cfg` source may seed an empty location inventory with no journal history exactly once. Existing non-empty or journal-backed stock is never changed. Set `openingStock` to zero when a location should intentionally start empty.
 
 ## Example account configuration
 
