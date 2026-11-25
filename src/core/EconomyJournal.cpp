@@ -155,6 +155,30 @@ Result EconomyJournalStore::hasLocationHistory(const std::string&p,const std::st
  }
  return Result::success();
 }
+Result EconomyJournalStore::hasLocationCargoHistory(const std::string&p,const std::string&location,const std::string&cargo,bool&hasHistory)const{
+ if(location.empty()||cargo.empty())return Result::failure("ECONOMY_LOCATION_CARGO_ID","Location and cargo IDs are required for commodity history inspection.");
+ bool exists=false;std::string data;
+ if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not read or repair the global journal while checking commodity history.");
+ hasHistory=false;if(!exists)return Result::success();
+ std::map<std::string,std::string> ids;
+ Result valid=scanIds(data,ids);if(!valid.ok)return valid;
+ std::istringstream in(data);std::string line;std::getline(in,line);
+ while(std::getline(in,line)){
+  if(!line.empty()&&line[line.size()-1]=='\\r')line.erase(line.size()-1);
+  if(line.empty())continue;
+  Entry r;if(!decode(line,r))return Result::failure("ECONOMY_JOURNAL_CORRUPT","Invalid complete record while checking commodity history.");
+  const bool matchingTradeOrProduction =
+      r.station==location && r.cargo==cargo;
+  const bool matchingTransfer =
+      r.transfer.locationId==location && r.transfer.cargoId==cargo;
+  const bool matchingContractOrigin =
+      r.contract.originLocationId==location && r.contract.cargoId==cargo;
+  if(matchingTradeOrProduction||matchingTransfer||matchingContractOrigin){
+   hasHistory=true;return Result::success();
+  }
+ }
+ return Result::success();
+}
 Result EconomyJournalStore::recoverPrimaryProductionTimes(const std::string&p,PrimaryResourceBook&book)const{
  bool exists=false;std::string data;
  if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not read or repair the global journal while recovering production timestamps.");
