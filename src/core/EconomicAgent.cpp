@@ -11,27 +11,20 @@ namespace oem { namespace {
 std::string hexEncode(const std::string& value) {
     static const char digits[]="0123456789ABCDEF";
     std::string out;
-    for (std::size_t i=0;i<value.size();++i) {
-        const unsigned char c=static_cast<unsigned char>(value[i]);
-        out.push_back(digits[c>>4]); out.push_back(digits[c&15]);
-    }
+    for(std::size_t i=0;i<value.size();++i){const unsigned char c=static_cast<unsigned char>(value[i]);out.push_back(digits[c>>4]);out.push_back(digits[c&15]);}
     return out;
 }
 bool hexDecode(const std::string& value,std::string& out) {
-    if (value.empty() || value.size()%2) return false;
-    out.clear();
-    for (std::size_t i=0;i<value.size();i+=2) {
-        const char a=value[i],b=value[i+1];
+    if(value.empty()||value.size()%2)return false;out.clear();
+    for(std::size_t i=0;i<value.size();i+=2){const char a=value[i],b=value[i+1];
         const int hi=a>='0'&&a<='9'?a-'0':a>='A'&&a<='F'?a-'A'+10:a>='a'&&a<='f'?a-'a'+10:-1;
         const int lo=b>='0'&&b<='9'?b-'0':b>='A'&&b<='F'?b-'A'+10:b>='a'&&b<='f'?b-'a'+10:-1;
-        if (hi<0||lo<0) return false;
-        out.push_back(static_cast<char>((hi<<4)|lo));
-    }
+        if(hi<0||lo<0)return false;out.push_back(static_cast<char>((hi<<4)|lo));}
     return !out.empty();
 }
 bool parseLong(const std::string& s,long long& v) {
     if(s.empty())return false;char* e=0;const long long n=std::strtoll(s.c_str(),&e,10);
-    if(!e||*e!='\\0')return false;v=n;return true;
+    if(!e||*e!='\0')return false;v=n;return true;
 }
 bool replaceFile(const std::string& from,const std::string& to) {
 #ifdef _WIN32
@@ -42,8 +35,7 @@ bool replaceFile(const std::string& from,const std::string& to) {
 }
 std::vector<std::string> split(const std::string& line) {
     std::vector<std::string> fields;std::istringstream in(line);std::string item;
-    while(std::getline(in,item,'|'))fields.push_back(item);
-    return fields;
+    while(std::getline(in,item,'|'))fields.push_back(item);return fields;
 }
 } // namespace
 
@@ -76,11 +68,15 @@ bool EconomicAgentRegistry::find(const std::string& id,EconomicAgent& a) const {
 Result EconomicAgentRegistry::updateState(const EconomicAgent& a) {
     std::map<std::string,std::size_t>::iterator i=indexes_.find(a.agentId);
     if(i==indexes_.end())return Result::failure("AGENT_NOT_FOUND","Economic agent is not registered.");
-    if(a.agentId.empty()||a.displayName.empty()||a.homeLocationId.empty()||
-       a.openingBalance<0||a.currentBalance<0||a.tradeIntervalSeconds<=0||a.nextTradeAt<0)
+    if(a.agentId.empty()||a.displayName.empty()||a.homeLocationId.empty()||a.openingBalance<0||
+       a.currentBalance<0||a.tradeIntervalSeconds<=0||a.nextTradeAt<0)
         return Result::failure("AGENT_STATE","Updated agent state is invalid.");
     for(std::map<std::string,long long>::const_iterator n=a.inventory.begin();n!=a.inventory.end();++n)
         if(n->first.empty()||n->second<0)return Result::failure("AGENT_INVENTORY","Agent inventory contains an invalid line.");
+    for(std::map<std::string,long long>::const_iterator n=a.buyTargets.begin();n!=a.buyTargets.end();++n)
+        if(n->first.empty()||n->second<=0)return Result::failure("AGENT_BUY_TARGET","Agent buy targets must be positive.");
+    for(std::map<std::string,long long>::const_iterator n=a.sellTargets.begin();n!=a.sellTargets.end();++n)
+        if(n->first.empty()||n->second<=0)return Result::failure("AGENT_SELL_TARGET","Agent sell targets must be positive.");
     entries_[i->second]=a;return Result::success();
 }
 const std::vector<EconomicAgent>& EconomicAgentRegistry::entries() const{return entries_;}
@@ -91,22 +87,42 @@ Result EconomicAgentConfigStore::load(const std::string& path,EconomicAgentRegis
     std::ifstream in(path.c_str(),std::ios::binary);
     if(!in.is_open())return Result::failure("AGENT_CONFIG_MISSING","Economic agent config does not exist.");
     std::string header;if(!std::getline(in,header))return Result::failure("AGENT_CONFIG_HEADER","Economic agent config is empty.");
-    if(!header.empty()&&header[header.size()-1]=='\\r')header.erase(header.size()-1);
+    if(!header.empty()&&header[header.size()-1]=='\r')header.erase(header.size()-1);
     if(header!="OEM_ECONOMIC_AGENTS|1")return Result::failure("AGENT_CONFIG_VERSION","Unsupported economic agent config version.");
-    EconomicAgentRegistry parsed;std::string line;std::map<std::string,bool> seen;
-    while(std::getline(in,line)) {
-        if(!line.empty()&&line[line.size()-1]=='\\r')line.erase(line.size()-1);
+    EconomicAgentRegistry parsed;std::string line;
+    while(std::getline(in,line)){
+        if(!line.empty()&&line[line.size()-1]=='\r')line.erase(line.size()-1);
         if(line.empty())continue;const std::vector<std::string> f=split(line);
-        if(f.size()!=9||f[0]!="A")return Result::failure("AGENT_CONFIG_RECORD","Invalid economic agent record.");
-        EconomicAgent a;long long role=0,balance=0,interval=0,next=0;
-        if(!hexDecode(f[1],a.agentId)||!hexDecode(f[2],a.displayName)||
-           !parseLong(f[3],role)||!hexDecode(f[4],a.homeLocationId)||
-           !parseLong(f[5],balance)||!parseLong(f[6],interval)||!parseLong(f[7],next)||
-           !parseLong(f[8],a.currentBalance))
-            return Result::failure("AGENT_CONFIG_RECORD","Invalid identity, role, balance or schedule.");
-        a.role=static_cast<EconomicAgentRole>(role);a.openingBalance=balance;
-        a.tradeIntervalSeconds=interval;a.nextTradeAt=next;
-        Result added=parsed.add(a);if(!added.ok)return added;
+        if(f.empty())return Result::failure("AGENT_CONFIG_RECORD","Invalid economic agent record.");
+        if(f[0]=="A"){
+            if(f.size()!=9)return Result::failure("AGENT_CONFIG_RECORD","Invalid agent definition record.");
+            EconomicAgent a;long long role=0,opening=0,interval=0,next=0,current=0;
+            if(!hexDecode(f[1],a.agentId)||!hexDecode(f[2],a.displayName)||!parseLong(f[3],role)||
+               !hexDecode(f[4],a.homeLocationId)||!parseLong(f[5],opening)||!parseLong(f[6],interval)||
+               !parseLong(f[7],next)||!parseLong(f[8],current))
+                return Result::failure("AGENT_CONFIG_RECORD","Invalid agent identity, role, balance or schedule.");
+            a.role=static_cast<EconomicAgentRole>(role);a.openingBalance=opening;
+            a.tradeIntervalSeconds=interval;a.nextTradeAt=next;a.currentBalance=current;
+            Result added=parsed.add(a);if(!added.ok)return added;
+        } else {
+            if(f.size()!=3)return Result::failure("AGENT_CONFIG_RECORD","Invalid agent detail record.");
+            std::string id,value;if(!hexDecode(f[1],id)||!hexDecode(f[2],value))
+                return Result::failure("AGENT_CONFIG_RECORD","Invalid agent detail encoding.");
+            EconomicAgent a;if(!parsed.find(id,a))return Result::failure("AGENT_CONFIG_REFERENCE","Agent detail references an unknown agent.");
+            if(f[0]=="O")a.operatingLocationIds.push_back(value);
+            else if(f[0]=="I"||f[0]=="B"||f[0]=="S"){
+                const std::size_t splitAt=value.find(':');if(splitAt==std::string::npos)
+                    return Result::failure("AGENT_CONFIG_QUANTITY","Agent cargo detail lacks a quantity.");
+                long long quantity=0;const std::string cargo=value.substr(0,splitAt);
+                if(cargo.empty()||!parseLong(value.substr(splitAt+1),quantity)||quantity<0||
+                   ((f[0]=="B"||f[0]=="S")&&quantity==0))
+                    return Result::failure("AGENT_CONFIG_QUANTITY","Agent cargo detail has an invalid quantity.");
+                if(f[0]=="I")a.inventory[cargo]=quantity;
+                else if(f[0]=="B")a.buyTargets[cargo]=quantity;
+                else a.sellTargets[cargo]=quantity;
+            } else return Result::failure("AGENT_CONFIG_RECORD","Unknown agent detail record type.");
+            Result updated=parsed.updateState(a);if(!updated.ok)return updated;
+        }
     }
     registry=parsed;return Result::success();
 }
@@ -115,19 +131,26 @@ Result EconomicAgentConfigStore::save(const std::string& path,const EconomicAgen
     const std::string temp=path+".tmp";
     {std::ofstream out(temp.c_str(),std::ios::binary|std::ios::trunc);
      if(!out.is_open())return Result::failure("AGENT_CONFIG_OPEN","Could not create temporary agent config.");
-     out<<"OEM_ECONOMIC_AGENTS|1\\n";
+     out<<"OEM_ECONOMIC_AGENTS|1\n";
      for(std::size_t i=0;i<registry.entries().size();++i){const EconomicAgent& a=registry.entries()[i];
         if(a.agentId.empty()||a.displayName.empty()||a.homeLocationId.empty()||a.openingBalance<0||
            a.currentBalance<0||a.tradeIntervalSeconds<=0||a.nextTradeAt<0)
             return Result::failure("AGENT_CONFIG_STATE","Cannot save invalid economic agent state.");
         out<<"A|"<<hexEncode(a.agentId)<<"|"<<hexEncode(a.displayName)<<"|"<<(int)a.role<<"|"
            <<hexEncode(a.homeLocationId)<<"|"<<a.openingBalance<<"|"<<a.tradeIntervalSeconds<<"|"
-           <<a.nextTradeAt<<"|"<<a.currentBalance<<"\\n";
+           <<a.nextTradeAt<<"|"<<a.currentBalance<<"\n";
+        for(std::size_t n=0;n<a.operatingLocationIds.size();++n)
+            out<<"O|"<<hexEncode(a.agentId)<<"|"<<hexEncode(a.operatingLocationIds[n])<<"\n";
+        const std::map<std::string,long long>* maps[3]={&a.inventory,&a.buyTargets,&a.sellTargets};
+        const char tags[3]={'I','B','S'};
+        for(int m=0;m<3;++m)for(std::map<std::string,long long>::const_iterator it=maps[m]->begin();it!=maps[m]->end();++it){
+            std::ostringstream value;value<<it->first<<":"<<it->second;
+            out<<tags[m]<<"|"<<hexEncode(a.agentId)<<"|"<<hexEncode(value.str())<<"\n";
+        }
      }
      out.flush();if(!out.good())return Result::failure("AGENT_CONFIG_WRITE","Could not write economic agent config.");
      out.close();if(out.fail())return Result::failure("AGENT_CONFIG_CLOSE","Could not close economic agent config.");}
     if(!replaceFile(temp,path)){std::remove(temp.c_str());return Result::failure("AGENT_CONFIG_REPLACE","Could not atomically replace economic agent config.");}
     return Result::success();
 }
-
 } // namespace oem
