@@ -35,6 +35,19 @@ int main(){
  assert(recovered["MoonBase"].quantity("ore")==140);
  std::remove(journalPath.c_str());
 
+ // A crash after journal commit but before saving the source config must not
+ // allow the same production cycle to be scheduled again after restart.
+ oem::PrimaryResourceBook staleBook;assert(staleBook.add(source).ok);
+ assert(staleBook.sources()[0].lastProductionTime==0);
+ assert(journal.recoverPrimaryProductionTimes(journalPath,staleBook).ok);
+ assert(staleBook.sources()[0].lastProductionTime==86400);
+ std::vector<oem::PrimaryResourceIntent> afterRecovery;
+ assert(staleBook.planDue(86400,locations,afterRecovery).ok&&afterRecovery.empty());
+ oem::PrimaryResourceBook changedBook;
+ oem::PrimaryResourceSource changed=source;changed.cargoId="water";
+ assert(changedBook.add(changed).ok);
+ assert(!journal.recoverPrimaryProductionTimes(journalPath,changedBook).ok);
+
  // Versioned source definitions and scheduling state survive a config round trip.
  const std::string configPath="OEMPrimaryResourceTests.cfg";std::remove(configPath.c_str());
  oem::PrimaryResourceBook configBook;assert(configBook.add(source).ok);
