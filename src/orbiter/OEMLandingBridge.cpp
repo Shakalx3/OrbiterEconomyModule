@@ -1475,16 +1475,16 @@ public:
     void clbkSimulationStart(RenderMode mode) override {
         const bool starterFilesReady =
             createStarterFileIfMissing(accountsPath_,
-                "OEM_ACCOUNTS|1\\nA|636F6D70616E79|10000\\n", "accounts.cfg") &&
+                "OEM_ACCOUNTS|1\nA|636F6D70616E79|10000\n", "accounts.cfg") &&
             createStarterFileIfMissing(cargoCatalogPath_,
-                "OEM_CARGO_CATALOG|1\\nC|54455354|5465737420636172676F|1.0|100|60\\n",
+                "OEM_CARGO_CATALOG|1\nC|54455354|5465737420636172676F|1.0|100|60\n",
                 "cargo_catalog.cfg") &&
             createStarterFileIfMissing(cargoServicesPath_,
-                "OEM_CARGO_SERVICES|1\\nS|495353\\n", "cargo_services.cfg") &&
+                "OEM_CARGO_SERVICES|1\nS|495353\n", "cargo_services.cfg") &&
             createStarterFileIfMissing(primaryResourcesPath_,
-                "OEM_PRIMARY_RESOURCES|2\\n", "primary_resources.cfg") &&
+                "OEM_PRIMARY_RESOURCES|2\n", "primary_resources.cfg") &&
             createStarterFileIfMissing(propellantPricePath_,
-                "OEM_PROPELLANT_PRICES|1\\nORBITAL|*|2.0\\nPLANETARY|*|3.0\\n",
+                "OEM_PROPELLANT_PRICES|1\nORBITAL|*|2.0\nPLANETARY|*|3.0\n",
                 "propellant_prices.cfg");
         if (!starterFilesReady)
             oapiWriteLog((char*)"OEM Startup: one or more starter files could not be installed; economy initialization will be stopped.");
