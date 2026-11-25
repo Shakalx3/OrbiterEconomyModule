@@ -22,6 +22,8 @@ int main() {
     oem::CargoTransfer wrong=load; wrong.transferId="wrong"; wrong.locationId="MoonBase";
     assert(!station.apply(wrong).ok);
     assert(!station.setInitialStock("fuel",1,0.0).ok);
-    assert(!station.setInitialStock("fuel",1,1.0).ok);
+    // Transfers of oxygen must not block first-run seeding of an unrelated new cargo.
+    assert(station.setInitialStock("food",12,1.0).ok && station.quantity("food")==12);
+    assert(!station.setInitialStock("oxygen_canister",1,50.0).ok);
     return 0;
 }
