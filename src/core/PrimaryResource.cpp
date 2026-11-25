@@ -26,6 +26,21 @@ Result PrimaryResourceBook::add(const PrimaryResourceSource& s){
  sources_.push_back(s);indexes_[s.sourceId]=sources_.size()-1;return Result::success();
 }
 const std::vector<PrimaryResourceSource>& PrimaryResourceBook::sources()const{return sources_;}
+const PrimaryResourceSource* PrimaryResourceBook::find(const std::string& id)const{
+ std::map<std::string,std::size_t>::const_iterator it=indexes_.find(id);
+ return it==indexes_.end()?0:&sources_[it->second];
+}
+Result PrimaryResourceBook::restoreCommitted(const std::string& id,const std::string& location,
+ const std::string& cargo,double mass,SimulationSeconds time){
+ std::map<std::string,std::size_t>::iterator it=indexes_.find(id);
+ if(it==indexes_.end())return Result::success();
+ PrimaryResourceSource& s=sources_[it->second];
+ if(s.locationId!=location||s.cargoId!=cargo||!std::isfinite(mass)||!(mass>0.0)||
+    std::fabs(s.unitMassKg-mass)>1e-9||time<0)
+  return Result::failure("PRIMARY_SOURCE_HISTORY_CONFLICT","A journaled production record conflicts with the current source definition.");
+ if(time>s.lastProductionTime)s.lastProductionTime=time;
+ return Result::success();
+}
 Result PrimaryResourceBook::planDue(SimulationSeconds now,const std::map<std::string,CargoServiceInventory>& inventories,std::vector<PrimaryResourceIntent>& out)const{
  if(now<0)return Result::failure("PRIMARY_SOURCE_TIME","Simulation time cannot be negative.");
  std::vector<PrimaryResourceIntent> pending;
