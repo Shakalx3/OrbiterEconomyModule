@@ -23,6 +23,9 @@ Result PrimaryResourceBook::add(const PrimaryResourceSource& s){
  if(s.sourceId.empty()||s.locationId.empty()||s.cargoId.empty()||!(s.unitMassKg>0.0)||!std::isfinite(s.unitMassKg)||s.unitsPerCycle<=0||s.cycleSeconds<=0||s.maximumStock<=0||s.openingStock<0||s.openingStock>s.maximumStock||s.lastProductionTime<0)
   return Result::failure("PRIMARY_SOURCE_INVALID","Primary resource source requires IDs, positive mass, bounded output, cycle, capacity and non-negative time.");
  if(indexes_.find(s.sourceId)!=indexes_.end())return Result::failure("PRIMARY_SOURCE_DUPLICATE","Primary resource source ID already exists.");
+ for(std::size_t i=0;i<sources_.size();++i)
+  if(sources_[i].locationId==s.locationId&&sources_[i].cargoId==s.cargoId)
+   return Result::failure("PRIMARY_SOURCE_DUPLICATE_LOCATION_CARGO","Only one primary source per cargo and location is allowed.");
  sources_.push_back(s);indexes_[s.sourceId]=sources_.size()-1;return Result::success();
 }
 const std::vector<PrimaryResourceSource>& PrimaryResourceBook::sources()const{return sources_;}
