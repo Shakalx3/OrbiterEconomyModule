@@ -1,9 +1,11 @@
-## Procedural planetary opening stock (planned)
+## Procedural planetary opening stock
 
-- [ ] On first registration of a planetary surface base, optionally generate its initial cargo stock from a deterministic, persisted planet-profile seed rather than leaving every new port empty.
-- [ ] Derive eligible cargo categories and quantity ranges from the celestial body's properties and a future explicit economy/biome/industry profile; use bounded randomness only within those rules.
-- [ ] Persist the generated result in the normal per-location stock config so reloads never reroll it; never regenerate or overwrite an existing stock file or a location with prior transactions.
-- [ ] Keep a configurable empty-stock mode and make generated starting stock clearly distinguishable from physically loaded vessel cargo. Do not infer real industrial output from Orbiter properties alone.
+- [x] Add a deterministic opening-stock generator keyed by explicit celestial-body profile, location ID, cargo ID, and persisted seed; quantity ranges are bounded by profile rules.
+- [x] Validate every configured cargo ID against the cargo catalogue and take unit mass from the catalogue rather than duplicating physical definitions.
+- [x] Save generated opening stock through the existing versioned per-location stock configuration; an existing file is authoritative and is loaded without rerolling.
+- [x] Support disabled/empty profiles; generated stock remains economic inventory and is never inserted into a vessel's cargo manifest.
+- [x] Refuse to synthesize a missing opening baseline when the caller reports prior journal transactions.
+- [ ] Integrate profile selection and first-registration initialization into the native Orbiter bridge for planetary spaceports; runtime-test persistence and scenario restart in Orbiter 2010.
 
 # Roadmap
 
