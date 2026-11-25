@@ -41,6 +41,7 @@
 #include "../core/PropellantTransaction.h"
 #include "../core/PropellantTransactionJournal.h"
 #include "../core/PrimaryResourceConfig.h"
+#include "../core/MarketPricing.h"
 
 namespace {
 
@@ -54,6 +55,39 @@ int g_missionBoardMode = -1;
 int g_economicAdminMode = -1;
 int g_propellantMonitorMode = -1;
 int g_propellantRefuelMode = -1;
+
+bool addBuiltInMarketCommodities(oem::CargoCatalog& catalog) {
+    const std::vector<oem::CargoDefinition>& entries = catalog.entries();
+    if (entries.size() != 1 || entries[0].cargoId != "TEST" ||
+        entries[0].displayName != "Test cargo" || entries[0].buyPrice != 100 ||
+        entries[0].sellPrice != 60 || fabs(entries[0].unitMassKg - 1.0) > 1.0e-9)
+        return false;
+
+    const char* ids[] = {"WATER","OXYGEN","FOOD","METALS","ELECTRONICS","MACHINERY","MEDICAL"};
+    const char* names[] = {"Water","Oxygen","Food","Metals","Electronics","Machinery","Medical supplies"};
+    const double masses[] = {1.0,1.0,1.0,10.0,1.0,25.0,1.0};
+    const oem::Credits buys[] = {12,20,35,90,250,500,180};
+    const oem::Credits sells[] = {7,12,20,55,150,300,110};
+    for (std::size_t i = 0; i < 7; ++i) {
+        oem::CargoDefinition item;
+        item.cargoId = ids[i]; item.displayName = names[i];
+        item.unitMassKg = masses[i]; item.buyPrice = buys[i]; item.sellPrice = sells[i];
+        const oem::Result added = catalog.add(item);
+        if (!added.ok) return false;
+    }
+    return true;
+}
+
+long long builtInOpeningQuantity(const std::string& cargoId) {
+    if (cargoId == "WATER") return 120;
+    if (cargoId == "OXYGEN") return 100;
+    if (cargoId == "FOOD") return 80;
+    if (cargoId == "METALS") return 60;
+    if (cargoId == "ELECTRONICS") return 40;
+    if (cargoId == "MACHINERY") return 20;
+    if (cargoId == "MEDICAL") return 30;
+    return 0;
+}
 
 unsigned long deliveryDestinationScore(const std::string& seed,
                                        const std::string& destination) {
@@ -232,6 +266,7 @@ public:
           propellantTransactionJournal_(), propellantTransactionJournalPath_(makeEconomyDataFilePath(hDLL, "propellant_transactions.journal")), propellantPricePath_(makeEconomyDataFilePath(hDLL, "propellant_prices.cfg")), propellantRecoveryReady_(false), propellantOperationSequence_(0),
           ledgerConfigStore_(), cargoCatalogConfigStore_(), accountsPath_(makeEconomyDataFilePath(hDLL, "accounts.cfg")),
           cargoCatalogPath_(makeEconomyDataFilePath(hDLL, "cargo_catalog.cfg")),
+          marketPricing_(), marketGoodsEnabled_(false),
           spaceportRegistryPath_(makeEconomyDataFilePath(hDLL, "spaceports.registry")),
           economicStations_(), economicStationsPath_(makeEconomyDataFilePath(hDLL, "economic_stations.registry")),
           spaceportRegistry_(), economicLocations_(), economicStationsReady_(false), cargoServicesReady_(false), ledger_(), cargoCatalog_(), economyReady_(false), journalReady_(false), sessionId_(),
@@ -610,6 +645,17 @@ public:
 
     const oem::CargoCatalog* marketCatalog() const {
         return economyReady_ ? &cargoCatalog_ : 0;
+    }
+
+    Credits marketUnitPrice(const std::string& serviceId, const std::string& cargoId,
+                            oem::MarketSide side) const {
+        oem::CargoDefinition definition;
+        const oem::CargoServiceInventory* stock = cargoServiceInventory(serviceId);
+        if (!stock || !cargoCatalog_.find(cargoId, definition)) return 0;
+        oem::Credits price = 0;
+        const oem::Result priced = marketPricing_.unitPriceForSide(
+            definition, stock->quantity(cargoId), side, price);
+        return priced.ok ? price : 0;
     }
 
     const oem::DeliveryContractBook& deliveryContractBook() const {
@@ -1338,12 +1384,17 @@ public:
             return oem::Result::failure("UNKNOWN_CARGO",
                 "The selected cargo is not present in the configured catalog.");
 
+        oem::Credits dynamicUnitPrice = 0;
+        const oem::Result priceResult = marketPricing_.unitPriceForSide(
+            definition, inventory->second.quantity(cargoId), side, dynamicUnitPrice);
+        if (!priceResult.ok) return priceResult;
+
         long long maximumStationStock = (std::numeric_limits<long long>::max)();
         long long maximumQuantity = 0;
         if (side == oem::MARKET_BUY_FROM_STATION) {
             maximumQuantity = inventory->second.quantity(cargoId);
-            if (definition.buyPrice > 0) {
-                const long long affordable = balance > 0 ? balance / definition.buyPrice : 0;
+            if (dynamicUnitPrice > 0) {
+                const long long affordable = balance > 0 ? balance / dynamicUnitPrice : 0;
                 if (affordable < maximumQuantity) maximumQuantity = affordable;
             }
         } else if (side == oem::MARKET_SELL_TO_STATION) {
@@ -1396,6 +1447,10 @@ public:
             cargoCatalog_, inventory->second, std::string("QUOTE-") + operationId,
             cargoId, side, quantity, currentSimulationTime_, quote, maximumStationStock);
         if (!quoted.ok) return quoted;
+        if (dynamicUnitPrice > 0 && quantity > (std::numeric_limits<oem::Credits>::max)() / dynamicUnitPrice)
+            return oem::Result::failure("MARKET_VALUE_OVERFLOW", "Dynamic trade total exceeds the credit range.");
+        quote.unitPrice = dynamicUnitPrice;
+        quote.totalPrice = dynamicUnitPrice * quantity;
 
         const oem::Result committed = economyJournalStore_.applyTrade(
             economyJournalPath_, cargoCatalog_, quote, operationId, "company",
@@ -2243,6 +2298,39 @@ private:
                 return false;
             }
         }
+        // Seed only an untouched opening inventory. Existing stock and any location
+        // with journal history remain authoritative and are never rewritten.
+        if (marketGoodsEnabled_ && candidate.history().empty()) {
+            bool hasHistory = false;
+            const oem::Result history = economyJournalStore_.hasLocationHistory(
+                economyJournalPath_, serviceId, hasHistory);
+            if (!history.ok) {
+                oapiWriteLog((char*)"OEM Market: could not inspect station history before starter-stock seeding.");
+                return false;
+            }
+            if (!hasHistory) {
+                const char* ids[] = {"WATER","OXYGEN","FOOD","METALS","ELECTRONICS","MACHINERY","MEDICAL"};
+                const double masses[] = {1.0,1.0,1.0,10.0,1.0,25.0,1.0};
+                bool changed = false;
+                for (std::size_t i = 0; i < 7; ++i) {
+                    if (candidate.quantity(ids[i]) != 0) continue;
+                    oem::Result seeded = candidate.setInitialStock(ids[i],
+                        builtInOpeningQuantity(ids[i]), masses[i]);
+                    if (!seeded.ok) return false;
+                    changed = true;
+                }
+                if (changed) {
+                    const oem::Result saved = cargoStockConfigStore_.save(configPath, candidate);
+                    if (!saved.ok) {
+                        char error[384];
+                        sprintf(error, "OEM Market: starter stock save failed at %s (%s).",
+                            serviceId.c_str(), saved.code.c_str());
+                        oapiWriteLog(error);
+                        return false;
+                    }
+                }
+            }
+        }
         cargoServiceInventories_.insert(std::make_pair(serviceId, candidate));
         char message[512];
         sprintf(message, "OEM Cargo Stock: opening state loaded service=%s lines=%lu.",
@@ -2556,9 +2644,11 @@ private:
             return false;
         }
         if (catalog.ok) {
+            marketGoodsEnabled_ = addBuiltInMarketCommodities(openingCatalog);
             char message[256];
-            sprintf(message, "OEM Economy: loaded %lu cargo definitions.",
-                    (unsigned long)openingCatalog.entries().size());
+            sprintf(message, "OEM Economy: loaded %lu cargo definitions%s.",
+                    (unsigned long)openingCatalog.entries().size(),
+                    marketGoodsEnabled_ ? " including the built-in multi-commodity market" : "");
             oapiWriteLog(message);
         } else {
             oapiWriteLog((char*)"OEM Economy: cargo_catalog.cfg missing; market trading remains unavailable until explicitly configured.");
@@ -2914,6 +3004,8 @@ private:
     bool cargoServicesReady_;
     oem::Ledger ledger_;
     oem::CargoCatalog cargoCatalog_;
+    oem::MarketPricingBook marketPricing_;
+    bool marketGoodsEnabled_;
     bool economyReady_;
     bool journalReady_;
     std::string sessionId_;
