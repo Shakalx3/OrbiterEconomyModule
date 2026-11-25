@@ -17,6 +17,9 @@ int main(){
  assert(clockBook.sources()[0].lastProductionTime==100000);
  initialized=true;assert(clockBook.initializeUnsetTimes(120000,initialized).ok&&!initialized);
  assert(clockBook.sources()[0].lastProductionTime==100000);
+ bool openingConsumed=false;assert(clockBook.consumeOpeningStock("MoonBase",openingConsumed).ok&&openingConsumed);
+ assert(clockBook.sources()[0].openingStock==0);
+ assert(clockBook.consumeOpeningStock("MoonBase",openingConsumed).ok&&!openingConsumed);
  std::vector<oem::PrimaryResourceIntent> intents;assert(book.planDue(86399,locations,intents).ok&&intents.empty());
  assert(book.planDue(86400,locations,intents).ok&&intents.size()==1&&intents[0].quantity==20);
  assert(book.markCommitted(source.sourceId,86400).ok);std::vector<oem::PrimaryResourceIntent> again;assert(book.planDue(86400,locations,again).ok&&again.empty());
