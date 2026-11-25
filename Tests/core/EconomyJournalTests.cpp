@@ -28,6 +28,10 @@ int main(){
  const oem::CargoTransfer firstExchange=transfer("x-1","GL-01","ISS",oem::CARGO_LOAD,2,10);
  assert(store.applyExchange(path,stocks,a,firstExchange).ok);
  assert(store.applyExchange(path,stocks,a,firstExchange).ok);
+ bool hasCargoHistory=false;
+ assert(store.hasLocationCargoHistory(path,"ISS","oxygen",hasCargoHistory).ok && hasCargoHistory);
+ assert(store.hasLocationCargoHistory(path,"ISS","WATER",hasCargoHistory).ok && !hasCargoHistory);
+ assert(store.hasLocationCargoHistory(path,"MARS","oxygen",hasCargoHistory).ok && !hasCargoHistory);
  oem::MarketQuoteEngine qe;oem::MarketQuote q;
  assert(qe.createQuote(cat,stocks["ISS"],"q-1","oxygen",oem::MARKET_SELL_TO_STATION,1,11,q).ok);
  assert(store.applyTrade(path,cat,q,"t-1","company",ledger,stocks,a).ok);
