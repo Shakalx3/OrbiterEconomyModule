@@ -40,6 +40,7 @@
 #include "../core/PropellantQuote.h"
 #include "../core/PropellantTransaction.h"
 #include "../core/PropellantTransactionJournal.h"
+#include "../core/PrimaryResourceConfig.h"
 
 namespace {
 
@@ -170,7 +171,9 @@ public:
           cargoServices_(), cargoServicesPath_(makeCargoServicesPath(hDLL)),
           cargoTransferGate_(), cargoManifests_(), cargoManifestLoadAttempted_(),
           cargoStockConfigStore_(), cargoServiceInventories_(), cargoServiceInventoryLoadAttempted_(),
-          economyJournalStore_(), contractBook_(), objectiveBook_(), pendingContractOffers_(), contractOfferSequence_(0), contractOfferDay_(-1), missionBoardStore_(), missionBoards_(), missionBoardPath_(makeMissionBoardPath(hDLL)), missionBoardsReady_(false), objectiveBoardStore_(), objectiveBoards_(), objectiveBoardPath_(makeObjectiveMissionBoardPath(hDLL)), objectiveBoardsReady_(false), economyJournalPath_(makeEconomyDataFilePath(hDLL, "economy.journal")),
+          economyJournalStore_(), primaryResourceConfigStore_(), primaryResources_(),
+          primaryResourcesPath_(makeEconomyDataFilePath(hDLL, "primary_resources.cfg")),
+          primaryResourcesReady_(false), openingStockNewFiles_(), contractBook_(), objectiveBook_(), pendingContractOffers_(), contractOfferSequence_(0), contractOfferDay_(-1), missionBoardStore_(), missionBoards_(), missionBoardPath_(makeMissionBoardPath(hDLL)), missionBoardsReady_(false), objectiveBoardStore_(), objectiveBoards_(), objectiveBoardPath_(makeObjectiveMissionBoardPath(hDLL)), objectiveBoardsReady_(false), economyJournalPath_(makeEconomyDataFilePath(hDLL, "economy.journal")),
           missionFailurePolicyStore_(), missionFailurePolicy_(),
           missionFailurePolicyPath_(makeEconomyDataFilePath(hDLL, "mission_failure.cfg")),
           missionIssuerRegistry_(), missionIssuerRegistryPath_(makeEconomyDataFilePath(hDLL, "mission_issuers.cfg")),
@@ -1463,6 +1466,9 @@ public:
         }
         cargoServiceInventories_.clear();
         cargoServiceInventoryLoadAttempted_.clear();
+        openingStockNewFiles_.clear();
+        primaryResources_ = oem::PrimaryResourceBook();
+        primaryResourcesReady_ = false;
         ledger_ = oem::Ledger();
         cargoCatalog_ = oem::CargoCatalog();
         economyReady_ = false;
@@ -1577,6 +1583,7 @@ public:
             reconcileObjectiveEvents();
             settleCompletedContracts();
             settleCompletedObjectives();
+            updatePrimaryProduction(simSeconds);
             oem::MissionObjectiveBook objectiveDue = objectiveBook_;
             const std::vector<std::string> expiredObjectives = objectiveDue.expireDue(simSeconds);
             for (std::size_t i = 0; i < expiredObjectives.size(); ++i) {
@@ -2080,8 +2087,8 @@ private:
                 return false;
             }
             char message[512];
-            sprintf(message, "OEM Cargo Stock: created empty opening inventory service=%s.",
-                    serviceId.c_str());
+            openingStockNewFiles_.insert(serviceId);
+            sprintf(message, "OEM Cargo Stock: created empty opening inventory service=%s.", serviceId.c_str());
             oapiWriteLog(message);
         } else {
             const oem::Result configured = cargoStockConfigStore_.load(configPath, serviceId, candidate);
@@ -2098,7 +2105,105 @@ private:
         sprintf(message, "OEM Cargo Stock: opening state loaded service=%s lines=%lu.",
                 serviceId.c_str(), (unsigned long)candidate.lines().size());
         oapiWriteLog(message);
+        if (primaryResourcesReady_ && openingStockNewFiles_.find(serviceId) != openingStockNewFiles_.end())
+            return seedPrimaryOpeningStock(serviceId);
         return true;
+    }
+
+    bool seedPrimaryOpeningStock(const std::string& locationId) {
+        if (openingStockNewFiles_.find(locationId) == openingStockNewFiles_.end()) return true;
+        std::map<std::string, oem::CargoServiceInventory>::iterator stock =
+            cargoServiceInventories_.find(locationId);
+        if (stock == cargoServiceInventories_.end()) return false;
+        oem::StarterStockProfile profile;
+        profile.profileId = "primary-opening:" + locationId;
+        const std::vector<oem::PrimaryResourceSource>& sources = primaryResources_.sources();
+        for (std::size_t i = 0; i < sources.size(); ++i) {
+            const oem::PrimaryResourceSource& source = sources[i];
+            if (source.locationId != locationId || source.openingStock <= 0) continue;
+            oem::StarterStockLine line;
+            line.cargoId = source.cargoId;
+            line.quantity = source.openingStock;
+            line.unitMassKg = source.unitMassKg;
+            profile.lines.push_back(line);
+        }
+        if (profile.lines.empty()) {
+            openingStockNewFiles_.erase(locationId);
+            return true;
+        }
+        const oem::Result seeded = oem::seedStarterStock(profile, stock->second);
+        if (!seeded.ok) {
+            char error[512];
+            sprintf(error, "OEM Primary Resources: starter stock rejected at %s (%s): %s",
+                locationId.c_str(), seeded.code.c_str(), seeded.message.c_str());
+            oapiWriteLog(error);
+            return false;
+        }
+        const std::string path = makeCargoStockConfigPath(module_, locationId);
+        if (path.empty()) return false;
+        const oem::Result saved = cargoStockConfigStore_.save(path, stock->second);
+        if (!saved.ok) {
+            char error[512];
+            sprintf(error, "OEM Primary Resources: could not save starter stock at %s (%s): %s",
+                locationId.c_str(), saved.code.c_str(), saved.message.c_str());
+            oapiWriteLog(error);
+            return false;
+        }
+        openingStockNewFiles_.erase(locationId);
+        char message[512];
+        sprintf(message, "OEM Primary Resources: seeded opening stock at %s (%lu cargo types).",
+            locationId.c_str(), (unsigned long)profile.lines.size());
+        oapiWriteLog(message);
+        return true;
+    }
+
+    void updatePrimaryProduction(oem::SimulationSeconds now) {
+        if (!economyReady_ || !primaryResourcesReady_ || primaryResources_.sources().empty()) return;
+        std::vector<oem::PrimaryResourceIntent> intents;
+        const oem::Result planned = primaryResources_.planDue(now, cargoServiceInventories_, intents);
+        if (!planned.ok) {
+            char error[512];
+            sprintf(error, "OEM Primary Resources: scheduling failed (%s): %s",
+                planned.code.c_str(), planned.message.c_str());
+            oapiWriteLog(error);
+            return;
+        }
+        for (std::size_t i = 0; i < intents.size(); ++i) {
+            const oem::PrimaryResourceIntent& intent = intents[i];
+            const oem::Result committed = economyJournalStore_.applyPrimaryProduction(
+                economyJournalPath_, intent.operationId, intent.sourceId, intent.locationId,
+                intent.cargoId, intent.quantity, intent.unitMassKg, intent.simulationTime,
+                cargoServiceInventories_);
+            if (!committed.ok) {
+                char error[512];
+                sprintf(error, "OEM Primary Resources: production commit failed source=%s (%s): %s",
+                    intent.sourceId.c_str(), committed.code.c_str(), committed.message.c_str());
+                oapiWriteLog(error);
+                continue;
+            }
+            oem::PrimaryResourceBook candidate = primaryResources_;
+            const oem::Result marked = candidate.markCommitted(intent.sourceId, intent.simulationTime);
+            if (!marked.ok) {
+                char error[512];
+                sprintf(error, "OEM Primary Resources: scheduler update failed source=%s (%s): %s",
+                    intent.sourceId.c_str(), marked.code.c_str(), marked.message.c_str());
+                oapiWriteLog(error);
+                return;
+            }
+            primaryResources_ = candidate;
+            const oem::Result saved = primaryResourceConfigStore_.save(primaryResourcesPath_, primaryResources_);
+            if (!saved.ok) {
+                char error[512];
+                sprintf(error, "OEM Primary Resources: schedule save failed source=%s (%s): %s",
+                    intent.sourceId.c_str(), saved.code.c_str(), saved.message.c_str());
+                oapiWriteLog(error);
+            }
+            char message[512];
+            sprintf(message, "OEM PRIMARY PRODUCTION: source=%s location=%s cargo=%s quantity=%lld simt=%lld",
+                intent.sourceId.c_str(), intent.locationId.c_str(), intent.cargoId.c_str(),
+                intent.quantity, (long long)intent.simulationTime);
+            oapiWriteLog(message);
+        }
     }
 
     bool recoverPropellantTransactions(oem::Ledger& recoveredLedger) {
@@ -2251,50 +2356,72 @@ private:
             oapiWriteLog((char*)"OEM Economy: cargo_catalog.cfg missing; market trading remains unavailable until explicitly configured.");
         }
 
-        // Give every planetary spaceport a small, usable opening stock so a
-        // delivery contract can be generated with that base as its origin.
-        // This is a one-time bootstrap only: any non-empty configured inventory
-        // is preserved, and the resulting stock is persisted before journal
-        // replay so recovery sees the same opening state on every launch.
-        if (!openingCatalog.entries().empty()) {
-            const std::vector<oem::EconomicLocation>& locations = economicLocations_.entries();
-            for (std::size_t i = 0; i < locations.size(); ++i) {
-                if (locations[i].kind != oem::ECONOMIC_LOCATION_SPACEPORT) continue;
-                if (!ensureCargoServiceInventory(locations[i].storageId)) {
-                    char message[512];
-                    sprintf(message, "OEM Economy: cannot bootstrap planetary stock for %s.",
-                            locations[i].canonicalId.c_str());
-                    oapiWriteLog(message);
-                    return false;
-                }
-                std::map<std::string, oem::CargoServiceInventory>::iterator stock =
-                    cargoServiceInventories_.find(locations[i].storageId);
-                if (stock == cargoServiceInventories_.end() ||
-                    !stock->second.lines().empty() || !stock->second.history().empty())
-                    continue;
-                const oem::CargoDefinition& starter = openingCatalog.entries()[0];
-                const oem::Result seeded = stock->second.setInitialStock(
-                    starter.cargoId, 1, starter.unitMassKg);
-                if (!seeded.ok) return false;
-                const std::string stockPath =
-                    makeCargoStockConfigPath(module_, locations[i].storageId);
-                if (stockPath.empty()) return false;
-                const oem::Result saved = cargoStockConfigStore_.save(stockPath, stock->second);
-                if (!saved.ok) {
-                    char message[512];
-                    sprintf(message, "OEM Economy: could not persist starter stock for %s (%s): %s",
-                            locations[i].canonicalId.c_str(), saved.code.c_str(),
-                            saved.message.c_str());
-                    oapiWriteLog(message);
-                    return false;
-                }
-                char message[512];
-                sprintf(message, "OEM Economy: seeded 1 unit of %s at planetary base %s (%s).",
-                        starter.cargoId.c_str(), locations[i].displayName.c_str(),
-                        locations[i].celestialBody.c_str());
-                oapiWriteLog(message);
+        if (primaryResourcesPath_.empty()) {
+            oapiWriteLog((char*)"OEM Primary Resources: could not resolve primary_resources.cfg.");
+            return false;
+        }
+        DWORD primaryAttributes = GetFileAttributesA(primaryResourcesPath_.c_str());
+        if (primaryAttributes == INVALID_FILE_ATTRIBUTES) {
+            const DWORD fileError = GetLastError();
+            if (fileError != ERROR_FILE_NOT_FOUND && fileError != ERROR_PATH_NOT_FOUND) {
+                oapiWriteLog((char*)"OEM Primary Resources: could not inspect primary_resources.cfg.");
+                return false;
+            }
+            primaryResources_ = oem::PrimaryResourceBook();
+            const oem::Result created = primaryResourceConfigStore_.save(primaryResourcesPath_, primaryResources_);
+            if (!created.ok) {
+                char error[512];
+                sprintf(error, "OEM Primary Resources: could not create config (%s): %s",
+                    created.code.c_str(), created.message.c_str());
+                oapiWriteLog(error);
+                return false;
+            }
+            oapiWriteLog((char*)"OEM Primary Resources: created empty primary_resources.cfg; no sources are enabled.");
+        } else {
+            const oem::Result loaded = primaryResourceConfigStore_.load(primaryResourcesPath_, primaryResources_);
+            if (!loaded.ok) {
+                char error[512];
+                sprintf(error, "OEM Primary Resources: config load failed (%s): %s",
+                    loaded.code.c_str(), loaded.message.c_str());
+                oapiWriteLog(error);
+                return false;
             }
         }
+        primaryResourcesReady_ = true;
+        std::set<std::string> sourceLocations;
+        const std::vector<oem::PrimaryResourceSource>& sources = primaryResources_.sources();
+        for (std::size_t i = 0; i < sources.size(); ++i) {
+            const oem::PrimaryResourceSource& source = sources[i];
+            oem::CargoDefinition definition;
+            if (!openingCatalog.find(source.cargoId, definition) ||
+                fabs(definition.unitMassKg - source.unitMassKg) > 1.0e-9) {
+                char error[512];
+                sprintf(error, "OEM Primary Resources: source %s has an unknown cargo or unit-mass mismatch.",
+                    source.sourceId.c_str());
+                oapiWriteLog(error);
+                return false;
+            }
+            const oem::EconomicLocation* location =
+                economicLocations_.find("station:" + source.locationId);
+            if (!location)
+                location = economicLocations_.findStorageId(
+                    source.locationId, oem::ECONOMIC_LOCATION_SPACEPORT);
+            if (!location) {
+                char error[512];
+                sprintf(error, "OEM Primary Resources: source %s references an unknown or ambiguous location %s.",
+                    source.sourceId.c_str(), source.locationId.c_str());
+                oapiWriteLog(error);
+                return false;
+            }
+            if (!ensureCargoServiceInventory(source.locationId)) return false;
+            sourceLocations.insert(source.locationId);
+        }
+        // Starter quantities are applied only to stock files created during
+        // this simulation's first encounter with a location. Existing empty
+        // files are intentional opening state and are never silently refilled.
+        for (std::set<std::string>::const_iterator it = openingStockNewFiles_.begin();
+             it != openingStockNewFiles_.end(); ++it)
+            if (!seedPrimaryOpeningStock(*it)) return false;
 
         // Recovery must start from the opening inventory of every registered
         // cargo service. Loading only the currently encountered location makes
@@ -2320,6 +2447,25 @@ private:
             sprintf(message, "OEM Economy: global journal recovery failed (%s): %s",
                     recovered.code.c_str(), recovered.message.c_str());
             oapiWriteLog(message);
+            return false;
+        }
+
+        const oem::Result productionRecovery =
+            economyJournalStore_.recoverPrimaryProductionTimes(economyJournalPath_, primaryResources_);
+        if (!productionRecovery.ok) {
+            char error[512];
+            sprintf(error, "OEM Primary Resources: journal recovery failed (%s): %s",
+                productionRecovery.code.c_str(), productionRecovery.message.c_str());
+            oapiWriteLog(error);
+            return false;
+        }
+        const oem::Result productionConfigSaved =
+            primaryResourceConfigStore_.save(primaryResourcesPath_, primaryResources_);
+        if (!productionConfigSaved.ok) {
+            char error[512];
+            sprintf(error, "OEM Primary Resources: could not persist recovered schedule (%s): %s",
+                productionConfigSaved.code.c_str(), productionConfigSaved.message.c_str());
+            oapiWriteLog(error);
             return false;
         }
 
@@ -2499,6 +2645,11 @@ private:
     std::map<std::string, oem::CargoServiceInventory> cargoServiceInventories_;
     std::set<std::string> cargoServiceInventoryLoadAttempted_;
     oem::EconomyJournalStore economyJournalStore_;
+    oem::PrimaryResourceConfigStore primaryResourceConfigStore_;
+    oem::PrimaryResourceBook primaryResources_;
+    std::string primaryResourcesPath_;
+    bool primaryResourcesReady_;
+    std::set<std::string> openingStockNewFiles_;
     oem::PropellantTransactionJournal propellantTransactionJournal_;
     std::string propellantTransactionJournalPath_;
     std::string propellantPricePath_;
