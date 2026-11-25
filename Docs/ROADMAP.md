@@ -58,6 +58,7 @@
 - [x] Add stock-driven dynamic buy/sell prices per station: scarcity premium below target stock, surplus discount above target stock, and immutable historical quote values in the trade journal.
 - [x] Display live station-specific buy/sell prices in the Location Market MFD and calculate affordability from the dynamic quote.
 - [x] Add portable tests for dynamic pricing boundaries, bounded scarcity/surplus, station-specific prices and inventory-driven price changes.
+- [x] Migrate built-in opening stock per commodity, preserving legacy TEST balances and journal history; allow unrelated cargo to be seeded after other goods have been traded.
 - [x] Runtime-validate market purchases, sales, and correct opening balance in Orbiter 2010. (The user confirmed BUY/SELL and opening balance; restart recovery remains a separate check.)
 - [x] Add portable abstract cargo manifests with transfer history, mass accounting and idempotent load/unload operations.
 - [x] Add portable station-side stock accounting with explicit initial stock, load debits, unload credits, quantity bounds and idempotent transfer IDs.
