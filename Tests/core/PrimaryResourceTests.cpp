@@ -33,7 +33,6 @@ int main(){
  assert(recovered["MoonBase"].quantity("ore")==140);
  assert(journal.load(journalPath,catalog,ledger,recovered,manifests).ok);
  assert(recovered["MoonBase"].quantity("ore")==140);
- std::remove(journalPath.c_str());
 
  bool hasHistory=false;
  assert(journal.hasLocationHistory(journalPath,"MoonBase",hasHistory).ok&&hasHistory);
@@ -52,6 +51,7 @@ int main(){
  oem::PrimaryResourceSource changed=source;changed.cargoId="water";
  assert(changedBook.add(changed).ok);
  assert(!journal.recoverPrimaryProductionTimes(journalPath,changedBook).ok);
+ std::remove(journalPath.c_str());
 
  // Versioned source definitions and scheduling state survive a config round trip.
  const std::string configPath="OEMPrimaryResourceTests.cfg";std::remove(configPath.c_str());
