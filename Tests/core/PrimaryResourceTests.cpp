@@ -67,8 +67,8 @@ int main(){
  const std::string legacyPath="OEMPrimaryResourceV1Tests.cfg";std::remove(legacyPath.c_str());
  {
   std::ofstream legacy(legacyPath.c_str(),std::ios::binary);
-  legacy<<"OEM_PRIMARY_RESOURCES|1\\n";
-  legacy<<"S|6C756E61722D6F72652D7665696E|4D6F6F6E42617365|6F7265|1.5|20|86400|150|0|1\\n";
+  legacy<<"OEM_PRIMARY_RESOURCES|1\n";
+  legacy<<"S|6C756E61722D6F72652D7665696E|4D6F6F6E42617365|6F7265|1.5|20|86400|150|0|1\n";
  }
  oem::PrimaryResourceBook legacyBook;assert(configStore.load(legacyPath,legacyBook).ok);
  assert(legacyBook.sources().size()==1&&legacyBook.sources()[0].openingStock==0);
