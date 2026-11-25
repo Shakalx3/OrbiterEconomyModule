@@ -247,6 +247,37 @@ jobs:
           path: OEMLandingBridge.dll
           if-no-files-found: error
           retention-days: 14
+      - name: Publish economic-agents test release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/feature/economic-agents'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:GITHUB_SHA) { throw "DLL source revision mismatch: expected $env:GITHUB_SHA, got $actual" }
+          $tag = "oem-economic-agents-current"
+          $title = "OEM Economic Agents (current test build)"
+          $notes = "Latest successful Win32 Orbiter 2010 test build from feature/economic-agents. Includes automatic creation of missing OEMData starter files (accounts.cfg, cargo_catalog.cfg, cargo_services.cfg, primary_resources.cfg and propellant_prices.cfg); existing files are never overwritten. On a clean install the starter company account begins with 10000 credits and sample TEST cargo is installed. ISS cargo-service permission does not register ISS as an economic station; register stations through OEM Economic Admin (MFD key A). The primary-resource configuration is intentionally empty until explicit sources are configured. Replace OEMLandingBridge.dll with Orbiter stopped. Keep OEMData to preserve campaign progress; deleting OEMData resets accounts, stock, journals, mission state and station registrations. CI success confirms compilation and automated core tests, not in-simulator testing. Source commit: $($env:GITHUB_SHA)."
+          git tag -f $tag $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw "Could not point release tag at build commit" }
+          git push --force origin "refs/tags/$tag"
+          if ($LASTEXITCODE -ne 0) { throw "Could not publish release tag" }
+          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release edit $tag --repo $env:GITHUB_REPOSITORY --title $title --notes $notes --target $env:GITHUB_SHA --prerelease
+            if ($LASTEXITCODE -ne 0) { throw "Could not update release metadata" }
+            gh release upload $tag OEMLandingBridge.dll --repo $env:GITHUB_REPOSITORY --clobber
+          } else {
+            gh release create $tag OEMLandingBridge.dll --repo $env:GITHUB_REPOSITORY --title $title --notes $notes --target $env:GITHUB_SHA --prerelease
+          }
+          if ($LASTEXITCODE -ne 0) { throw "Could not publish OEMLandingBridge.dll" }
+          $published = gh release view $tag --repo $env:GITHUB_REPOSITORY --json targetCommitish,assets | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw "Could not verify published release" }
+          if ($published.targetCommitish -ne $env:GITHUB_SHA) { throw "Release target does not match built source commit" }
+          $asset = $published.assets | Where-Object { $_.name -eq "OEMLandingBridge.dll" } | Select-Object -First 1
+          if ($null -eq $asset -or [long]$asset.size -le 0) { throw "Published DLL is missing or empty" }
+          Write-Host "Verified OEMLandingBridge.dll ($($asset.size) bytes) for commit $env:GITHUB_SHA"
       - name: Replace the rolling release
         if: github.event_name == 'push' && github.ref == 'refs/heads/development'
         shell: pwsh
