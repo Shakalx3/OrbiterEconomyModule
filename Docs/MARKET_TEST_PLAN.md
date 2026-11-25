@@ -27,6 +27,10 @@ On an installation using the original OEM starter catalogue (the single TEST lin
 
 The legacy TEST item remains available with its configured price and primary-resource settings. Built-in commodities are enabled for a single-entry TEST catalogue with 1 kg unit mass, even if its display name or configured prices differ from the original starter values. Starter stock is added only for missing built-in cargo lines that have no prior trade, production, transfer or contract history at that station. Existing active stock and journal history are never reset. New stations receive their own opening inventory when their cargo service is first initialized.
 
+## Planetary spaceport opening stock
+
+On a fresh game or a planetary base whose stock file is first initialized, land within 5 km of a registered surface base and open the Location Market MFD. Confirm the same seven built-in commodities and starter quantities listed above are present. Save and restart Orbiter, return to the same base, and confirm the stock is unchanged rather than seeded a second time. Existing per-cargo journal history and non-zero stock must be preserved.
+
 ## Dynamic pricing model
 
 Each station prices each commodity independently against a target stock of 100 units:
