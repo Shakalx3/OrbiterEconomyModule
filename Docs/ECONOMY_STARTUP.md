@@ -16,7 +16,7 @@ The following files are read beside the module, under `OEMData`:
 
 The native Location Market MFD (key M) uses the company account ID `company`. Market trades are enabled only when `accounts.cfg` defines that account and `cargo_catalog.cfg` defines at least one item. Trade buttons buy or sell one unit of the first catalog item for which the station or vessel has available quantity.
 
-No starting money, cargo definitions, prices, or stock quantities are generated automatically. Automatic location registration creates only an empty stock file; it does not add cargo.
+No starting money, cargo definitions, prices, or production sources are invented. Automatic location registration creates an empty stock file; only an explicit `openingStock` in a matching `primary_resources.cfg` source may seed that newly created file. Existing stock files, including intentionally empty ones, are never refilled.
 
 ## Example account configuration
 
@@ -39,6 +39,33 @@ C|54455354|5465737420636172676F|1.0|100|60
 ```
 
 The example cargo ID is `TEST`, display name is `Test cargo`, unit mass is 1 kg, company purchase price is 100 credits, and company sale price is 60 credits. It matches the two-unit TEST stock in the sample `cargo_stock_495353.cfg`. These prices and the 10,000-credit example balance are test values; choose the opening balance and prices deliberately before using the economy in a live scenario.
+
+## Primary resources and background production
+
+`OEMData/primary_resources.cfg` is created automatically with this header when missing:
+
+```
+OEM_PRIMARY_RESOURCES|2
+```
+
+Add one source record per cargo type and economic location:
+
+```
+S|<HEX source ID>|<HEX location ID>|<HEX cargo ID>|<unit mass kg>|<units per cycle>|<cycle seconds>|<maximum local stock>|<last production time>|<enabled 0/1>|<opening stock>
+```
+
+Example only, using the sample `TEST` cargo and a registered economic station whose storage ID is `ISS`:
+
+```
+OEM_PRIMARY_RESOURCES|2
+S|746573742D7072696D617279|495353|54455354|1.0|20|86400|150|0|1|120
+```
+
+This example seeds 120 TEST units only when the `ISS` stock file is first created, then produces up to 20 units per 86,400 seconds of Orbiter simulation time, stopping at 150 units. Replace the location ID with the exact storage ID of a registered economic location and ensure the cargo ID and unit mass match `cargo_catalog.cfg`. A surface-base storage ID must be unambiguous; duplicate base names on different bodies cannot share a primary source under the legacy stock-file naming scheme.
+
+`openingStock` is used only on first stock-file creation. Existing files are authoritative and are never seeded again. If a stock file is missing while `economy.journal` contains transactions for that location, OEM refuses to invent a replacement opening baseline. The journal restores each source's last committed production timestamp before the next production cycle, so a crash after a durable production commit cannot create the same cycle twice. Production records update the location inventory and journal; they do not create physical cargo in an Orbiter vessel.
+
+Version-1 source files remain readable; their opening-stock value defaults to zero. OEM writes version 2 when it saves source scheduling state. Stop Orbiter before editing this file. Do not change source identity, location, cargo, or unit mass while the global journal contains history for that source.
 
 ## Mission expiry penalties
 
