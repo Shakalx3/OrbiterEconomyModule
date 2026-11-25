@@ -1348,28 +1348,30 @@ public:
             }
         } else if (side == oem::MARKET_SELL_TO_STATION) {
             maximumQuantity = manifest->second.quantity(cargoId);
-            if (primaryResources_.maximumStockFor(serviceId, cargoId, maximumStationStock)) {
-                const long long current = inventory->second.quantity(cargoId);
-                const long long freeCapacity = current >= maximumStationStock
-                    ? 0 : maximumStationStock - current;
-                if (freeCapacity < maximumQuantity) maximumQuantity = freeCapacity;
-            } else {
-                const long long current = inventory->second.quantity(cargoId);
-                const long long freeCapacity = current >= maximumStationStock
-                    ? 0 : maximumStationStock - current;
-                if (freeCapacity < maximumQuantity) maximumQuantity = freeCapacity;
-            }
+            primaryResources_.maximumStockFor(serviceId, cargoId, maximumStationStock);
+            const long long current = inventory->second.quantity(cargoId);
+            const long long freeCapacity = current >= maximumStationStock
+                ? 0 : maximumStationStock - current;
+            if (freeCapacity < maximumQuantity) maximumQuantity = freeCapacity;
         } else {
             return oem::Result::failure("MARKET_SIDE", "Unknown market operation.");
         }
 
         const long long quantity = requestedQuantity == 0 ? maximumQuantity : requestedQuantity;
-        if (quantity <= 0)
-            return oem::Result::failure(side == oem::MARKET_BUY_FROM_STATION
-                ? "MARKET_NO_STOCK" : "MARKET_NO_CARGO",
-                side == oem::MARKET_BUY_FROM_STATION
-                ? "No units are available at this station or the company cannot afford one."
-                : "The vessel has no units to sell, or the station has no free stock capacity.");
+        if (quantity <= 0) {
+            if (side == oem::MARKET_BUY_FROM_STATION) {
+                if (inventory->second.quantity(cargoId) <= 0)
+                    return oem::Result::failure("MARKET_NO_STOCK",
+                        "The station has no stock of the selected cargo.");
+                return oem::Result::failure("INSUFFICIENT_FUNDS",
+                    "The company account cannot afford one unit of the selected cargo.");
+            }
+            if (manifest->second.quantity(cargoId) <= 0)
+                return oem::Result::failure("MARKET_NO_CARGO",
+                    "The vessel has no units of the selected cargo to sell.");
+            return oem::Result::failure("MARKET_STATION_FULL",
+                "The station has no free stock capacity for the selected cargo.");
+        }
         if (quantity > maximumQuantity) {
             if (side == oem::MARKET_BUY_FROM_STATION &&
                 quantity > inventory->second.quantity(cargoId))
