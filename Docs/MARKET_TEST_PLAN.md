@@ -6,8 +6,49 @@ This checklist is for the complete cargo-market loop in the native Orbiter bridg
 
 - The market is an OEM accounting system. Cargo in the OEM manifest is not inserted into or removed from Orbiter's physical vessel payload.
 - Prices are currently fixed per cargo definition in `cargo_catalog.cfg`; they are not yet adjusted dynamically by supply and demand.
-- The current starter catalog contains the `TEST` cargo. The system supports multiple catalog entries, but this test uses the one currently configured.
+- A stock installation using the original one-item TEST catalogue is expanded in memory with seven built-in commodities. Existing custom catalogues are left unchanged.
+- Every registered cargo service has its own opening stock. The starter market seeds only the new built-in cargo IDs; it preserves all existing stock lines and journal history.
+- Prices are dynamic per station. They respond to that station's current stock; historic trades retain their exact committed quote through journal recovery.
 - Preserve the existing `OEMData` directory. Do not reset the economy or delete journals for this test.
+
+
+## Built-in commodities and opening stock
+
+On an installation using the original OEM starter catalogue (the single TEST line), the market adds these built-in goods without rewriting the user's catalogue:
+
+| Cargo ID | Display name | Unit mass | Base buy | Base sell | Starter stock |
+|---|---|---:|---:|---:|---:|
+| WATER | Water | 1 kg | 12 cr | 7 cr | 120 |
+| OXYGEN | Oxygen | 1 kg | 20 cr | 12 cr | 100 |
+| FOOD | Food | 1 kg | 35 cr | 20 cr | 80 |
+| METALS | Metals | 10 kg | 90 cr | 55 cr | 60 |
+| ELECTRONICS | Electronics | 1 kg | 250 cr | 150 cr | 40 |
+| MACHINERY | Machinery | 25 kg | 500 cr | 300 cr | 20 |
+| MEDICAL | Medical supplies | 1 kg | 180 cr | 110 cr | 30 |
+
+The legacy TEST item remains available with its configured price and primary-resource settings. Starter stock is added only for missing built-in cargo lines. Existing lines are not reset. New stations receive their own opening inventory when their cargo service is first initialized.
+
+## Dynamic pricing model
+
+Each station prices each commodity independently against a target stock of 100 units:
+
+- Below 100 units, scarcity raises both buy and sell unit prices linearly, reaching a maximum +50% at zero stock.
+- Above 100 units, surplus lowers both prices linearly, reaching a maximum -25% at 200 units and beyond.
+- At exactly 100 units, the configured base buy/sell prices apply.
+- Prices are rounded to the nearest whole credit, with a minimum of 1 credit for a positive base price.
+- Buying reduces stock and makes the next quote more expensive. Selling increases stock and makes the next quote cheaper.
+- Each trade journals the quoted unit price and total. Recovery replays the historical price; it does not recalculate old trades using today's stock.
+
+## Complete multi-station test
+
+1. Confirm the market lists TEST plus WATER, OXYGEN, FOOD, METALS, ELECTRONICS, MACHINERY and MEDICAL.
+2. At ISS, record each cargo's stock and displayed BUY/SELL prices.
+3. Buy 10 units of WATER. Confirm station stock falls by 10, vessel manifest rises by 10, the balance is charged at the displayed price, and the next WATER quote rises.
+4. Sell 5 WATER. Confirm station stock rises by 5, vessel manifest falls by 5, the account is credited at the displayed sell price, and the next quote falls relative to the scarcity quote.
+5. Open the market at another registered station with its own cargo service. Confirm its stock is independent and the same commodity can have a different price there.
+6. Repeat a purchase and sale at the second station. Confirm only that station's inventory changes.
+7. Save, exit and restart Orbiter. Confirm balances, all station stocks, vessel manifests and historic prices are preserved.
+8. Confirm a custom catalogue (one containing entries beyond the untouched starter TEST row) is not augmented or overwritten by the compatibility defaults.
 
 ## Market MFD controls
 
@@ -23,7 +64,7 @@ Open the OEM Location Market MFD (key **M**).
 | B | Buy the selected quantity |
 | S | Sell the selected quantity |
 
-The MFD shows the station stock, buy price, vessel manifest quantity, sell price, company balance and the last operation result.
+The MFD shows station stock, dynamically calculated buy/sell prices, vessel manifest quantity, company balance and the last operation result. The same cargo can have different prices at two stations because their inventories differ.
 
 ## Before testing
 
@@ -106,6 +147,6 @@ For the starter configuration, the expected reference values are 10,000 credits,
 
 ## Automated coverage included in this build
 
-The portable test suite includes a complete journalled cycle: opening stock, two production intervals, multi-unit purchase, multi-unit sale, capacity rejection, stale-quote rejection, global-journal recovery and replay of an already committed operation. The native DLL build is also compiled by CI against the bundled Orbiter 2010 SDK.
+The portable test suite includes the journalled trade cycle plus dynamic pricing boundaries, scarcity/surplus limits, per-location price differences, and a trade whose next quote changes after inventory moves. The native DLL build is also compiled by CI against the bundled Orbiter 2010 SDK.
 
 The automated test does not replace the in-simulator checks above. In particular, actual docking/landing access and MFD keyboard interaction still require Orbiter runtime validation.
