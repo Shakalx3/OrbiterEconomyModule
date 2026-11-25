@@ -35,6 +35,11 @@ int main(){
  assert(recovered["MoonBase"].quantity("ore")==140);
  std::remove(journalPath.c_str());
 
+ bool hasHistory=false;
+ assert(journal.hasLocationHistory(journalPath,"MoonBase",hasHistory).ok&&hasHistory);
+ hasHistory=true;
+ assert(journal.hasLocationHistory(journalPath,"MarsBase",hasHistory).ok&&!hasHistory);
+
  // A crash after journal commit but before saving the source config must not
  // allow the same production cycle to be scheduled again after restart.
  oem::PrimaryResourceBook staleBook;assert(staleBook.add(source).ok);
