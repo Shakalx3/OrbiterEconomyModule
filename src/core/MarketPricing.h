@@ -50,7 +50,7 @@ public:
 
         const long double value = (long double)base * multiplier;
         if (!std::isfinite((double)value) ||
-            value > (long double)std::numeric_limits<Credits>::max())
+            value > (long double)(std::numeric_limits<Credits>::max)())
             return Result::failure("MARKET_PRICE_OVERFLOW",
                 "Dynamic unit price exceeds the credit range.");
 
