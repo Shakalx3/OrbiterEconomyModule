@@ -21,13 +21,11 @@ Result MarketTradeEngine::execute(const CargoCatalog& catalog,
     CargoDefinition definition;
     if (!catalog.find(quote.cargoId, definition))
         return Result::failure("UNKNOWN_CARGO", "Cargo ID is not present in the catalog.");
-    const Credits expectedUnitPrice = quote.side == MARKET_BUY_FROM_STATION
-        ? definition.buyPrice : definition.sellPrice;
-    if (quote.unitPrice != expectedUnitPrice ||
-        (expectedUnitPrice > 0 &&
-         quote.quantity > std::numeric_limits<Credits>::max() / expectedUnitPrice) ||
-        quote.totalPrice != expectedUnitPrice * quote.quantity)
-        return Result::failure("MARKET_QUOTE_INVALID", "Quote price does not match the catalog or its total is invalid.");
+    if (quote.unitPrice < 0 ||
+        (quote.unitPrice > 0 &&
+         quote.quantity > std::numeric_limits<Credits>::max() / quote.unitPrice) ||
+        quote.totalPrice != quote.unitPrice * quote.quantity)
+        return Result::failure("MARKET_QUOTE_INVALID", "Quoted unit price or total is invalid.");
 
     CargoTransfer transfer;
     transfer.transferId = operationId;
