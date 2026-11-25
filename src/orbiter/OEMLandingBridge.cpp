@@ -2667,25 +2667,45 @@ private:
             oapiWriteLog((char*)"OEM Economy: cargo_catalog.cfg missing; market trading remains unavailable until explicitly configured.");
         }
 
-        // Surface inventories are preloaded before the cargo catalogue so the
-        // economy journal can recover every location. Once the catalogue is
-        // known, seed their built-in opening market stock in a second pass.
-        // This is deliberately limited to planetary spaceports; it does not
-        // migrate old orbital-station saves as part of this change.
+        // Inventories are first loaded before the catalogue so journal recovery
+        // has a stable opening baseline. Once the catalogue is known, seed every
+        // registered cargo service and every indexed economic location. This
+        // includes orbital stations (for example ISS) and planetary spaceports.
+        // The seeder is idempotent per cargo: existing stock and journal history
+        // are authoritative and are never overwritten.
         if (marketGoodsEnabled_) {
-            const std::vector<oem::EconomicLocation>& locations = economicLocations_.entries();
-            for (std::size_t i = 0; i < locations.size(); ++i) {
-                if (locations[i].kind != oem::ECONOMIC_LOCATION_SPACEPORT) continue;
+            const std::set<std::string>& registeredServices = cargoServices_.vesselIds();
+            for (std::set<std::string>::const_iterator service = registeredServices.begin();
+                 service != registeredServices.end(); ++service) {
                 std::map<std::string, oem::CargoServiceInventory>::iterator stock =
-                    cargoServiceInventories_.find(locations[i].storageId);
+                    cargoServiceInventories_.find(*service);
                 if (stock == cargoServiceInventories_.end()) {
-                    if (!ensureCargoServiceInventory(locations[i].storageId)) return false;
-                    stock = cargoServiceInventories_.find(locations[i].storageId);
+                    if (!ensureCargoServiceInventory(*service)) return false;
+                    stock = cargoServiceInventories_.find(*service);
                 }
                 if (stock == cargoServiceInventories_.end() ||
-                    !seedBuiltInMarketStock(locations[i].storageId, stock->second)) {
+                    !seedBuiltInMarketStock(*service, stock->second)) {
                     char error[384];
-                    sprintf(error, "OEM Market: planetary opening stock initialization failed at %s.",
+                    sprintf(error, "OEM Market: registered-service opening stock initialization failed at %s.",
+                        service->c_str());
+                    oapiWriteLog(error);
+                    return false;
+                }
+            }
+
+            const std::vector<oem::EconomicLocation>& locations = economicLocations_.entries();
+            for (std::size_t i = 0; i < locations.size(); ++i) {
+                const std::string& storageId = locations[i].storageId;
+                std::map<std::string, oem::CargoServiceInventory>::iterator stock =
+                    cargoServiceInventories_.find(storageId);
+                if (stock == cargoServiceInventories_.end()) {
+                    if (!ensureCargoServiceInventory(storageId)) return false;
+                    stock = cargoServiceInventories_.find(storageId);
+                }
+                if (stock == cargoServiceInventories_.end() ||
+                    !seedBuiltInMarketStock(storageId, stock->second)) {
+                    char error[384];
+                    sprintf(error, "OEM Market: opening stock initialization failed at %s.",
                         locations[i].canonicalId.c_str());
                     oapiWriteLog(error);
                     return false;
