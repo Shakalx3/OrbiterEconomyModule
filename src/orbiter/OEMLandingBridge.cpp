@@ -2621,10 +2621,55 @@ private:
             }
         }
 
-        std::vector<oem::ProductionRecipeIntent> intents;
+        std::vector<oem::ProductionRecipeIntent> plannedIntents;
         const oem::Result planned = productionRecipes_.planDue(
-            now, cargoServiceInventories_, intents);
-        if (!planned.ok || intents.empty()) return;
+            now, cargoServiceInventories_, plannedIntents);
+        if (!planned.ok || plannedIntents.empty()) return;
+
+        // planDue sees a common snapshot. Filter competing recipes against a
+        // rolling inventory projection so one starved recipe cannot abort the batch.
+        std::map<std::string, oem::CargoServiceInventory> projectedInventories =
+            cargoServiceInventories_;
+        std::vector<oem::ProductionRecipeIntent> intents;
+        for (std::size_t i = 0; i < plannedIntents.size(); ++i) {
+            const oem::ProductionRecipeIntent& intent = plannedIntents[i];
+            std::map<std::string, oem::CargoServiceInventory>::iterator stock =
+                projectedInventories.find(intent.locationId);
+            if (stock == projectedInventories.end()) continue;
+            oem::CargoServiceInventory candidate(stock->second);
+            bool ready = true;
+            for (std::size_t m = 0; m < intent.inputs.size() && ready; ++m) {
+                const oem::ProductionMaterial& material = intent.inputs[m];
+                oem::CargoTransfer transfer;
+                transfer.transferId = intent.operationId + ":in:" + material.cargoId;
+                transfer.direction = oem::CARGO_LOAD;
+                transfer.vesselId = "OEM-RECIPE:" + intent.recipeId;
+                transfer.locationId = intent.locationId;
+                transfer.cargoId = material.cargoId;
+                transfer.quantity = material.quantity;
+                transfer.unitMassKg = material.unitMassKg;
+                transfer.simulationTime = intent.simulationTime;
+                ready = candidate.apply(transfer).ok;
+            }
+            for (std::size_t m = 0; m < intent.outputs.size() && ready; ++m) {
+                const oem::ProductionMaterial& material = intent.outputs[m];
+                oem::CargoTransfer transfer;
+                transfer.transferId = intent.operationId + ":out:" + material.cargoId;
+                transfer.direction = oem::CARGO_UNLOAD;
+                transfer.vesselId = "OEM-RECIPE:" + intent.recipeId;
+                transfer.locationId = intent.locationId;
+                transfer.cargoId = material.cargoId;
+                transfer.quantity = material.quantity;
+                transfer.unitMassKg = material.unitMassKg;
+                transfer.simulationTime = intent.simulationTime;
+                ready = candidate.apply(transfer).ok;
+            }
+            if (ready) {
+                stock->second = candidate;
+                intents.push_back(intent);
+            }
+        }
+        if (intents.empty()) return;
 
         const oem::Result committed = economyJournalStore_.applyProductionRecipeBatch(
             economyJournalPath_, intents, cargoServiceInventories_);
