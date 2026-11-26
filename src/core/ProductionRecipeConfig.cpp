@@ -25,11 +25,11 @@ return std::rename(a.c_str(),b.c_str())==0;
 }
 Result ProductionRecipeConfigStore::load(const std::string&path,ProductionRecipeBook&book)const{
  std::ifstream in(path.c_str(),std::ios::binary);if(!in)return Result::failure("PRODUCTION_CONFIG_MISSING","Production recipe configuration does not exist.");
- std::string line;if(!std::getline(in,line))return Result::failure("PRODUCTION_CONFIG_HEADER","Production recipe configuration is empty.");if(!line.empty()&&line.back()=='\\r')line.pop_back();
+ std::string line;if(!std::getline(in,line))return Result::failure("PRODUCTION_CONFIG_HEADER","Production recipe configuration is empty.");if(!line.empty()&&line.back()=='\r')line.pop_back();
  if(line!="OEM_PRODUCTION_RECIPES|1")return Result::failure("PRODUCTION_CONFIG_HEADER","Production recipe configuration version is invalid.");
  ProductionRecipeBook candidate;
  while(std::getline(in,line)){
-  if(!line.empty()&&line.back()=='\\r')line.pop_back();if(line.empty())continue;
+  if(!line.empty()&&line.back()=='\r')line.pop_back();if(line.empty())continue;
   std::vector<std::string> f;std::istringstream row(line);std::string v;while(std::getline(row,v,'|'))f.push_back(v);
   if(f.size()<9||f[0]!="R")return Result::failure("PRODUCTION_CONFIG_RECORD","Production recipe record has an invalid shape.");
   ProductionRecipe r;long long cycle=0,last=0,enabled=0,inputCount=0,outputCount=0;
@@ -48,9 +48,9 @@ Result ProductionRecipeConfigStore::load(const std::string&path,ProductionRecipe
 Result ProductionRecipeConfigStore::save(const std::string&path,const ProductionRecipeBook&book)const{
  if(path.empty())return Result::failure("PRODUCTION_CONFIG_PATH","Production recipe configuration path is empty.");
  const std::string temp=path+".tmp";
- {std::ofstream out(temp.c_str(),std::ios::binary|std::ios::trunc);if(!out)return Result::failure("PRODUCTION_CONFIG_OPEN","Could not create temporary production recipe configuration.");out.imbue(std::locale::classic());out<<"OEM_PRODUCTION_RECIPES|1\\n";
+ {std::ofstream out(temp.c_str(),std::ios::binary|std::ios::trunc);if(!out)return Result::failure("PRODUCTION_CONFIG_OPEN","Could not create temporary production recipe configuration.");out.imbue(std::locale::classic());out<<"OEM_PRODUCTION_RECIPES|1\n";
   const std::vector<ProductionRecipe>& recipes=book.recipes();
-  for(std::size_t i=0;i<recipes.size();++i){const ProductionRecipe&r=recipes[i];out<<"R|"<<hex(r.recipeId)<<'|'<<hex(r.locationId)<<'|'<<r.cycleSeconds<<'|'<<r.lastProductionTime<<'|'<<(r.enabled?1:0)<<'|'<<r.inputs.size();for(std::size_t j=0;j<r.inputs.size();++j)out<<'|'<<hex(r.inputs[j].cargoId)<<'|'<<r.inputs[j].quantity<<'|'<<std::setprecision(17)<<r.inputs[j].unitMassKg;out<<'|'<<r.outputs.size();for(std::size_t j=0;j<r.outputs.size();++j)out<<'|'<<hex(r.outputs[j].cargoId)<<'|'<<r.outputs[j].quantity<<'|'<<std::setprecision(17)<<r.outputs[j].unitMassKg;out<<"\\n";}
+  for(std::size_t i=0;i<recipes.size();++i){const ProductionRecipe&r=recipes[i];out<<"R|"<<hex(r.recipeId)<<'|'<<hex(r.locationId)<<'|'<<r.cycleSeconds<<'|'<<r.lastProductionTime<<'|'<<(r.enabled?1:0)<<'|'<<r.inputs.size();for(std::size_t j=0;j<r.inputs.size();++j)out<<'|'<<hex(r.inputs[j].cargoId)<<'|'<<r.inputs[j].quantity<<'|'<<std::setprecision(17)<<r.inputs[j].unitMassKg;out<<'|'<<r.outputs.size();for(std::size_t j=0;j<r.outputs.size();++j)out<<'|'<<hex(r.outputs[j].cargoId)<<'|'<<r.outputs[j].quantity<<'|'<<std::setprecision(17)<<r.outputs[j].unitMassKg;out<<"\n";}
   out.flush();if(!out.good())return Result::failure("PRODUCTION_CONFIG_WRITE","Could not write production recipe configuration.");out.close();if(out.fail())return Result::failure("PRODUCTION_CONFIG_CLOSE","Could not close production recipe configuration.");
  }
  if(!replace(temp,path)){std::remove(temp.c_str());return Result::failure("PRODUCTION_CONFIG_REPLACE","Could not atomically replace production recipe configuration.");}
