@@ -1,5 +1,9 @@
 #include "../../src/core/ProductionRecipe.h"
+#include "../../src/core/EconomyJournal.h"
 #include <cassert>
+#include <cstdio>
+#include <map>
+#include <string>
 int main(){
  oem::CargoServiceInventory stock("LunarFactory");
  assert(stock.setInitialStock("ore",100,2.0).ok);
@@ -17,11 +21,49 @@ int main(){
  assert(due[0].inputs.size()==2&&due[0].outputs.size()==1&&due[0].operationId=="recipe-oxygen-electrolysis-3700");
  assert(book.markCommitted(r.recipeId,3700).ok);
  std::vector<oem::ProductionRecipeIntent> again;assert(book.planDue(3700,locations,again).ok&&again.empty());
- oem::CargoServiceInventory starved("LunarFactory");
- assert(starved.setInitialStock("ore",100,2.0).ok);
- locations["LunarFactory"]=starved;
- std::vector<oem::ProductionRecipeIntent> blocked;assert(book.planDue(7300,locations,blocked).ok&&blocked.empty());
- oem::ProductionRecipe bad=r;bad.recipeId="bad";bad.inputs[1].cargoId=bad.inputs[0].cargoId;
- assert(!book.add(bad).ok);
+ oem::CargoServiceInventory starved("LunarFactory");assert(starved.setInitialStock("ore",100,2.0).ok);
+ locations["LunarFactory"]=starved;std::vector<oem::ProductionRecipeIntent> blocked;
+ assert(book.planDue(7300,locations,blocked).ok&&blocked.empty());
+ oem::ProductionRecipe bad=r;bad.recipeId="bad";bad.inputs[1].cargoId=bad.inputs[0].cargoId;assert(!book.add(bad).ok);
+
+ // A recipe is committed as one durable journal operation: all inputs are
+ // consumed and all outputs created, or the live inventory remains unchanged.
+ const std::string path="OEMProductionRecipeTests.journal";std::remove(path.c_str());
+ std::map<std::string,oem::CargoServiceInventory> live;
+ live["LunarFactory"]=oem::CargoServiceInventory("LunarFactory");
+ assert(live["LunarFactory"].setInitialStock("ore",100,2.0).ok);
+ assert(live["LunarFactory"].setInitialStock("water",40,1.0).ok);
+ oem::ProductionRecipeIntent intent=due[0];
+ oem::EconomyJournalStore journal;
+ assert(journal.applyProductionRecipe(path,intent,live).ok);
+ assert(live["LunarFactory"].quantity("ore")==90);
+ assert(live["LunarFactory"].quantity("water")==35);
+ assert(live["LunarFactory"].quantity("oxygen")==8);
+ assert(journal.applyProductionRecipe(path,intent,live).ok);
+ assert(live["LunarFactory"].quantity("ore")==90);
+ assert(live["LunarFactory"].quantity("water")==35);
+ assert(live["LunarFactory"].quantity("oxygen")==8);
+
+ // Replay from the same opening inventory restores the exact production result.
+ std::map<std::string,oem::CargoServiceInventory> replay;
+ replay["LunarFactory"]=oem::CargoServiceInventory("LunarFactory");
+ assert(replay["LunarFactory"].setInitialStock("ore",100,2.0).ok);
+ assert(replay["LunarFactory"].setInitialStock("water",40,1.0).ok);
+ oem::CargoCatalog catalog;oem::Ledger ledger;
+ std::map<std::string,oem::CargoManifest> manifests;
+ assert(journal.load(path,catalog,ledger,replay,manifests).ok);
+ assert(replay["LunarFactory"].quantity("ore")==90);
+ assert(replay["LunarFactory"].quantity("water")==35);
+ assert(replay["LunarFactory"].quantity("oxygen")==8);
+
+ // Insufficient input cannot partially consume another input or append a record.
+ const std::string poorPath="OEMProductionRecipePoorTests.journal";std::remove(poorPath.c_str());
+ std::map<std::string,oem::CargoServiceInventory> poor;
+ poor["LunarFactory"]=oem::CargoServiceInventory("LunarFactory");
+ assert(poor["LunarFactory"].setInitialStock("ore",100,2.0).ok);
+ assert(poor["LunarFactory"].setInitialStock("water",2,1.0).ok);
+ assert(!journal.applyProductionRecipe(poorPath,intent,poor).ok);
+ assert(poor["LunarFactory"].quantity("ore")==100&&poor["LunarFactory"].quantity("water")==2);
+ std::remove(path.c_str());std::remove(poorPath.c_str());
  return 0;
 }
