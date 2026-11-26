@@ -2569,6 +2569,10 @@ private:
         }
         for (std::size_t i = 0; i < intents.size(); ++i) {
             const oem::PrimaryResourceIntent& intent = intents[i];
+            std::map<std::string, oem::CargoServiceInventory>::const_iterator beforeStock =
+                cargoServiceInventories_.find(intent.locationId);
+            const long long quantityBefore = beforeStock == cargoServiceInventories_.end()
+                ? 0 : beforeStock->second.quantity(intent.cargoId);
             const oem::Result committed = economyJournalStore_.applyPrimaryProduction(
                 economyJournalPath_, intent.operationId, intent.sourceId, intent.locationId,
                 intent.cargoId, intent.quantity, intent.unitMassKg, intent.simulationTime,
@@ -2598,9 +2602,13 @@ private:
                 oapiWriteLog(error);
             }
             char message[512];
-            sprintf(message, "OEM PRIMARY PRODUCTION: source=%s location=%s cargo=%s quantity=%lld simt=%lld",
+            std::map<std::string, oem::CargoServiceInventory>::const_iterator afterStock =
+                cargoServiceInventories_.find(intent.locationId);
+            const long long quantityAfter = afterStock == cargoServiceInventories_.end()
+                ? quantityBefore : afterStock->second.quantity(intent.cargoId);
+            sprintf(message, "OEM PRIMARY PRODUCTION: source=%s location=%s cargo=%s before=%lld delta=+%lld after=%lld due=%lld",
                 intent.sourceId.c_str(), intent.locationId.c_str(), intent.cargoId.c_str(),
-                intent.quantity, (long long)intent.simulationTime);
+                quantityBefore, intent.quantity, quantityAfter, (long long)intent.simulationTime);
             oapiWriteLog(message);
         }
     }
@@ -2621,6 +2629,15 @@ private:
         }
         for (std::size_t i=0;i<intents.size();++i) {
             const oem::ProductionRecipeIntent& intent=intents[i];
+            std::vector<long long> inputBefore, outputBefore;
+            std::map<std::string, oem::CargoServiceInventory>::const_iterator recipeStock =
+                cargoServiceInventories_.find(intent.locationId);
+            for (std::size_t m=0;m<intent.inputs.size();++m)
+                inputBefore.push_back(recipeStock==cargoServiceInventories_.end()?0:
+                    recipeStock->second.quantity(intent.inputs[m].cargoId));
+            for (std::size_t m=0;m<intent.outputs.size();++m)
+                outputBefore.push_back(recipeStock==cargoServiceInventories_.end()?0:
+                    recipeStock->second.quantity(intent.outputs[m].cargoId));
             const oem::Result committed=economyJournalStore_.applyProductionRecipe(
                 economyJournalPath_,intent,cargoServiceInventories_);
             if (!committed.ok) {
@@ -2639,7 +2656,23 @@ private:
                 char error[512];sprintf(error,"OEM Production: schedule save failed recipe=%s (%s): %s",
                     intent.recipeId.c_str(),saved.code.c_str(),saved.message.c_str());oapiWriteLog(error);
             }
-            char message[512];sprintf(message,"OEM PRODUCTION: recipe=%s location=%s inputs=%lu outputs=%lu simt=%lld",
+            std::map<std::string, oem::CargoServiceInventory>::const_iterator afterRecipeStock =
+                cargoServiceInventories_.find(intent.locationId);
+            for (std::size_t m=0;m<intent.inputs.size();++m) {
+                const long long after=afterRecipeStock==cargoServiceInventories_.end()?inputBefore[m]:
+                    afterRecipeStock->second.quantity(intent.inputs[m].cargoId);
+                char detail[512];sprintf(detail,"OEM PRODUCTION DETAIL: recipe=%s location=%s input=%s before=%lld delta=-%lld after=%lld due=%lld",
+                    intent.recipeId.c_str(),intent.locationId.c_str(),intent.inputs[m].cargoId.c_str(),
+                    inputBefore[m],intent.inputs[m].quantity,after,(long long)intent.simulationTime);oapiWriteLog(detail);
+            }
+            for (std::size_t m=0;m<intent.outputs.size();++m) {
+                const long long after=afterRecipeStock==cargoServiceInventories_.end()?outputBefore[m]:
+                    afterRecipeStock->second.quantity(intent.outputs[m].cargoId);
+                char detail[512];sprintf(detail,"OEM PRODUCTION DETAIL: recipe=%s location=%s output=%s before=%lld delta=+%lld after=%lld due=%lld",
+                    intent.recipeId.c_str(),intent.locationId.c_str(),intent.outputs[m].cargoId.c_str(),
+                    outputBefore[m],intent.outputs[m].quantity,after,(long long)intent.simulationTime);oapiWriteLog(detail);
+            }
+            char message[512];sprintf(message,"OEM PRODUCTION: recipe=%s location=%s inputs=%lu outputs=%lu due=%lld",
                 intent.recipeId.c_str(),intent.locationId.c_str(),(unsigned long)intent.inputs.size(),
                 (unsigned long)intent.outputs.size(),(long long)intent.simulationTime);oapiWriteLog(message);
         }
