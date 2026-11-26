@@ -28,6 +28,7 @@ int main(){
  assert(book.planDue(7300,locations,blocked).ok&&blocked.empty());
  oem::ProductionRecipe bad=r;bad.recipeId="bad";bad.inputs[1].cargoId=bad.inputs[0].cargoId;assert(!book.add(bad).ok);
 
+ std::fprintf(stderr,"checkpoint: journal section\\n");
  // A recipe is committed as one durable journal operation: all inputs are
  // consumed and all outputs created, or the live inventory remains unchanged.
  const std::string path="OEMProductionRecipeTests.journal";std::remove(path.c_str());
@@ -50,6 +51,7 @@ int main(){
  assert(live["LunarFactory"].quantity("water")==35);
  assert(live["LunarFactory"].quantity("oxygen")==8);
 
+ std::fprintf(stderr,"checkpoint: replay section\\n");
  // Replay from the same opening inventory restores the exact production result.
  std::map<std::string,oem::CargoServiceInventory> replay;
  replay["LunarFactory"]=oem::CargoServiceInventory("LunarFactory");
@@ -61,11 +63,13 @@ int main(){
  assert(replay["LunarFactory"].quantity("ore")==90);
  assert(replay["LunarFactory"].quantity("water")==35);
  assert(replay["LunarFactory"].quantity("oxygen")==8);
+ std::fprintf(stderr,"checkpoint: recover section\\n");
  oem::ProductionRecipeBook recoveredBook; oem::ProductionRecipe recoveryRecipe=r;
  recoveryRecipe.lastProductionTime=100; assert(recoveredBook.add(recoveryRecipe).ok);
  assert(journal.recoverProductionRecipeTimes(path,recoveredBook).ok);
  assert(recoveredBook.recipes()[0].lastProductionTime==3700);
 
+ std::fprintf(stderr,"checkpoint: poor section\\n");
  // Insufficient input cannot partially consume another input or append a record.
  const std::string poorPath="OEMProductionRecipePoorTests.journal";std::remove(poorPath.c_str());
  std::map<std::string,oem::CargoServiceInventory> poor;
