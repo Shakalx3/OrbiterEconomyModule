@@ -14,9 +14,16 @@ int main(){
  bool initialized=false;
  oem::PrimaryResourceBook clockBook;assert(clockBook.add(source).ok);
  assert(clockBook.initializeUnsetTimes(100000,initialized).ok&&initialized);
- assert(clockBook.sources()[0].lastProductionTime==100000);
+ assert(clockBook.sources()[0].lastProductionTime==86400);
  initialized=true;assert(clockBook.initializeUnsetTimes(120000,initialized).ok&&!initialized);
- assert(clockBook.sources()[0].lastProductionTime==100000);
+ assert(clockBook.sources()[0].lastProductionTime==86400);
+
+ // New sources align to the global simulation-day boundary, not load time.
+ std::vector<oem::PrimaryResourceIntent> calendarDue;
+ assert(clockBook.planDue(172799,locations,calendarDue).ok&&calendarDue.empty());
+ assert(clockBook.planDue(172800,locations,calendarDue).ok&&calendarDue.size()==1);
+ assert(calendarDue[0].simulationTime==172800);
+ assert(calendarDue[0].operationId=="primary-lunar-ore-vein-172800");
  bool openingConsumed=false;assert(clockBook.consumeOpeningStock("MoonBase",openingConsumed).ok&&openingConsumed);
  assert(clockBook.sources()[0].openingStock==0);
  assert(clockBook.consumeOpeningStock("MoonBase",openingConsumed).ok&&!openingConsumed);
