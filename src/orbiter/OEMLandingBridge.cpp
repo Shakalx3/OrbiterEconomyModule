@@ -2668,9 +2668,9 @@ private:
             for (std::size_t m=0;m<intent.outputs.size();++m) {
                 const long long after=afterRecipeStock==cargoServiceInventories_.end()?outputBefore[m]:
                     afterRecipeStock->second.quantity(intent.outputs[m].cargoId);
-                char detail[512];sprintf(detail,"OEM PRODUCTION DETAIL: recipe=%s location=%s output=%s before=%lld delta=+%lld after=%lld due=%lld now=%lld",
+                char detail[512];sprintf(detail,"OEM PRODUCTION DETAIL: recipe=%s location=%s output=%s before=%lld delta=+%lld after=%lld due=%lld now=%lld mjdDay=%lld daySecond=%lld",
                     intent.recipeId.c_str(),intent.locationId.c_str(),intent.outputs[m].cargoId.c_str(),
-                    outputBefore[m],intent.outputs[m].quantity,after,(long long)intent.simulationTime,(long long)now);oapiWriteLog(detail);
+                    outputBefore[m],intent.outputs[m].quantity,after,(long long)intent.simulationTime,(long long)now,(long long)(now/86400),(long long)(now%86400));oapiWriteLog(detail);
             }
             char message[512];sprintf(message,"OEM PRODUCTION: recipe=%s location=%s inputs=%lu outputs=%lu due=%lld now=%lld mjdDay=%lld daySecond=%lld",
                 intent.recipeId.c_str(),intent.locationId.c_str(),(unsigned long)intent.inputs.size(),
