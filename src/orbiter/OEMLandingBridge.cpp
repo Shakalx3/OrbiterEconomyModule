@@ -2693,7 +2693,7 @@ private:
     }
 
     bool initializeEconomyState() {
-        if (economyJournalPath_.empty() || accountsPath_.empty() || cargoCatalogPath_.empty() || primaryResourcesPath_.empty() || missionFailurePolicyPath_.empty() || missionIssuerRegistryPath_.empty()) {
+        if (economyJournalPath_.empty() || accountsPath_.empty() || cargoCatalogPath_.empty() || primaryResourcesPath_.empty() || productionRecipesPath_.empty() || missionFailurePolicyPath_.empty() || missionIssuerRegistryPath_.empty()) {
             oapiWriteLog((char*)"OEM Economy: could not resolve economy configuration paths.");
             return false;
         }
@@ -2879,6 +2879,51 @@ private:
             }
             if (!ensureCargoServiceInventory(source.locationId)) return false;
         }
+        DWORD recipeAttributes = GetFileAttributesA(productionRecipesPath_.c_str());
+        if (recipeAttributes == INVALID_FILE_ATTRIBUTES) {
+            const DWORD fileError = GetLastError();
+            if (fileError != ERROR_FILE_NOT_FOUND && fileError != ERROR_PATH_NOT_FOUND) {
+                oapiWriteLog((char*)"OEM Production: could not inspect production_recipes.cfg."); return false;
+            }
+            productionRecipes_ = oem::ProductionRecipeBook();
+            if (marketGoodsEnabled_ &&
+                !addDefaultProductionRecipes(productionRecipes_, openingCatalog, economicLocations_.entries())) {
+                oapiWriteLog((char*)"OEM Production: built-in production recipes could not be initialized."); return false;
+            }
+            const oem::Result created = productionRecipeConfigStore_.save(productionRecipesPath_, productionRecipes_);
+            if (!created.ok) {
+                char error[512]; sprintf(error,"OEM Production: could not create recipe config (%s): %s",created.code.c_str(),created.message.c_str());oapiWriteLog(error);return false;
+            }
+            oapiWriteLog((char*)"OEM Production: created production_recipes.cfg with starter recipes for registered markets.");
+        } else {
+            if ((recipeAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+                oapiWriteLog((char*)"OEM Production: production_recipes.cfg path is a directory."); return false;
+            }
+            const oem::Result loaded = productionRecipeConfigStore_.load(productionRecipesPath_, productionRecipes_);
+            if (!loaded.ok) {
+                char error[512];sprintf(error,"OEM Production: recipe config failed (%s): %s",loaded.code.c_str(),loaded.message.c_str());oapiWriteLog(error);return false;
+            }
+        }
+        for (std::size_t i=0;i<productionRecipes_.recipes().size();++i) {
+            const oem::ProductionRecipe& recipe=productionRecipes_.recipes()[i];
+            bool locationFound=false;
+            for (std::size_t j=0;j<economicLocations_.entries().size();++j)
+                if (economicLocations_.entries()[j].storageId==recipe.locationId) locationFound=true;
+            if (!locationFound) {
+                char error[512];sprintf(error,"OEM Production: recipe %s references unknown storage %s.",recipe.recipeId.c_str(),recipe.locationId.c_str());oapiWriteLog(error);return false;
+            }
+            for (std::size_t j=0;j<recipe.inputs.size()+recipe.outputs.size();++j) {
+                const oem::ProductionMaterial& material = j<recipe.inputs.size() ? recipe.inputs[j] : recipe.outputs[j-recipe.inputs.size()];
+                oem::CargoDefinition definition;
+                if (!openingCatalog.find(material.cargoId,definition) || fabs(definition.unitMassKg-material.unitMassKg)>1.0e-9) {
+                    char error[512];sprintf(error,"OEM Production: recipe %s has unknown cargo or mass mismatch for %s.",recipe.recipeId.c_str(),material.cargoId.c_str());oapiWriteLog(error);return false;
+                }
+            }
+            if (!ensureCargoServiceInventory(recipe.locationId)) return false;
+        }
+        productionRecipesReady_ = true;
+        char recipeSummary[256];sprintf(recipeSummary,"OEM Production: loaded %lu configured recipes.",(unsigned long)productionRecipes_.recipes().size());oapiWriteLog(recipeSummary);
+
         std::set<std::string> sourceLocations;
         for (std::size_t i = 0; i < sources.size(); ++i)
             sourceLocations.insert(sources[i].locationId);
@@ -2932,6 +2977,17 @@ private:
                 productionConfigSaved.code.c_str(), productionConfigSaved.message.c_str());
             oapiWriteLog(error);
             return false;
+        }
+
+        const oem::Result recipeRecovery =
+            economyJournalStore_.recoverProductionRecipeTimes(economyJournalPath_, productionRecipes_);
+        if (!recipeRecovery.ok) {
+            char error[512];sprintf(error,"OEM Production: journal recovery failed (%s): %s",recipeRecovery.code.c_str(),recipeRecovery.message.c_str());oapiWriteLog(error);return false;
+        }
+        const oem::Result recipeConfigSaved =
+            productionRecipeConfigStore_.save(productionRecipesPath_, productionRecipes_);
+        if (!recipeConfigSaved.ok) {
+            char error[512];sprintf(error,"OEM Production: could not persist recovered recipe schedule (%s): %s",recipeConfigSaved.code.c_str(),recipeConfigSaved.message.c_str());oapiWriteLog(error);return false;
         }
 
         propellantRecoveryReady_ = recoverPropellantTransactions(openingLedger);
