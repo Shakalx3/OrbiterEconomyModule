@@ -47,10 +47,12 @@ Result PrimaryResourceBook::restoreCommitted(const std::string& id,const std::st
 Result PrimaryResourceBook::initializeUnsetTimes(SimulationSeconds now,bool&changed){
  if(now<0)return Result::failure("PRIMARY_SOURCE_TIME","Simulation time cannot be negative.");
  changed=false;if(now==0)return Result::success();
- for(std::size_t i=0;i<sources_.size();++i)if(sources_[i].lastProductionTime==0){
+ for(std::size_t i=0;i<sources_.size();++i){
   const SimulationSeconds cycle=sources_[i].cycleSeconds;
-  sources_[i].lastProductionTime=(now/cycle)*cycle;
-  changed=true;
+  if(sources_[i].lastProductionTime==0||sources_[i].lastProductionTime%cycle!=0){
+   sources_[i].lastProductionTime=(now/cycle)*cycle;
+   changed=true;
+  }
  }
  return Result::success();
 }
