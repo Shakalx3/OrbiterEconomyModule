@@ -83,6 +83,17 @@
 - [ ] Add stock-vessel cargo adapters only where a documented physical cargo interface exists.
 - [x] Docking and spaceport-location observation through the Orbiter bridge.
 
+### Production chains — in progress
+
+- [x] Add a portable recipe model with location-bound input/output cargo lines, cycle scheduling, enable/disable state, and deterministic operation IDs.
+- [x] Add durable atomic production commits to the global economy journal: all inputs are debited and all outputs credited together, with idempotent replay after scenario restart.
+- [x] Recover each recipe's last committed simulation time from the journal so a restart cannot repeat a completed production cycle.
+- [x] Add versioned, atomic persistence for editable production recipes and validate cargo IDs, unit masses, quantities, and economic locations at startup.
+- [x] Connect scheduled recipes to the Orbiter simulation-time update loop and log each successful production cycle.
+- [x] Generate starter recipes for every registered economic location on first initialization: water electrolysis, hydroponics, machinery fabrication, and medical synthesis. Existing recipe files are never overwritten.
+- [ ] Runtime-test input consumption, output creation, dynamic market price response, save/reload recovery, and insufficient-input behavior in Orbiter 2010.
+- [ ] Tune production cycle lengths and quantities after observing the first in-game economic simulation; keep recipes configurable rather than hard-coding future balancing changes.
+
 ### Live vessel refuelling — in progress
 
 - [ ] Treat all propellant resources on a vessel as one unified OEM fuel commodity, regardless of Orbiter resource type or vessel-specific fuel naming. The player sees one aggregate fuel quantity and one aggregate capacity; no per-engine/per-resource fuel selection or chemical-type distinction is exposed.
