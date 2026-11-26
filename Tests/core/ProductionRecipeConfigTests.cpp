@@ -2,13 +2,14 @@
 #include <cassert>
 #include <cstdio>
 #include <fstream>
+#include <iostream>
 int main(){
  const std::string path="OEMProductionRecipeConfigTests.cfg";std::remove(path.c_str());
  oem::ProductionRecipeBook book;oem::ProductionRecipe r;r.recipeId="water-electrolysis";r.locationId="ISS";r.cycleSeconds=86400;r.lastProductionTime=123;r.enabled=true;
  oem::ProductionMaterial in;in.cargoId="WATER";in.quantity=10;in.unitMassKg=1.0;r.inputs.push_back(in);
  oem::ProductionMaterial out;out.cargoId="OXYGEN";out.quantity=8;out.unitMassKg=1.0;r.outputs.push_back(out);
  assert(book.add(r).ok);oem::ProductionRecipeConfigStore store;assert(store.save(path,book).ok);
- oem::ProductionRecipeBook loaded;assert(store.load(path,loaded).ok);assert(loaded.recipes().size()==1);
+ oem::ProductionRecipeBook loaded;oem::Result loadResult=store.load(path,loaded);if(!loadResult.ok)std::cerr<<loadResult.code<<" "<<loadResult.message<<"\\n";assert(loadResult.ok);assert(loaded.recipes().size()==1);
  const oem::ProductionRecipe& got=loaded.recipes()[0];assert(got.recipeId==r.recipeId&&got.locationId==r.locationId);
  assert(got.cycleSeconds==86400&&got.lastProductionTime==123&&got.enabled);
  assert(got.inputs.size()==1&&got.inputs[0].cargoId=="WATER"&&got.inputs[0].quantity==10);
