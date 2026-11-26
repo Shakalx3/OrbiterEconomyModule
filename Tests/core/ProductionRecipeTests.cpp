@@ -27,14 +27,19 @@ int main(){
  locations["LunarFactory"]=starved;std::vector<oem::ProductionRecipeIntent> blocked;
  assert(book.planDue(7300,locations,blocked).ok&&blocked.empty());
 
+ // Calendar scheduling is tested with a stocked inventory, independently
+ // from the preceding starvation scenario.
+ std::map<std::string,oem::CargoServiceInventory> calendarInventories;
+ calendarInventories["LunarFactory"]=stock;
+
  // A newly loaded daily recipe is anchored to the Orbiter day boundary.
  oem::ProductionRecipe daily=r;daily.recipeId="daily-electrolysis";daily.cycleSeconds=86400;daily.lastProductionTime=0;
  oem::ProductionRecipeBook calendarBook;assert(calendarBook.add(daily).ok);
  bool clockInitialized=false;assert(calendarBook.initializeUnsetTimes(100000,clockInitialized).ok&&clockInitialized);
  assert(calendarBook.recipes()[0].lastProductionTime==86400);
  std::vector<oem::ProductionRecipeIntent> calendarDue;
- assert(calendarBook.planDue(172799,locations,calendarDue).ok&&calendarDue.empty());
- assert(calendarBook.planDue(172800,locations,calendarDue).ok&&calendarDue.size()==1);
+ assert(calendarBook.planDue(172799,calendarInventories,calendarDue).ok&&calendarDue.empty());
+ assert(calendarBook.planDue(172800,calendarInventories,calendarDue).ok&&calendarDue.size()==1);
  assert(calendarDue[0].simulationTime==172800);
  assert(calendarDue[0].operationId=="recipe-daily-electrolysis-172800");
  assert(calendarBook.markCommitted("daily-electrolysis",172800).ok);
