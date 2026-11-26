@@ -24,6 +24,10 @@ int main(){
  assert(clockBook.planDue(172800,locations,calendarDue).ok&&calendarDue.size()==1);
  assert(calendarDue[0].simulationTime==172800);
  assert(calendarDue[0].operationId=="primary-lunar-ore-vein-172800");
+ oem::PrimaryResourceSource legacySource=source;legacySource.sourceId="legacy-clock";legacySource.lastProductionTime=100000;
+ oem::PrimaryResourceBook migratedSources;assert(migratedSources.add(legacySource).ok);
+ initialized=false;assert(migratedSources.initializeUnsetTimes(200000,initialized).ok&&initialized);
+ assert(migratedSources.sources()[0].lastProductionTime==172800);
  bool openingConsumed=false;assert(clockBook.consumeOpeningStock("MoonBase",openingConsumed).ok&&openingConsumed);
  assert(clockBook.sources()[0].openingStock==0);
  assert(clockBook.consumeOpeningStock("MoonBase",openingConsumed).ok&&!openingConsumed);
