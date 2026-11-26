@@ -272,10 +272,10 @@ Result EconomyJournalStore::applyPrimaryProductionBatch(const std::string&p,
   Result applied=stock->second.apply(t);if(!applied.ok)return applied;
   const std::string record=encodeZ(v.operationId,v.sourceId,v.locationId,v.cargoId,v.quantity,v.unitMassKg,v.simulationTime);
   std::map<std::string,std::string>::const_iterator prior=ids.find(v.operationId);
-  if(prior!=ids.end()){if(prior->second+"\\n"!=record)return Result::failure("ECONOMY_OPERATION_CONFLICT","Primary production operation ID conflicts with an existing journal record.");}
+  if(prior!=ids.end()){if(prior->second+"\n"!=record)return Result::failure("ECONOMY_OPERATION_CONFLICT","Primary production operation ID conflicts with an existing journal record.");}
   else{ids[v.operationId]=record.substr(0,record.size()-1);pending+=record;}
  }
- if(!pending.empty()&&!appendDurable(p,(exists?std::string():std::string(kHeader)+"\\n")+pending))
+ if(!pending.empty()&&!appendDurable(p,(exists?std::string():std::string(kHeader)+"\n")+pending))
   return Result::failure("ECONOMY_JOURNAL_COMMIT","Could not durably append primary production batch.");
  inventories.swap(next);return Result::success();
 }
@@ -315,10 +315,10 @@ Result EconomyJournalStore::applyProductionRecipeBatch(const std::string&p,
   stock->second=candidate;
   const std::string record=encodeY(v);
   std::map<std::string,std::string>::const_iterator prior=ids.find(v.operationId);
-  if(prior!=ids.end()){if(prior->second+"\\n"!=record)return Result::failure("ECONOMY_OPERATION_CONFLICT","Recipe operation ID conflicts with an existing journal record.");}
+  if(prior!=ids.end()){if(prior->second+"\n"!=record)return Result::failure("ECONOMY_OPERATION_CONFLICT","Recipe operation ID conflicts with an existing journal record.");}
   else{ids[v.operationId]=record.substr(0,record.size()-1);pending+=record;}
  }
- if(!pending.empty()&&!appendDurable(p,(exists?std::string():std::string(kHeader)+"\\n")+pending))
+ if(!pending.empty()&&!appendDurable(p,(exists?std::string():std::string(kHeader)+"\n")+pending))
   return Result::failure("ECONOMY_JOURNAL_COMMIT","Could not durably append production recipe batch.");
  inventories.swap(next);return Result::success();
 }
