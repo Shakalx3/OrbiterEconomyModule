@@ -376,6 +376,44 @@ int main(){
  assert(!legacyContractLedger.getReputation("company",legacyReputation));
  std::remove(legacyContractPath.c_str());
 
+
+ // Production batches append many operations with a single replayable journal projection.
+ const std::string productionBatchPath="OEMProductionBatchTests.journal";
+ std::remove(productionBatchPath.c_str());
+ std::map<std::string,oem::CargoServiceInventory> batchStocks;
+ batchStocks.insert(std::make_pair("ISS",oem::CargoServiceInventory("ISS")));
+ assert(batchStocks["ISS"].setInitialStock("oxygen",5,10.0).ok);
+ oem::PrimaryResourceIntent primary;
+ primary.operationId="primary-batch-001";primary.sourceId="natural-oxygen-ISS";
+ primary.locationId="ISS";primary.cargoId="oxygen";primary.quantity=3;
+ primary.unitMassKg=10.0;primary.simulationTime=100;
+ std::vector<oem::PrimaryResourceIntent> primaryBatch(1,primary);
+ assert(store.applyPrimaryProductionBatch(productionBatchPath,primaryBatch,batchStocks).ok);
+ assert(batchStocks["ISS"].quantity("oxygen")==8);
+ oem::ProductionRecipeIntent recipe;
+ recipe.operationId="recipe-batch-001";recipe.recipeId="test-recipe";
+ recipe.locationId="ISS";recipe.simulationTime=100;
+ oem::ProductionMaterial input;input.cargoId="oxygen";input.quantity=2;input.unitMassKg=10.0;
+ oem::ProductionMaterial output;output.cargoId="oxygen";output.quantity=1;output.unitMassKg=10.0;
+ recipe.inputs.push_back(input);recipe.outputs.push_back(output);
+ std::vector<oem::ProductionRecipeIntent> recipeBatch(1,recipe);
+ assert(store.applyProductionRecipeBatch(productionBatchPath,recipeBatch,batchStocks).ok);
+ assert(batchStocks["ISS"].quantity("oxygen")==7);
+ // Retrying an already committed batch must not apply its transfers twice.
+ assert(store.applyPrimaryProductionBatch(productionBatchPath,primaryBatch,batchStocks).ok);
+ assert(store.applyProductionRecipeBatch(productionBatchPath,recipeBatch,batchStocks).ok);
+ assert(batchStocks["ISS"].quantity("oxygen")==7);
+ std::map<std::string,oem::CargoServiceInventory> batchRecoveredStocks;
+ batchRecoveredStocks.insert(std::make_pair("ISS",oem::CargoServiceInventory("ISS")));
+ assert(batchRecoveredStocks["ISS"].setInitialStock("oxygen",5,10.0).ok);
+ oem::Ledger batchLedger;assert(batchLedger.createAccount("company",1000).ok);
+ std::map<std::string,oem::CargoManifest> batchManifests;
+ assert(store.load(productionBatchPath,cat,batchLedger,batchRecoveredStocks,batchManifests).ok);
+ assert(batchRecoveredStocks["ISS"].quantity("oxygen")==7);
+ assert(store.load(productionBatchPath,cat,batchLedger,batchRecoveredStocks,batchManifests).ok);
+ assert(batchRecoveredStocks["ISS"].quantity("oxygen")==7);
+ std::remove(productionBatchPath.c_str());
+
  std::remove(cancelPath.c_str());
  std::remove(contractPath.c_str());
  std::remove(path.c_str());return 0;
