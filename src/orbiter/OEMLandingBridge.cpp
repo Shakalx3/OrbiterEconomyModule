@@ -2606,9 +2606,9 @@ private:
                 cargoServiceInventories_.find(intent.locationId);
             const long long quantityAfter = afterStock == cargoServiceInventories_.end()
                 ? quantityBefore : afterStock->second.quantity(intent.cargoId);
-            sprintf(message, "OEM PRIMARY PRODUCTION: source=%s location=%s cargo=%s before=%lld delta=+%lld after=%lld due=%lld",
+            sprintf(message, "OEM PRIMARY PRODUCTION: source=%s location=%s cargo=%s before=%lld delta=+%lld after=%lld due=%lld now=%lld",
                 intent.sourceId.c_str(), intent.locationId.c_str(), intent.cargoId.c_str(),
-                quantityBefore, intent.quantity, quantityAfter, (long long)intent.simulationTime);
+                quantityBefore, intent.quantity, quantityAfter, (long long)intent.simulationTime, (long long)now);
             oapiWriteLog(message);
         }
     }
@@ -2661,20 +2661,20 @@ private:
             for (std::size_t m=0;m<intent.inputs.size();++m) {
                 const long long after=afterRecipeStock==cargoServiceInventories_.end()?inputBefore[m]:
                     afterRecipeStock->second.quantity(intent.inputs[m].cargoId);
-                char detail[512];sprintf(detail,"OEM PRODUCTION DETAIL: recipe=%s location=%s input=%s before=%lld delta=-%lld after=%lld due=%lld",
+                char detail[512];sprintf(detail,"OEM PRODUCTION DETAIL: recipe=%s location=%s input=%s before=%lld delta=-%lld after=%lld due=%lld now=%lld",
                     intent.recipeId.c_str(),intent.locationId.c_str(),intent.inputs[m].cargoId.c_str(),
-                    inputBefore[m],intent.inputs[m].quantity,after,(long long)intent.simulationTime);oapiWriteLog(detail);
+                    inputBefore[m],intent.inputs[m].quantity,after,(long long)intent.simulationTime,(long long)now);oapiWriteLog(detail);
             }
             for (std::size_t m=0;m<intent.outputs.size();++m) {
                 const long long after=afterRecipeStock==cargoServiceInventories_.end()?outputBefore[m]:
                     afterRecipeStock->second.quantity(intent.outputs[m].cargoId);
-                char detail[512];sprintf(detail,"OEM PRODUCTION DETAIL: recipe=%s location=%s output=%s before=%lld delta=+%lld after=%lld due=%lld",
+                char detail[512];sprintf(detail,"OEM PRODUCTION DETAIL: recipe=%s location=%s output=%s before=%lld delta=+%lld after=%lld due=%lld now=%lld",
                     intent.recipeId.c_str(),intent.locationId.c_str(),intent.outputs[m].cargoId.c_str(),
-                    outputBefore[m],intent.outputs[m].quantity,after,(long long)intent.simulationTime);oapiWriteLog(detail);
+                    outputBefore[m],intent.outputs[m].quantity,after,(long long)intent.simulationTime,(long long)now);oapiWriteLog(detail);
             }
-            char message[512];sprintf(message,"OEM PRODUCTION: recipe=%s location=%s inputs=%lu outputs=%lu due=%lld",
+            char message[512];sprintf(message,"OEM PRODUCTION: recipe=%s location=%s inputs=%lu outputs=%lu due=%lld now=%lld",
                 intent.recipeId.c_str(),intent.locationId.c_str(),(unsigned long)intent.inputs.size(),
-                (unsigned long)intent.outputs.size(),(long long)intent.simulationTime);oapiWriteLog(message);
+                (unsigned long)intent.outputs.size(),(long long)intent.simulationTime,(long long)now);oapiWriteLog(message);
         }
     }
 
