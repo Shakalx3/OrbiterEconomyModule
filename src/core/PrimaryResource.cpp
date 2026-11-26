@@ -33,55 +33,53 @@ const PrimaryResourceSource* PrimaryResourceBook::find(const std::string& id)con
  std::map<std::string,std::size_t>::const_iterator it=indexes_.find(id);
  return it==indexes_.end()?0:&sources_[it->second];
 }
-bool PrimaryResourceBook::maximumStockFor(const std::string& location,const std::string& cargo,
- long long& maximum)const{
- for(std::size_t i=0;i<sources_.size();++i){
-  const PrimaryResourceSource& s=sources_[i];
-  if(s.locationId==location&&s.cargoId==cargo){maximum=s.maximumStock;return true;}
- }
+bool PrimaryResourceBook::maximumStockFor(const std::string& location,const std::string& cargo,long long& maximum)const{
+ for(std::size_t i=0;i<sources_.size();++i){const PrimaryResourceSource& s=sources_[i];if(s.locationId==location&&s.cargoId==cargo){maximum=s.maximumStock;return true;}}
  return false;
 }
-Result PrimaryResourceBook::restoreCommitted(const std::string& id,const std::string& location,
- const std::string& cargo,double mass,SimulationSeconds time){
- std::map<std::string,std::size_t>::iterator it=indexes_.find(id);
- if(it==indexes_.end())return Result::success();
+Result PrimaryResourceBook::restoreCommitted(const std::string& id,const std::string& location,const std::string& cargo,double mass,SimulationSeconds time){
+ std::map<std::string,std::size_t>::iterator it=indexes_.find(id);if(it==indexes_.end())return Result::success();
  PrimaryResourceSource& s=sources_[it->second];
- if(s.locationId!=location||s.cargoId!=cargo||!std::isfinite(mass)||!(mass>0.0)||
-    std::fabs(s.unitMassKg-mass)>1e-9||time<0)
+ if(s.locationId!=location||s.cargoId!=cargo||!std::isfinite(mass)||!(mass>0.0)||std::fabs(s.unitMassKg-mass)>1e-9||time<0)
   return Result::failure("PRIMARY_SOURCE_HISTORY_CONFLICT","A journaled production record conflicts with the current source definition.");
- if(time>s.lastProductionTime)s.lastProductionTime=time;
- return Result::success();
+ if(time>s.lastProductionTime)s.lastProductionTime=time;return Result::success();
 }
 Result PrimaryResourceBook::initializeUnsetTimes(SimulationSeconds now,bool&changed){
  if(now<0)return Result::failure("PRIMARY_SOURCE_TIME","Simulation time cannot be negative.");
- changed=false;
- if(now==0)return Result::success();
- for(std::size_t i=0;i<sources_.size();++i)
-  if(sources_[i].lastProductionTime==0){sources_[i].lastProductionTime=now;changed=true;}
+ changed=false;if(now==0)return Result::success();
+ for(std::size_t i=0;i<sources_.size();++i)if(sources_[i].lastProductionTime==0){
+  const SimulationSeconds cycle=sources_[i].cycleSeconds;
+  sources_[i].lastProductionTime=(now/cycle)*cycle;
+  changed=true;
+ }
  return Result::success();
 }
 Result PrimaryResourceBook::consumeOpeningStock(const std::string&location,bool&changed){
  if(location.empty())return Result::failure("PRIMARY_SOURCE_LOCATION","Location ID is required to consume opening stock.");
- changed=false;
- for(std::size_t i=0;i<sources_.size();++i)
-  if(sources_[i].locationId==location&&sources_[i].openingStock>0){sources_[i].openingStock=0;changed=true;}
+ changed=false;for(std::size_t i=0;i<sources_.size();++i)if(sources_[i].locationId==location&&sources_[i].openingStock>0){sources_[i].openingStock=0;changed=true;}
  return Result::success();
 }
 Result PrimaryResourceBook::planDue(SimulationSeconds now,const std::map<std::string,CargoServiceInventory>& inventories,std::vector<PrimaryResourceIntent>& out)const{
  if(now<0)return Result::failure("PRIMARY_SOURCE_TIME","Simulation time cannot be negative.");
  std::vector<PrimaryResourceIntent> pending;
- for(std::size_t i=0;i<sources_.size();++i){const PrimaryResourceSource&s=sources_[i];if(!s.enabled||now<s.lastProductionTime||now-s.lastProductionTime<s.cycleSeconds)continue;
+ for(std::size_t i=0;i<sources_.size();++i){
+  const PrimaryResourceSource&s=sources_[i];
+  if(!s.enabled||s.lastProductionTime>(std::numeric_limits<SimulationSeconds>::max)()-s.cycleSeconds)continue;
+  const SimulationSeconds dueTime=s.lastProductionTime+s.cycleSeconds;
+  if(now<dueTime)continue;
   std::map<std::string,CargoServiceInventory>::const_iterator loc=inventories.find(s.locationId);if(loc==inventories.end())continue;
   const long long current=loc->second.quantity(s.cargoId);if(current>=s.maximumStock)continue;
   const long long amount=std::min(s.unitsPerCycle,s.maximumStock-current);if(amount<=0)continue;
-  PrimaryResourceIntent p;p.sourceId=s.sourceId;p.locationId=s.locationId;p.cargoId=s.cargoId;p.quantity=amount;p.unitMassKg=s.unitMassKg;p.simulationTime=now;
-  p.operationId="primary-"+s.sourceId+"-"+std::to_string((long long)now);pending.push_back(p);
+  PrimaryResourceIntent p;p.sourceId=s.sourceId;p.locationId=s.locationId;p.cargoId=s.cargoId;p.quantity=amount;p.unitMassKg=s.unitMassKg;p.simulationTime=dueTime;
+  p.operationId="primary-"+s.sourceId+"-"+std::to_string((long long)dueTime);pending.push_back(p);
  }
  out.insert(out.end(),pending.begin(),pending.end());return Result::success();
 }
 Result PrimaryResourceBook::markCommitted(const std::string& id,SimulationSeconds time){
  std::map<std::string,std::size_t>::iterator it=indexes_.find(id);if(it==indexes_.end())return Result::failure("PRIMARY_SOURCE_UNKNOWN","Primary resource source does not exist.");
- PrimaryResourceSource& s=sources_[it->second];if(time<s.lastProductionTime||time<0||time-s.lastProductionTime<s.cycleSeconds)return Result::failure("PRIMARY_SOURCE_NOT_DUE","Production timestamp is not due for this source.");
+ PrimaryResourceSource& s=sources_[it->second];
+ if(time<0||s.lastProductionTime>(std::numeric_limits<SimulationSeconds>::max)()-s.cycleSeconds||time!=s.lastProductionTime+s.cycleSeconds)
+  return Result::failure("PRIMARY_SOURCE_NOT_DUE","Production timestamp must equal the next scheduled cycle boundary.");
  s.lastProductionTime=time;return Result::success();
 }
 }
