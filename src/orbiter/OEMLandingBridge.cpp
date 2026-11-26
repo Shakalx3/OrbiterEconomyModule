@@ -259,6 +259,43 @@ bool addDefaultProductionMaterial(oem::ProductionRecipe& recipe,const oem::Cargo
     return true;
 }
 
+bool hasProductionRecipe(const oem::ProductionRecipeBook& book,const std::string& recipeId) {
+    const std::vector<oem::ProductionRecipe>& recipes=book.recipes();
+    for(std::size_t i=0;i<recipes.size();++i) if(recipes[i].recipeId==recipeId) return true;
+    return false;
+}
+
+bool addDefaultPrimaryResourceSources(oem::PrimaryResourceBook& book,const oem::CargoCatalog& catalog,
+                                      const std::vector<oem::EconomicLocation>& locations,bool& changed) {
+    changed=false;
+    const char* cargoIds[]={"WATER","METALS","ELECTRONICS"};
+    const long long units[] ={20,5,2};
+    const oem::SimulationSeconds cycles[]={86400,172800,259200};
+    const long long caps[]={600,300,120};
+    const long long opening[]={120,60,40};
+    for(std::size_t i=0;i<locations.size();++i) {
+        const std::string& location=locations[i].storageId;
+        if(location.empty()) continue;
+        for(std::size_t j=0;j<3;++j) {
+            bool exists=false;
+            const std::vector<oem::PrimaryResourceSource>& sources=book.sources();
+            for(std::size_t k=0;k<sources.size();++k)
+                if(sources[k].locationId==location && sources[k].cargoId==cargoIds[j]) { exists=true; break; }
+            if(exists) continue;
+            oem::CargoDefinition definition;
+            if(!catalog.find(cargoIds[j],definition)) return false;
+            oem::PrimaryResourceSource source;
+            source.sourceId=std::string("natural-")+cargoIds[j]+"-"+location;
+            source.locationId=location;source.cargoId=cargoIds[j];
+            source.unitMassKg=definition.unitMassKg;source.unitsPerCycle=units[j];
+            source.cycleSeconds=cycles[j];source.maximumStock=caps[j];source.openingStock=opening[j];
+            if(!book.add(source).ok) return false;
+            changed=true;
+        }
+    }
+    return true;
+}
+
 bool addDefaultProductionRecipes(oem::ProductionRecipeBook& book,const oem::CargoCatalog& catalog,
                                  const std::vector<oem::EconomicLocation>& locations) {
     std::set<std::string> configured;
@@ -270,25 +307,29 @@ bool addDefaultProductionRecipes(oem::ProductionRecipeBook& book,const oem::Carg
         recipe.recipeId = "electrolysis-" + location;
         recipe.cycleSeconds = 86400;
         if (!addDefaultProductionMaterial(recipe,catalog,"WATER",10,false) ||
-            !addDefaultProductionMaterial(recipe,catalog,"OXYGEN",8,true) || !book.add(recipe).ok) return false;
+            !addDefaultProductionMaterial(recipe,catalog,"OXYGEN",8,true)) return false;
+        if (!hasProductionRecipe(book,recipe.recipeId) && !book.add(recipe).ok) return false;
 
         recipe = oem::ProductionRecipe(); recipe.locationId = location;
         recipe.recipeId = "hydroponics-" + location; recipe.cycleSeconds = 172800;
         if (!addDefaultProductionMaterial(recipe,catalog,"WATER",8,false) ||
             !addDefaultProductionMaterial(recipe,catalog,"OXYGEN",2,false) ||
-            !addDefaultProductionMaterial(recipe,catalog,"FOOD",5,true) || !book.add(recipe).ok) return false;
+            !addDefaultProductionMaterial(recipe,catalog,"FOOD",5,true)) return false;
+        if (!hasProductionRecipe(book,recipe.recipeId) && !book.add(recipe).ok) return false;
 
         recipe = oem::ProductionRecipe(); recipe.locationId = location;
         recipe.recipeId = "fabrication-" + location; recipe.cycleSeconds = 259200;
         if (!addDefaultProductionMaterial(recipe,catalog,"METALS",4,false) ||
             !addDefaultProductionMaterial(recipe,catalog,"ELECTRONICS",1,false) ||
-            !addDefaultProductionMaterial(recipe,catalog,"MACHINERY",1,true) || !book.add(recipe).ok) return false;
+            !addDefaultProductionMaterial(recipe,catalog,"MACHINERY",1,true)) return false;
+        if (!hasProductionRecipe(book,recipe.recipeId) && !book.add(recipe).ok) return false;
 
         recipe = oem::ProductionRecipe(); recipe.locationId = location;
         recipe.recipeId = "medical-synthesis-" + location; recipe.cycleSeconds = 259200;
         if (!addDefaultProductionMaterial(recipe,catalog,"WATER",5,false) ||
             !addDefaultProductionMaterial(recipe,catalog,"ELECTRONICS",2,false) ||
-            !addDefaultProductionMaterial(recipe,catalog,"MEDICAL",1,true) || !book.add(recipe).ok) return false;
+            !addDefaultProductionMaterial(recipe,catalog,"MEDICAL",1,true)) return false;
+        if (!hasProductionRecipe(book,recipe.recipeId) && !book.add(recipe).ok) return false;
     }
     return true;
 }
@@ -2822,7 +2863,7 @@ private:
                 oapiWriteLog(error);
                 return false;
             }
-            oapiWriteLog((char*)"OEM Primary Resources: created empty primary_resources.cfg; no sources are enabled.");
+            oapiWriteLog((char*)"OEM Primary Resources: created primary_resources.cfg.");
         } else {
             const oem::Result loaded = primaryResourceConfigStore_.load(primaryResourcesPath_, primaryResources_);
             if (!loaded.ok) {
@@ -2832,6 +2873,18 @@ private:
                 oapiWriteLog(error);
                 return false;
             }
+        }
+        bool primaryDefaultsAdded=false;
+        if (marketGoodsEnabled_ &&
+            !addDefaultPrimaryResourceSources(primaryResources_,openingCatalog,economicLocations_.entries(),primaryDefaultsAdded)) {
+            oapiWriteLog((char*)"OEM Primary Resources: built-in resource sources could not be initialized."); return false;
+        }
+        if (primaryDefaultsAdded) {
+            const oem::Result savedDefaults=primaryResourceConfigStore_.save(primaryResourcesPath_,primaryResources_);
+            if(!savedDefaults.ok) {
+                char error[512];sprintf(error,"OEM Primary Resources: could not save newly indexed sources (%s): %s",savedDefaults.code.c_str(),savedDefaults.message.c_str());oapiWriteLog(error);return false;
+            }
+            oapiWriteLog((char*)"OEM Primary Resources: added default water, metals and electronics sources for new economic locations.");
         }
         primaryResourcesReady_ = true;
         char sourceSummary[256];
@@ -2887,10 +2940,6 @@ private:
                 oapiWriteLog((char*)"OEM Production: could not inspect production_recipes.cfg."); return false;
             }
             productionRecipes_ = oem::ProductionRecipeBook();
-            if (marketGoodsEnabled_ &&
-                !addDefaultProductionRecipes(productionRecipes_, openingCatalog, economicLocations_.entries())) {
-                oapiWriteLog((char*)"OEM Production: built-in production recipes could not be initialized."); return false;
-            }
             const oem::Result created = productionRecipeConfigStore_.save(productionRecipesPath_, productionRecipes_);
             if (!created.ok) {
                 char error[512]; sprintf(error,"OEM Production: could not create recipe config (%s): %s",created.code.c_str(),created.message.c_str());oapiWriteLog(error);return false;
@@ -2903,6 +2952,17 @@ private:
             const oem::Result loaded = productionRecipeConfigStore_.load(productionRecipesPath_, productionRecipes_);
             if (!loaded.ok) {
                 char error[512];sprintf(error,"OEM Production: recipe config failed (%s): %s",loaded.code.c_str(),loaded.message.c_str());oapiWriteLog(error);return false;
+            }
+        }
+        const std::size_t recipesBeforeDefaults=productionRecipes_.recipes().size();
+        if (marketGoodsEnabled_ &&
+            !addDefaultProductionRecipes(productionRecipes_,openingCatalog,economicLocations_.entries())) {
+            oapiWriteLog((char*)"OEM Production: built-in production recipes could not be initialized."); return false;
+        }
+        if (productionRecipes_.recipes().size()!=recipesBeforeDefaults) {
+            const oem::Result savedDefaults=productionRecipeConfigStore_.save(productionRecipesPath_,productionRecipes_);
+            if(!savedDefaults.ok) {
+                char error[512];sprintf(error,"OEM Production: could not save newly indexed recipes (%s): %s",savedDefaults.code.c_str(),savedDefaults.message.c_str());oapiWriteLog(error);return false;
             }
         }
         for (std::size_t i=0;i<productionRecipes_.recipes().size();++i) {
