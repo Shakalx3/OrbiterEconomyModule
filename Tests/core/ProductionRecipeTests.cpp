@@ -40,9 +40,9 @@ int main(){
  assert(live["LunarFactory"].quantity("water")==35);
  assert(live["LunarFactory"].quantity("oxygen")==8);
  bool history=false;
- assert(journal.hasLocationCargoHistory(path,"LunarFactory","WATER",history).ok&&history);
- assert(journal.hasLocationCargoHistory(path,"LunarFactory","OXYGEN",history).ok&&history);
- assert(journal.hasLocationCargoHistory(path,"LunarFactory","FOOD",history).ok&&!history);
+ assert(journal.hasLocationCargoHistory(path,"LunarFactory","water",history).ok&&history);
+ assert(journal.hasLocationCargoHistory(path,"LunarFactory","oxygen",history).ok&&history);
+ assert(journal.hasLocationCargoHistory(path,"LunarFactory","food",history).ok&&!history);
  assert(journal.applyProductionRecipe(path,intent,live).ok);
  assert(live["LunarFactory"].quantity("ore")==90);
  assert(live["LunarFactory"].quantity("water")==35);
