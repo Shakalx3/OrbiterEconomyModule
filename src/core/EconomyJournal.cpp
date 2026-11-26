@@ -251,6 +251,77 @@ Result EconomyJournalStore::applyPrimaryProduction(const std::string&p,const std
  CargoServiceInventory next(it->second);CargoTransfer t;t.transferId=op;t.direction=CARGO_UNLOAD;t.vesselId="OEM-PRIMARY:"+source;t.locationId=location;t.cargoId=cargo;t.quantity=qty;t.unitMassKg=mass;t.simulationTime=time;Result x=next.apply(t);if(!x.ok)return x;
  const std::string record=encodeZ(op,source,location,cargo,qty,mass,time);x=appendUnique(p,record,op);if(x.ok)it->second=next;return x;
 }
+
+Result EconomyJournalStore::applyPrimaryProductionBatch(const std::string&p,
+ const std::vector<PrimaryResourceIntent>&intents,
+ std::map<std::string,CargoServiceInventory>&inventories)const{
+ if(intents.empty())return Result::success();
+ bool exists=false;std::string data;
+ if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not inspect global journal before primary production batch.");
+ std::map<std::string,std::string>ids;
+ if(exists){Result scanned=scanIds(data,ids);if(!scanned.ok)return scanned;}
+ std::map<std::string,CargoServiceInventory>next(inventories);
+ std::string pending;
+ for(std::size_t i=0;i<intents.size();++i){
+  const PrimaryResourceIntent&v=intents[i];
+  if(v.operationId.empty()||v.sourceId.empty()||v.locationId.empty()||v.cargoId.empty()||v.quantity<=0||!(v.unitMassKg>0.0)||!std::isfinite(v.unitMassKg)||v.simulationTime<0)
+   return Result::failure("PRIMARY_PRODUCTION_INVALID","Primary production batch contains an invalid operation.");
+  std::map<std::string,CargoServiceInventory>::iterator stock=next.find(v.locationId);
+  if(stock==next.end())return Result::failure("ECONOMY_UNKNOWN_STATION","Primary production batch references a location without inventory.");
+  CargoTransfer t;t.transferId=v.operationId;t.direction=CARGO_UNLOAD;t.vesselId="OEM-PRIMARY:"+v.sourceId;t.locationId=v.locationId;t.cargoId=v.cargoId;t.quantity=v.quantity;t.unitMassKg=v.unitMassKg;t.simulationTime=v.simulationTime;
+  Result applied=stock->second.apply(t);if(!applied.ok)return applied;
+  const std::string record=encodeZ(v.operationId,v.sourceId,v.locationId,v.cargoId,v.quantity,v.unitMassKg,v.simulationTime);
+  std::map<std::string,std::string>::const_iterator prior=ids.find(v.operationId);
+  if(prior!=ids.end()){if(prior->second+"\\n"!=record)return Result::failure("ECONOMY_OPERATION_CONFLICT","Primary production operation ID conflicts with an existing journal record.");}
+  else{ids[v.operationId]=record.substr(0,record.size()-1);pending+=record;}
+ }
+ if(!pending.empty()&&!appendDurable(p,(exists?std::string():std::string(kHeader)+"\\n")+pending))
+  return Result::failure("ECONOMY_JOURNAL_COMMIT","Could not durably append primary production batch.");
+ inventories.swap(next);return Result::success();
+}
+Result EconomyJournalStore::applyProductionRecipeBatch(const std::string&p,
+ const std::vector<ProductionRecipeIntent>&intents,
+ std::map<std::string,CargoServiceInventory>&inventories)const{
+ if(intents.empty())return Result::success();
+ bool exists=false;std::string data;
+ if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not inspect global journal before production recipe batch.");
+ std::map<std::string,std::string>ids;
+ if(exists){Result scanned=scanIds(data,ids);if(!scanned.ok)return scanned;}
+ std::map<std::string,CargoServiceInventory>next(inventories);
+ std::string pending;
+ for(std::size_t i=0;i<intents.size();++i){
+  const ProductionRecipeIntent&v=intents[i];
+  if(v.operationId.empty()||v.recipeId.empty()||v.locationId.empty()||v.simulationTime<0||v.inputs.empty()||v.outputs.empty())
+   return Result::failure("PRODUCTION_RECIPE_INVALID","Recipe batch contains an invalid operation.");
+  std::map<std::string,CargoServiceInventory>::iterator stock=next.find(v.locationId);
+  if(stock==next.end())return Result::failure("ECONOMY_UNKNOWN_STATION","Recipe batch references a location without inventory.");
+  CargoServiceInventory candidate(stock->second);
+  for(std::size_t m=0;m<v.inputs.size();++m){
+   const ProductionMaterial&x=v.inputs[m];
+   if(x.cargoId.empty()||x.quantity<=0||!(x.unitMassKg>0.0)||!std::isfinite(x.unitMassKg))
+    return Result::failure("PRODUCTION_RECIPE_INVALID","Recipe batch contains an invalid input material.");
+   for(std::size_t n=0;n<m;++n)if(v.inputs[n].cargoId==x.cargoId)return Result::failure("PRODUCTION_RECIPE_INVALID","Recipe input cargo IDs must be unique.");
+   CargoTransfer t;t.transferId=v.operationId+":in:"+x.cargoId;t.direction=CARGO_LOAD;t.vesselId="OEM-RECIPE:"+v.recipeId;t.locationId=v.locationId;t.cargoId=x.cargoId;t.quantity=x.quantity;t.unitMassKg=x.unitMassKg;t.simulationTime=v.simulationTime;
+   Result applied=candidate.apply(t);if(!applied.ok)return applied;
+  }
+  for(std::size_t m=0;m<v.outputs.size();++m){
+   const ProductionMaterial&x=v.outputs[m];
+   if(x.cargoId.empty()||x.quantity<=0||!(x.unitMassKg>0.0)||!std::isfinite(x.unitMassKg))
+    return Result::failure("PRODUCTION_RECIPE_INVALID","Recipe batch contains an invalid output material.");
+   for(std::size_t n=0;n<m;++n)if(v.outputs[n].cargoId==x.cargoId)return Result::failure("PRODUCTION_RECIPE_INVALID","Recipe output cargo IDs must be unique.");
+   CargoTransfer t;t.transferId=v.operationId+":out:"+x.cargoId;t.direction=CARGO_UNLOAD;t.vesselId="OEM-RECIPE:"+v.recipeId;t.locationId=v.locationId;t.cargoId=x.cargoId;t.quantity=x.quantity;t.unitMassKg=x.unitMassKg;t.simulationTime=v.simulationTime;
+   Result applied=candidate.apply(t);if(!applied.ok)return applied;
+  }
+  stock->second=candidate;
+  const std::string record=encodeY(v);
+  std::map<std::string,std::string>::const_iterator prior=ids.find(v.operationId);
+  if(prior!=ids.end()){if(prior->second+"\\n"!=record)return Result::failure("ECONOMY_OPERATION_CONFLICT","Recipe operation ID conflicts with an existing journal record.");}
+  else{ids[v.operationId]=record.substr(0,record.size()-1);pending+=record;}
+ }
+ if(!pending.empty()&&!appendDurable(p,(exists?std::string():std::string(kHeader)+"\\n")+pending))
+  return Result::failure("ECONOMY_JOURNAL_COMMIT","Could not durably append production recipe batch.");
+ inventories.swap(next);return Result::success();
+}
 Result EconomyJournalStore::applyExchange(const std::string&p,std::map<std::string,CargoServiceInventory>&inventories,CargoManifest&manifest,const CargoTransfer&t)const{
  std::map<std::string,CargoServiceInventory>::iterator it=inventories.find(t.locationId);if(it==inventories.end()||t.vesselId!=manifest.vesselId())return Result::failure("ECONOMY_EXCHANGE_IDENTITY","Transfer must reference a configured station and the selected vessel.");
  CargoServiceInventory nextStock(it->second);CargoManifest nextManifest(manifest);Result x=nextStock.apply(t);if(!x.ok)return x;x=t.direction==CARGO_LOAD?nextManifest.load(t):nextManifest.unload(t);if(!x.ok)return x;
