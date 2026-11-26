@@ -2590,14 +2590,8 @@ private:
             }
         }
         primaryResources_ = candidate;
-        const oem::Result saved = primaryResourceConfigStore_.save(
-            primaryResourcesPath_, primaryResources_);
-        if (!saved.ok) {
-            char error[512];
-            sprintf(error, "OEM Primary Resources: scheduler snapshot save failed (%s): %s",
-                saved.code.c_str(), saved.message.c_str());
-            oapiWriteLog(error);
-        }
+        // The durable economy journal is authoritative for committed timestamps.
+        // Startup recovery rebuilds scheduler times, avoiding synchronous config writes here.
         char message[256];
         sprintf(message, "OEM PRIMARY PRODUCTION: committed %lu source events at sim=%lld.",
             (unsigned long)intents.size(), (long long)now);
@@ -2694,14 +2688,8 @@ private:
             }
         }
         productionRecipes_ = candidate;
-        const oem::Result saved = productionRecipeConfigStore_.save(
-            productionRecipesPath_, productionRecipes_);
-        if (!saved.ok) {
-            char error[512];
-            sprintf(error, "OEM Production: scheduler snapshot save failed (%s): %s",
-                saved.code.c_str(), saved.message.c_str());
-            oapiWriteLog(error);
-        }
+        // The durable economy journal is authoritative for committed timestamps.
+        // Startup recovery rebuilds scheduler times, avoiding synchronous config writes here.
         char message[256];
         sprintf(message, "OEM PRODUCTION: committed %lu recipe events at sim=%lld.",
             (unsigned long)intents.size(), (long long)now);
