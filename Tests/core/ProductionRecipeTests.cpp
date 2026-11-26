@@ -4,6 +4,8 @@
 #include <cstdio>
 #include <map>
 #include <string>
+#undef assert
+#define assert(expression) do { if (!(expression)) return __LINE__; } while (0)
 int main(){
  oem::CargoServiceInventory stock("LunarFactory");
  assert(stock.setInitialStock("ore",100,2.0).ok);
