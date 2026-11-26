@@ -2540,6 +2540,11 @@ private:
         return true;
     }
 
+    // Keep calendar catch-up work bounded per Orbiter frame. Due intents remain
+    // eligible until their journal commit and scheduler marker are both applied,
+    // so the next frame naturally resumes the batch without dropping work.
+    static const std::size_t kProductionBatchLimit = 4;
+
     void updatePrimaryProduction(oem::SimulationSeconds now) {
         if (!economyReady_ || !primaryResourcesReady_ || primaryResources_.sources().empty()) return;
         bool clockInitialized = false;
@@ -2567,7 +2572,11 @@ private:
             oapiWriteLog(error);
             return;
         }
-        for (std::size_t i = 0; i < intents.size(); ++i) {
+
+        const std::size_t batchCount = intents.size() < kProductionBatchLimit
+            ? intents.size() : kProductionBatchLimit;
+        bool scheduleChanged = false;
+        for (std::size_t i = 0; i < batchCount; ++i) {
             const oem::PrimaryResourceIntent& intent = intents[i];
             std::map<std::string, oem::CargoServiceInventory>::const_iterator beforeStock =
                 cargoServiceInventories_.find(intent.locationId);
@@ -2594,13 +2603,8 @@ private:
                 return;
             }
             primaryResources_ = candidate;
-            const oem::Result saved = primaryResourceConfigStore_.save(primaryResourcesPath_, primaryResources_);
-            if (!saved.ok) {
-                char error[512];
-                sprintf(error, "OEM Primary Resources: schedule save failed source=%s (%s): %s",
-                    intent.sourceId.c_str(), saved.code.c_str(), saved.message.c_str());
-                oapiWriteLog(error);
-            }
+            scheduleChanged = true;
+
             char message[512];
             std::map<std::string, oem::CargoServiceInventory>::const_iterator afterStock =
                 cargoServiceInventories_.find(intent.locationId);
@@ -2609,6 +2613,26 @@ private:
             sprintf(message, "OEM PRIMARY PRODUCTION: source=%s location=%s cargo=%s before=%lld delta=+%lld after=%lld due=%lld now=%lld mjdDay=%lld daySecond=%lld",
                 intent.sourceId.c_str(), intent.locationId.c_str(), intent.cargoId.c_str(),
                 quantityBefore, intent.quantity, quantityAfter, (long long)intent.simulationTime, (long long)now, (long long)(now/86400), (long long)(now%86400));
+            oapiWriteLog(message);
+        }
+
+        // Persist the scheduler once per frame batch, not once per source.
+        // The durable journal remains the authority if the process stops before
+        // this snapshot is saved; startup recovery rebuilds committed times.
+        if (scheduleChanged) {
+            const oem::Result saved = primaryResourceConfigStore_.save(
+                primaryResourcesPath_, primaryResources_);
+            if (!saved.ok) {
+                char error[512];
+                sprintf(error, "OEM Primary Resources: batch schedule save failed (%s): %s",
+                    saved.code.c_str(), saved.message.c_str());
+                oapiWriteLog(error);
+            }
+        }
+        if (intents.size() > batchCount) {
+            char message[256];
+            sprintf(message, "OEM Primary Resources: deferred %lu due sources to later frames.",
+                (unsigned long)(intents.size() - batchCount));
             oapiWriteLog(message);
         }
     }
@@ -2627,7 +2651,11 @@ private:
         if (!planned.ok) {
             char error[512]; sprintf(error,"OEM Production: scheduling failed (%s): %s",planned.code.c_str(),planned.message.c_str());oapiWriteLog(error);return;
         }
-        for (std::size_t i=0;i<intents.size();++i) {
+
+        const std::size_t batchCount = intents.size() < kProductionBatchLimit
+            ? intents.size() : kProductionBatchLimit;
+        bool scheduleChanged = false;
+        for (std::size_t i=0;i<batchCount;++i) {
             const oem::ProductionRecipeIntent& intent=intents[i];
             std::vector<long long> inputBefore, outputBefore;
             std::map<std::string, oem::CargoServiceInventory>::const_iterator recipeStock =
@@ -2651,11 +2679,8 @@ private:
                     intent.recipeId.c_str(),marked.code.c_str(),marked.message.c_str());oapiWriteLog(error);return;
             }
             productionRecipes_=candidate;
-            const oem::Result saved=productionRecipeConfigStore_.save(productionRecipesPath_,productionRecipes_);
-            if (!saved.ok) {
-                char error[512];sprintf(error,"OEM Production: schedule save failed recipe=%s (%s): %s",
-                    intent.recipeId.c_str(),saved.code.c_str(),saved.message.c_str());oapiWriteLog(error);
-            }
+            scheduleChanged = true;
+
             std::map<std::string, oem::CargoServiceInventory>::const_iterator afterRecipeStock =
                 cargoServiceInventories_.find(intent.locationId);
             for (std::size_t m=0;m<intent.inputs.size();++m) {
@@ -2675,6 +2700,25 @@ private:
             char message[512];sprintf(message,"OEM PRODUCTION: recipe=%s location=%s inputs=%lu outputs=%lu due=%lld now=%lld mjdDay=%lld daySecond=%lld",
                 intent.recipeId.c_str(),intent.locationId.c_str(),(unsigned long)intent.inputs.size(),
                 (unsigned long)intent.outputs.size(),(long long)intent.simulationTime,(long long)now,(long long)(now/86400),(long long)(now%86400));oapiWriteLog(message);
+        }
+
+        // Save one scheduler snapshot after the bounded batch. Journal recovery
+        // makes an interrupted batch safe and prevents duplicate production.
+        if (scheduleChanged) {
+            const oem::Result saved = productionRecipeConfigStore_.save(
+                productionRecipesPath_, productionRecipes_);
+            if (!saved.ok) {
+                char error[512];
+                sprintf(error, "OEM Production: batch schedule save failed (%s): %s",
+                    saved.code.c_str(), saved.message.c_str());
+                oapiWriteLog(error);
+            }
+        }
+        if (intents.size() > batchCount) {
+            char message[256];
+            sprintf(message, "OEM Production: deferred %lu due recipes to later frames.",
+                (unsigned long)(intents.size() - batchCount));
+            oapiWriteLog(message);
         }
     }
 
