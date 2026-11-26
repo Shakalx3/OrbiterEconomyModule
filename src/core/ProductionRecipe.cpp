@@ -28,9 +28,11 @@ const std::vector<ProductionRecipe>& ProductionRecipeBook::recipes() const { ret
 Result ProductionRecipeBook::initializeUnsetTimes(SimulationSeconds now,bool& changed) {
     if(now<0)return Result::failure("PRODUCTION_RECIPE_TIME","Simulation time cannot be negative.");
     changed=false;if(now==0)return Result::success();
-    for(std::size_t i=0;i<recipes_.size();++i)if(recipes_[i].lastProductionTime==0){
+    for(std::size_t i=0;i<recipes_.size();++i){
         const SimulationSeconds cycle=recipes_[i].cycleSeconds;
-        recipes_[i].lastProductionTime=(now/cycle)*cycle;changed=true;
+        if(recipes_[i].lastProductionTime==0||recipes_[i].lastProductionTime%cycle!=0){
+            recipes_[i].lastProductionTime=(now/cycle)*cycle;changed=true;
+        }
     }
     return Result::success();
 }
