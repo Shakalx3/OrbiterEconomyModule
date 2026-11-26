@@ -7,6 +7,7 @@
 #include "ProductionRecipe.h"
 #include <map>
 #include <string>
+#include <vector>
 namespace oem {
 struct MissionFailurePolicy {
     unsigned int penaltyBasisPoints;
@@ -33,6 +34,13 @@ public:
     Result recoverPrimaryProductionTimes(const std::string& path, PrimaryResourceBook& book) const;
     Result recoverProductionRecipeTimes(const std::string& path, ProductionRecipeBook& book) const;
     Result applyProductionRecipe(const std::string& path, const ProductionRecipeIntent& intent,
+                std::map<std::string, CargoServiceInventory>& inventories) const;
+    // Commit many due production events with one journal scan and one durable flush.
+    Result applyPrimaryProductionBatch(const std::string& path,
+                const std::vector<PrimaryResourceIntent>& intents,
+                std::map<std::string, CargoServiceInventory>& inventories) const;
+    Result applyProductionRecipeBatch(const std::string& path,
+                const std::vector<ProductionRecipeIntent>& intents,
                 std::map<std::string, CargoServiceInventory>& inventories) const;
     Result hasLocationHistory(const std::string& path, const std::string& locationId, bool& hasHistory) const;
     Result hasLocationCargoHistory(const std::string& path, const std::string& locationId,
