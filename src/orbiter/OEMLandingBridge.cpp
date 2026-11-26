@@ -358,7 +358,7 @@ public:
           spaceportRegistryPath_(makeEconomyDataFilePath(hDLL, "spaceports.registry")),
           economicStations_(), economicStationsPath_(makeEconomyDataFilePath(hDLL, "economic_stations.registry")),
           spaceportRegistry_(), economicLocations_(), economicStationsReady_(false), cargoServicesReady_(false), ledger_(), cargoCatalog_(), economyReady_(false), journalReady_(false), sessionId_(),
-          currentSimulationTime_(0), cargoTransferSequence_(0), lastFocus_(0), completionNote_(0), notificationUntil_(0) {
+          currentSimulationTime_(0), lastProductionWallTick_(0), cargoTransferSequence_(0), lastFocus_(0), completionNote_(0), notificationUntil_(0) {
         g_bridge = this;
     }
 
@@ -1859,8 +1859,15 @@ public:
                 (mjd > 0.0 && _finite(mjd))
                     ? (oem::SimulationSeconds)(mjd * 86400.0 + 0.5)
                     : simSeconds;
-            updatePrimaryProduction(primaryTime);
-            updateProductionRecipes(primaryTime);
+            // Production catch-up is intentionally rate-limited in wall time.
+            // Each update commits whole batches, not one durable journal flush per event.
+            const DWORD productionTick = GetTickCount();
+            if (lastProductionWallTick_ == 0 ||
+                (DWORD)(productionTick - lastProductionWallTick_) >= 500) {
+                lastProductionWallTick_ = productionTick;
+                updatePrimaryProduction(primaryTime);
+                updateProductionRecipes(primaryTime);
+            }
             oem::MissionObjectiveBook objectiveDue = objectiveBook_;
             const std::vector<std::string> expiredObjectives = objectiveDue.expireDue(simSeconds);
             for (std::size_t i = 0; i < expiredObjectives.size(); ++i) {
@@ -3294,6 +3301,7 @@ private:
     bool journalReady_;
     std::string sessionId_;
     oem::SimulationSeconds currentSimulationTime_;
+    DWORD lastProductionWallTick_;
     unsigned long cargoTransferSequence_;
     OBJHANDLE lastFocus_;
     NOTEHANDLE completionNote_;
