@@ -38,7 +38,11 @@ int main(){
  assert(calendarDue[0].simulationTime==172800);
  assert(calendarDue[0].operationId=="recipe-daily-electrolysis-172800");
  assert(calendarBook.markCommitted("daily-electrolysis",172800).ok);
- assert(calendarBook.planDue(172800,locations,calendarDue).ok&&calendarDue.size()==1);
+ calendarDue.clear();assert(calendarBook.planDue(172800,locations,calendarDue).ok&&calendarDue.empty());
+ oem::ProductionRecipe legacyDaily=daily;legacyDaily.recipeId="legacy-daily";legacyDaily.lastProductionTime=100000;
+ oem::ProductionRecipeBook migratedBook;assert(migratedBook.add(legacyDaily).ok);
+ clockInitialized=false;assert(migratedBook.initializeUnsetTimes(200000,clockInitialized).ok&&clockInitialized);
+ assert(migratedBook.recipes()[0].lastProductionTime==172800);
  oem::ProductionRecipe bad=r;bad.recipeId="bad";bad.inputs[1].cargoId=bad.inputs[0].cargoId;assert(!book.add(bad).ok);
 
  std::fprintf(stderr,"checkpoint: journal section\\n");
