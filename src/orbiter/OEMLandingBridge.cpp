@@ -41,6 +41,7 @@
 #include "../core/PropellantTransaction.h"
 #include "../core/PropellantTransactionJournal.h"
 #include "../core/PrimaryResourceConfig.h"
+#include "../core/ProductionRecipeConfig.h"
 #include "../core/MarketPricing.h"
 
 namespace {
