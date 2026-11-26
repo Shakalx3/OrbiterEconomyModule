@@ -55,6 +55,10 @@ int main(){
  assert(replay["LunarFactory"].quantity("ore")==90);
  assert(replay["LunarFactory"].quantity("water")==35);
  assert(replay["LunarFactory"].quantity("oxygen")==8);
+ oem::ProductionRecipeBook recoveredBook; oem::ProductionRecipe recoveryRecipe=r;
+ recoveryRecipe.lastProductionTime=100; assert(recoveredBook.add(recoveryRecipe).ok);
+ assert(journal.recoverProductionRecipeTimes(path,recoveredBook).ok);
+ assert(recoveredBook.recipes()[0].lastProductionTime==3700);
 
  // Insufficient input cannot partially consume another input or append a record.
  const std::string poorPath="OEMProductionRecipePoorTests.journal";std::remove(poorPath.c_str());
