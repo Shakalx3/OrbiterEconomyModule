@@ -197,7 +197,14 @@ Result EconomyJournalStore::hasLocationCargoHistory(const std::string&p,const st
       r.transfer.locationId==location && r.transfer.cargoId==cargo;
   const bool matchingContractOrigin =
       r.contract.originLocationId==location && r.contract.cargoId==cargo;
-  if(matchingTradeOrProduction||matchingTransfer||matchingContractOrigin){
+  bool matchingRecipeMaterial = false;
+  if (r.type == 'Y' && r.station == location) {
+   for (std::size_t i=0;i<r.productionInputs.size();++i)
+    if (r.productionInputs[i].cargoId==cargo) matchingRecipeMaterial=true;
+   for (std::size_t i=0;i<r.productionOutputs.size();++i)
+    if (r.productionOutputs[i].cargoId==cargo) matchingRecipeMaterial=true;
+  }
+  if(matchingTradeOrProduction||matchingTransfer||matchingContractOrigin||matchingRecipeMaterial){
    hasHistory=true;return Result::success();
   }
  }
