@@ -2547,11 +2547,6 @@ private:
         return true;
     }
 
-    // Keep calendar catch-up work bounded per Orbiter frame. Due intents remain
-    // eligible until their journal commit and scheduler marker are both applied,
-    // so the next frame naturally resumes the batch without dropping work.
-    static const std::size_t kProductionBatchLimit = 4;
-
     void updatePrimaryProduction(oem::SimulationSeconds now) {
         if (!economyReady_ || !primaryResourcesReady_ || primaryResources_.sources().empty()) return;
         bool clockInitialized = false;
