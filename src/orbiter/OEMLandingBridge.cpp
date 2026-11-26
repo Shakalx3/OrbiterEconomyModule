@@ -248,6 +248,50 @@ std::string makeObjectiveMissionBoardPath(HINSTANCE module) {
     return makeEconomyDataFilePath(module, "objective_mission_boards.dat");
 }
 
+bool addDefaultProductionMaterial(oem::ProductionRecipe& recipe,const oem::CargoCatalog& catalog,
+                                      const char* cargoId,long long quantity,bool output) {
+    oem::CargoDefinition definition;
+    if (!catalog.find(cargoId, definition) || quantity <= 0) return false;
+    oem::ProductionMaterial material;
+    material.cargoId = cargoId; material.quantity = quantity; material.unitMassKg = definition.unitMassKg;
+    if (output) recipe.outputs.push_back(material); else recipe.inputs.push_back(material);
+    return true;
+}
+
+bool addDefaultProductionRecipes(oem::ProductionRecipeBook& book,const oem::CargoCatalog& catalog,
+                                 const std::vector<oem::EconomicLocation>& locations) {
+    std::set<std::string> configured;
+    for (std::size_t i = 0; i < locations.size(); ++i) {
+        const std::string& location = locations[i].storageId;
+        if (location.empty() || !configured.insert(location).second) continue;
+        oem::ProductionRecipe recipe;
+        recipe.locationId = location;
+        recipe.recipeId = "electrolysis-" + location;
+        recipe.cycleSeconds = 86400;
+        if (!addDefaultProductionMaterial(recipe,catalog,"WATER",10,false) ||
+            !addDefaultProductionMaterial(recipe,catalog,"OXYGEN",8,true) || !book.add(recipe).ok) return false;
+
+        recipe = oem::ProductionRecipe(); recipe.locationId = location;
+        recipe.recipeId = "hydroponics-" + location; recipe.cycleSeconds = 172800;
+        if (!addDefaultProductionMaterial(recipe,catalog,"WATER",8,false) ||
+            !addDefaultProductionMaterial(recipe,catalog,"OXYGEN",2,false) ||
+            !addDefaultProductionMaterial(recipe,catalog,"FOOD",5,true) || !book.add(recipe).ok) return false;
+
+        recipe = oem::ProductionRecipe(); recipe.locationId = location;
+        recipe.recipeId = "fabrication-" + location; recipe.cycleSeconds = 259200;
+        if (!addDefaultProductionMaterial(recipe,catalog,"METALS",4,false) ||
+            !addDefaultProductionMaterial(recipe,catalog,"ELECTRONICS",1,false) ||
+            !addDefaultProductionMaterial(recipe,catalog,"MACHINERY",1,true) || !book.add(recipe).ok) return false;
+
+        recipe = oem::ProductionRecipe(); recipe.locationId = location;
+        recipe.recipeId = "medical-synthesis-" + location; recipe.cycleSeconds = 259200;
+        if (!addDefaultProductionMaterial(recipe,catalog,"WATER",5,false) ||
+            !addDefaultProductionMaterial(recipe,catalog,"ELECTRONICS",2,false) ||
+            !addDefaultProductionMaterial(recipe,catalog,"MEDICAL",1,true) || !book.add(recipe).ok) return false;
+    }
+    return true;
+}
+
 class OEMLandingBridge : public oapi::Module {
 public:
     explicit OEMLandingBridge(HINSTANCE hDLL)
@@ -257,6 +301,9 @@ public:
           cargoTransferGate_(), cargoManifests_(), cargoManifestLoadAttempted_(),
           cargoStockConfigStore_(), cargoServiceInventories_(), cargoServiceInventoryLoadAttempted_(),
           economyJournalStore_(), primaryResourceConfigStore_(), primaryResources_(),
+          productionRecipeConfigStore_(), productionRecipes_(),
+          productionRecipesPath_(makeEconomyDataFilePath(hDLL, "production_recipes.cfg")),
+          productionRecipesReady_(false),
           primaryResourcesPath_(makeEconomyDataFilePath(hDLL, "primary_resources.cfg")),
           primaryResourcesReady_(false), contractBook_(), objectiveBook_(), pendingContractOffers_(), contractOfferSequence_(0), contractOfferDay_(-1), missionBoardStore_(), missionBoards_(), missionBoardPath_(makeMissionBoardPath(hDLL)), missionBoardsReady_(false), objectiveBoardStore_(), objectiveBoards_(), objectiveBoardPath_(makeObjectiveMissionBoardPath(hDLL)), objectiveBoardsReady_(false), economyJournalPath_(makeEconomyDataFilePath(hDLL, "economy.journal")),
           missionFailurePolicyStore_(), missionFailurePolicy_(),
@@ -1771,6 +1818,7 @@ public:
                     ? (oem::SimulationSeconds)(mjd * 86400.0 + 0.5)
                     : simSeconds;
             updatePrimaryProduction(primaryTime);
+            updateProductionRecipes(primaryTime);
             oem::MissionObjectiveBook objectiveDue = objectiveBook_;
             const std::vector<std::string> expiredObjectives = objectiveDue.expireDue(simSeconds);
             for (std::size_t i = 0; i < expiredObjectives.size(); ++i) {
@@ -2515,6 +2563,46 @@ private:
         }
     }
 
+    void updateProductionRecipes(oem::SimulationSeconds now) {
+        if (!economyReady_ || !productionRecipesReady_ || productionRecipes_.recipes().empty()) return;
+        bool clockInitialized = false;
+        const oem::Result clock = productionRecipes_.initializeUnsetTimes(now, clockInitialized);
+        if (!clock.ok) { oapiWriteLog((char*)"OEM Production: invalid simulation clock; recipes paused."); return; }
+        if (clockInitialized) {
+            const oem::Result saved = productionRecipeConfigStore_.save(productionRecipesPath_, productionRecipes_);
+            if (!saved.ok) { oapiWriteLog((char*)"OEM Production: could not persist initial recipe schedule; production paused."); return; }
+        }
+        std::vector<oem::ProductionRecipeIntent> intents;
+        const oem::Result planned = productionRecipes_.planDue(now, cargoServiceInventories_, intents);
+        if (!planned.ok) {
+            char error[512]; sprintf(error,"OEM Production: scheduling failed (%s): %s",planned.code.c_str(),planned.message.c_str());oapiWriteLog(error);return;
+        }
+        for (std::size_t i=0;i<intents.size();++i) {
+            const oem::ProductionRecipeIntent& intent=intents[i];
+            const oem::Result committed=economyJournalStore_.applyProductionRecipe(
+                economyJournalPath_,intent,cargoServiceInventories_);
+            if (!committed.ok) {
+                char error[512];sprintf(error,"OEM Production: recipe commit failed id=%s location=%s (%s): %s",
+                    intent.recipeId.c_str(),intent.locationId.c_str(),committed.code.c_str(),committed.message.c_str());oapiWriteLog(error);continue;
+            }
+            oem::ProductionRecipeBook candidate=productionRecipes_;
+            const oem::Result marked=candidate.markCommitted(intent.recipeId,intent.simulationTime);
+            if (!marked.ok) {
+                char error[512];sprintf(error,"OEM Production: scheduler update failed recipe=%s (%s): %s",
+                    intent.recipeId.c_str(),marked.code.c_str(),marked.message.c_str());oapiWriteLog(error);return;
+            }
+            productionRecipes_=candidate;
+            const oem::Result saved=productionRecipeConfigStore_.save(productionRecipesPath_,productionRecipes_);
+            if (!saved.ok) {
+                char error[512];sprintf(error,"OEM Production: schedule save failed recipe=%s (%s): %s",
+                    intent.recipeId.c_str(),saved.code.c_str(),saved.message.c_str());oapiWriteLog(error);
+            }
+            char message[512];sprintf(message,"OEM PRODUCTION: recipe=%s location=%s inputs=%lu outputs=%lu simt=%lld",
+                intent.recipeId.c_str(),intent.locationId.c_str(),(unsigned long)intent.inputs.size(),
+                (unsigned long)intent.outputs.size(),(long long)intent.simulationTime);oapiWriteLog(message);
+        }
+    }
+
     bool recoverPropellantTransactions(oem::Ledger& recoveredLedger) {
         if (propellantTransactionJournalPath_.empty()) return false;
         std::map<std::string, oem::PropellantTransaction> transactions;
@@ -3024,6 +3112,10 @@ private:
     oem::EconomyJournalStore economyJournalStore_;
     oem::PrimaryResourceConfigStore primaryResourceConfigStore_;
     oem::PrimaryResourceBook primaryResources_;
+    oem::ProductionRecipeConfigStore productionRecipeConfigStore_;
+    oem::ProductionRecipeBook productionRecipes_;
+    std::string productionRecipesPath_;
+    bool productionRecipesReady_;
     std::string primaryResourcesPath_;
     bool primaryResourcesReady_;
     oem::PropellantTransactionJournal propellantTransactionJournal_;
