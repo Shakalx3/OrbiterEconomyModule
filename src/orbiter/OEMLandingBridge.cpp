@@ -2796,8 +2796,7 @@ private:
     }
 
     void updateEconomicAgents(oem::SimulationSeconds now) {
-        if (!economyReady_ || !economicAgentsReady_ || !marketGoodsEnabled_ ||
-            economicAgents_.agents().empty()) return;
+        if (!economyReady_ || !economicAgentsReady_ || economicAgents_.agents().empty()) return;
         std::vector<oem::AgentTradeIntent> plannedIntents;
         const oem::Result planned = economicAgents_.planDueTrades(
             now, cargoCatalog_, cargoServiceInventories_, plannedIntents);
