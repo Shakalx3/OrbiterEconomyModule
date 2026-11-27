@@ -1,4 +1,5 @@
 #include "../../src/core/EconomyJournal.h"
+#include "../../src/core/ShipOwnership.h"
 #include <cassert>
 #include <cstdio>
 #include <map>
