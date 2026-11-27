@@ -1340,7 +1340,10 @@ public:
                 (unsigned long)(currentSimulationTime_ & 0xffffffffLL),
                 (unsigned long)(shipPurchaseSequence_ & 0xffffUL));
             char probe[64];strncpy(probe,vesselName,sizeof(probe)-1);probe[sizeof(probe)-1]=0;
-            if(!oapiGetVesselByName(probe)){purchaseId=vesselName;break;}
+            oem::OwnedVesselRecord priorPurchase;
+            if(!oapiGetVesselByName(probe)&&!fleet_.findByPurchase(vesselName,priorPurchase)){
+                purchaseId=vesselName;break;
+            }
         }
         if(purchaseId.empty())
             return oem::Result::failure("SHIP_PURCHASE_ID","Could not allocate a unique vessel purchase identity.");
