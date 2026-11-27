@@ -44,7 +44,7 @@ Role values: `1=SUPPLIER`, `2=CUSTOMER`, `3=CARRIER`, `4=COMPETITOR`. Boolean fi
 - The station inventory is debited/credited by a normal cargo inventory transfer. Agent inventory and balance are updated in the same journalled transaction.
 - No physical Orbiter vessel is created. An abstract sale is not a claim that a vessel flew or docked.
 
-The current route model uses the configured activity interval between trade actions. Distance-aware travel time, transport capacity, a global intensity setting, and an in-game activity screen are not implemented yet.
+Route travel time is now distance-aware. The bridge resolves registered Orbiter locations each agent tick and estimates same-body spaceport routes with great-circle surface distance; station, inter-body, and mixed routes use current global endpoint separation as an explicitly abstract straight-line estimate. Transit time is distance divided by a nominal 10 km/s economic speed, with the agent's configured activity interval as a minimum. This is not a physical flight path or a simulated vessel. Transport capacity, a global intensity setting, and an in-game activity screen are not implemented yet.
 
 ## Persistence and recovery
 
