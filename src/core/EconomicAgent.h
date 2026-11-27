@@ -21,6 +21,8 @@ struct EconomicAgent {
     std::vector<std::string> operatingLocationIds;
     std::vector<AgentCargoPolicy> cargoPolicies;
     std::map<std::string,long long> inventory;
+    std::map<std::string,std::string> cargoOriginLocation;
+    std::map<std::string,Credits> cargoUnitCost;
     Credits balance;
     bool unlimitedFunds;
     SimulationSeconds activityInterval;
