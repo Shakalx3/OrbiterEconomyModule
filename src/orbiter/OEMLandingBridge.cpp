@@ -9,6 +9,8 @@
 #include <vector>
 #include <string>
 #include <math.h>
+#include <float.h>
+#include <ctype.h>
 #include <fstream>
 #include <sstream>
 #include <locale>
@@ -1308,6 +1310,103 @@ public:
             oapiWriteLog(log);
         }
         return result;
+    }
+
+    oem::Result performShipPurchase(const std::string& focusedVesselId,
+                                    const std::string& className,
+                                    std::string& createdVesselName) {
+        if (!economyReady_ || !journalReady_ || !shipCatalogReady_ || economyJournalPath_.empty())
+            return oem::Result::failure("SHIP_PURCHASE_UNAVAILABLE","Economy or installed ship catalogue is not ready.");
+        if (!isFocusedVessel(focusedVesselId))
+            return oem::Result::failure("SHIP_PURCHASE_FOCUS","Purchase must be initiated from the currently focused vessel.");
+        oem::PropellantPriceContext locationContext;
+        std::string displayLocation;
+        oem::Result result=resolvePropellantContext(focusedVesselId,locationContext,displayLocation);
+        if(!result.ok)return oem::Result::failure("SHIP_PURCHASE_LOCATION", "Dock to a registered orbital economic station before purchasing a vessel.");
+        if(locationContext.locationKind!=oem::PROPELLANT_LOCATION_ORBITAL_STATION)
+            return oem::Result::failure("SHIP_PURCHASE_LOCATION","The first shipyard implementation supports registered orbital stations only.");
+        oem::Credits balance=0;
+        if(!ledger_.getBalance("company",balance))
+            return oem::Result::failure("SHIP_PURCHASE_ACCOUNT","Company account is unavailable.");
+        char vesselName[64]={};
+        std::string purchaseId;
+        for(unsigned int attempt=0;attempt<32;++attempt){
+            ++shipPurchaseSequence_;
+            sprintf(vesselName,"OEMBUY%08lX%04lX",
+                (unsigned long)(currentSimulationTime_ & 0xffffffffLL),
+                (unsigned long)(shipPurchaseSequence_ & 0xffffUL));
+            char probe[64];strncpy(probe,vesselName,sizeof(probe)-1);probe[sizeof(probe)-1]=0;
+            if(!oapiGetVesselByName(probe)){purchaseId=vesselName;break;}
+        }
+        if(purchaseId.empty())
+            return oem::Result::failure("SHIP_PURCHASE_ID","Could not allocate a unique vessel purchase identity.");
+        oem::ShipPurchaseQuote quote;
+        result=oem::createShipPurchaseQuote(shipCatalog_,purchaseId,className,
+            locationContext.locationId,oem::SHIP_DELIVERY_ORBITAL,balance,
+            currentSimulationTime_,quote);
+        if(!result.ok)return result;
+
+        OBJHANDLE focus=oapiGetFocusObject();
+        VESSEL* buyer=focus&&oapiIsVessel(focus)?oapiGetVesselInterface(focus):0;
+        if(!buyer)return oem::Result::failure("SHIP_PURCHASE_BUYER","Focused vessel interface is unavailable.");
+        OBJHANDLE stationHandle=0;
+        std::string stationName;
+        for(UINT i=0;i<buyer->DockCount();++i){
+            DOCKHANDLE dock=buyer->GetDockHandle(i);if(!dock)continue;
+            OBJHANDLE other=buyer->GetDockStatus(dock);if(!other||!oapiIsVessel(other))continue;
+            char name[128]={};oapiGetObjectName(other,name,sizeof(name));
+            if(name[0]&&economicStations_.isStation(name)){stationHandle=other;stationName=name;break;}
+        }
+        if(!stationHandle)
+            return oem::Result::failure("SHIP_PURCHASE_STATION","The focused vessel is not docked to a registered economic station.");
+        VESSEL* station=oapiGetVesselInterface(stationHandle);
+        if(!station)return oem::Result::failure("SHIP_PURCHASE_STATION","Registered station interface is unavailable.");
+        VESSELSTATUS2 stationStatus;ZeroMemory(&stationStatus,sizeof(stationStatus));
+        stationStatus.version=2;station->GetStatusEx(&stationStatus);
+        if(stationStatus.status!=0||!stationStatus.rbody)
+            return oem::Result::failure("SHIP_PURCHASE_SPAWN","The registered shipyard must be in free flight around a valid reference body.");
+        const double radius=sqrt(stationStatus.rpos.x*stationStatus.rpos.x+
+            stationStatus.rpos.y*stationStatus.rpos.y+stationStatus.rpos.z*stationStatus.rpos.z);
+        if(!(radius>1.0)||!_finite(radius))
+            return oem::Result::failure("SHIP_PURCHASE_SPAWN","Station orbital position is invalid.");
+        const double offset=10000.0;
+        const double ux=stationStatus.rpos.x/radius,uy=stationStatus.rpos.y/radius,uz=stationStatus.rpos.z/radius;
+        VECTOR3 stationGlobal;station->GetGlobalPos(stationGlobal);
+        VECTOR3 candidateGlobal={stationGlobal.x+ux*offset,stationGlobal.y+uy*offset,stationGlobal.z+uz*offset};
+        const double minimumSeparation=5000.0;
+        for(DWORD i=0;i<oapiGetVesselCount();++i){
+            OBJHANDLE other=oapiGetVesselByIndex((int)i);if(!other)continue;
+            VECTOR3 otherGlobal;oapiGetGlobalPos(other,&otherGlobal);
+            const double dx=candidateGlobal.x-otherGlobal.x,dy=candidateGlobal.y-otherGlobal.y,dz=candidateGlobal.z-otherGlobal.z;
+            if(dx*dx+dy*dy+dz*dz<minimumSeparation*minimumSeparation)
+                return oem::Result::failure("SHIP_PURCHASE_SPAWN_OCCUPIED","The planned delivery point is too close to another vessel.");
+        }
+        VESSELSTATUS2 spawn;ZeroMemory(&spawn,sizeof(spawn));
+        spawn.version=2;spawn.flag=VS_FUELRESET;spawn.rbody=stationStatus.rbody;
+        spawn.status=0;spawn.base=0;spawn.port=-1;
+        spawn.rpos.x=stationStatus.rpos.x+ux*offset;
+        spawn.rpos.y=stationStatus.rpos.y+uy*offset;
+        spawn.rpos.z=stationStatus.rpos.z+uz*offset;
+        spawn.rvel=stationStatus.rvel;spawn.arot=stationStatus.arot;spawn.vrot=stationStatus.vrot;
+        OBJHANDLE created=oapiCreateVesselEx(vesselName,quote.className.c_str(),&spawn);
+        if(!created)
+            return oem::Result::failure("SHIP_PURCHASE_CREATE","Orbiter could not instantiate the selected installed vessel class.");
+        oem::OwnedVesselRecord owned;
+        owned.purchaseId=purchaseId;owned.vesselId=purchaseId;owned.className=quote.className;
+        owned.acquisitionLocationId=quote.locationId;owned.acquisitionPrice=quote.price;
+        owned.acquiredAt=quote.simulationTime;
+        result=economyJournalStore_.purchaseShip(economyJournalPath_,purchaseId,"company",owned,ledger_,fleet_);
+        if(!result.ok){
+            if(!oapiDeleteVessel(created,0))oapiWriteLog((char*)"OEM Fleet: failed to remove vessel after purchase commit refusal; startup orphan cleanup will retry.");
+            return result;
+        }
+        const oem::Result saved=fleet_.save(fleetPath_);
+        if(!saved.ok)oapiWriteLog((char*)"OEM Fleet: purchase is durable in economy.journal; fleet snapshot save failed and will be rebuilt on reload.");
+        createdVesselName=purchaseId;
+        char log[256];sprintf(log,"OEM SHIP PURCHASE: vessel=%s class=%s price=%lld location=%s",
+            purchaseId.c_str(),quote.className.c_str(),(long long)quote.price,stationName.c_str());
+        oapiWriteLog(log);
+        return oem::Result::success();
     }
 
     bool economyReady() const { return economyReady_; }
@@ -3332,6 +3431,18 @@ private:
             return false;
         }
 
+        if (orbiterRoot_.empty()) {
+            oapiWriteLog((char*)"OEM Ship Catalogue: could not resolve Orbiter installation root.");
+            return false;
+        }
+        shipCatalog_.clear();
+        scanShipClassDirectory(orbiterRoot_, std::string(), shipCatalog_, 0);
+        shipCatalogReady_ = true;
+        char shipSummary[160];
+        sprintf(shipSummary, "OEM Ship Catalogue: found %lu installed vessel classes.",
+                (unsigned long)shipCatalog_.entries().size());
+        oapiWriteLog(shipSummary);
+
         std::map<std::string, oem::CargoManifest> openingManifests;
         const oem::Result recovered = economyJournalStore_.load(
             economyJournalPath_, openingCatalog, openingLedger,
@@ -3383,6 +3494,15 @@ private:
         for (std::map<std::string, oem::CargoManifest>::const_iterator it = cargoManifests_.begin();
              it != cargoManifests_.end(); ++it)
             cargoManifestLoadAttempted_.insert(it->first);
+        for (DWORD i = 0; i < oapiGetVesselCount(); ++i) {
+            OBJHANDLE orphan = oapiGetVesselByIndex((int)i);
+            if (!orphan) continue;
+            char orphanName[128] = {};
+            oapiGetObjectName(orphan, orphanName, sizeof(orphanName));
+            if (strncmp(orphanName, "OEMBUY", 6) == 0 && !fleet_.isOwned(orphanName)) {
+                if (oapiDeleteVessel(orphan, 0)) oapiWriteLog((char*)"OEM Fleet: removed an uncommitted orphan ship purchase.");
+            }
+        }
         economyReady_ = true;
         economicAgentsReady_ = true;
         oapiWriteLog((char*)"OEM Economy: global journal ready; legacy test journals are ignored.");
