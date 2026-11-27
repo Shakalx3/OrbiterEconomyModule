@@ -192,7 +192,23 @@ Current route-quote defaults are centralized in `MissionEconomicsConfig`: nomina
 - [x] Replace the fixed inter-location wait with distance-aware transit estimates: same-body spaceports use great-circle surface distance; other routes use current Orbiter global endpoint separation as an explicitly abstract straight-line estimate. Transit uses a nominal 10 km/s economic speed and never falls below the agent activity interval.
 - [ ] Add configurable transport capacity and prevent agents from moving more cargo per trip than their abstract fleet capacity.
 
-### Player fleet ownership and ship purchasing — next implementation phase
+### Player fleet ownership and ship purchasing — implementation in progress
+
+The initial native orbital shipyard slice is implemented on `feature/ship-purchasing`:
+
+- [x] Portable ship catalogue, delivery-compatibility and affordability quote model with automated tests.
+- [x] Discover installed vessel classes from `Config/Vessels`; require the configured module DLL (or built-in Orbiter module).
+- [x] Persist purchased-vessel ownership in a versioned fleet registry with atomic replacement, idempotent identity and corruption-safe loading.
+- [x] Add OEM Shipyard MFD (key B) with two-step confirmation and OEM Player Fleet MFD (key V).
+- [x] Create real Orbiter vessels through `oapiCreateVesselEx`, starting with empty propellant tanks.
+- [x] For orbital shipyards, use a size-scaled radial delivery offset from a registered free-flight station and reject a point within the clearance radius of another vessel.
+- [x] Persist ownership before charging through the existing version-1 durable debit record; startup reconciliation removes uncharged purchase intents and orphaned OEMBUY vessels.
+- [ ] Add configurable class-specific prices and delivery rules; the initial price is estimated from configured empty mass and maximum fuel.
+- [ ] Add planetary-surface shipyards with compatible landed vessel classes, valid base coordinates and terrain clearance.
+- [x] Initial fleet MFD shows purchased vessels, presence/missing status, class, acquisition price and acquisition location.
+- [ ] Expand fleet MFD to show current location/flight state, sale eligibility and all vessels classified as player-owned by the default rule.
+- [ ] Runtime-test purchase, physical creation, insufficient funds, scenario reload, missing/renamed vessels and duplicate prevention in Orbiter 2010.
+
 - [ ] Ownership default rule: every Orbiter vessel not explicitly registered in `EconomicStationRegistry` is presumed to be player-owned; there are no autonomous physical NPC vessels in the current design.
 - [x] Keep station identity separate from cargo-service permissions. Cargo-service permission does not implicitly register a vessel as an economic station; this separation is implemented and was tested in Orbiter.
 - [ ] On scenario load and vessel creation/deletion, derive and reconcile the player fleet from the live Orbiter vessel list plus the station registry; do not require manual registration of ordinary ships.
@@ -203,10 +219,10 @@ Current route-quote defaults are centralized in `MissionEconomicsConfig`: nomina
 - [x] Support purchasing an available ship from an eligible registered orbital station, with class, price and delivery location shown before confirmation. Planetary-surface shipyards remain future work.
 - [x] Use the Orbiter SDK live vessel-creation API (`oapiCreateVesselEx`) and `VESSELSTATUS2` to instantiate a real vessel during the running simulation.
 - [x] Validate installed class, account balance, registered-station eligibility, free-flight reference body and spawn clearance before charging. Persist ownership before the existing v1 durable debit; startup reconciliation removes uncharged intents/orphans, and purchase IDs are idempotent.
-- [ ] Choose a safe spawn location and initial state appropriate to the selling location; avoid spawning inside another vessel, inside terrain, or in an invalid orbital state. Planetary surface delivery requires valid base coordinates and a compatible vessel class.
+- [x] For orbital delivery, create the ship at a size-scaled radial offset from a registered free-flight station and refuse if another vessel is inside the clearance radius; the initial tank state is explicitly empty.\n- [ ] Extend spawn validation to planetary surface delivery, terrain/base clearance and class-specific landed states.
 - [x] Persist ownership independently of runtime vessel handles and reconcile purchase records against the durable company debit and vessel name on scenario load. Missing vessels remain recorded and are shown as missing.
 - [x] Integrate purchases with the company ledger using the existing backward-compatible v1 durable debit record, plus the separate persistent fleet registry. The journal schema/version is unchanged.
-- [ ] Expose owned fleet, current location/state, acquisition price, and sale eligibility in an in-game fleet management interface.
+- [x] Add the initial OEM Player Fleet MFD showing purchased ships, presence/missing status, class, acquisition price and acquisition location.\n- [ ] Expand fleet management to show current location/flight state, sale eligibility and all vessels classified as player-owned by the default rule.
 - [x] Treat SDK vessel creation as creation of an instance of an already installed vessel class, not arbitrary generation of a new spacecraft design.
 - [ ] Verify live creation, scenario save/reload persistence, ownership recovery, duplicate prevention, and rollback/failure handling in the target Orbiter runtime before release.
 ### Debt collection and player asset ownership — planned
