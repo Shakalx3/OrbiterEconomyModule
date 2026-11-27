@@ -106,6 +106,17 @@ Result PlayerFleetRegistry::registerPurchase(const OwnedVesselRecord& r) {
     purchaseIndex_[r.purchaseId]=vessels_.size(); vesselIndex_[r.vesselId]=vessels_.size();
     vessels_.push_back(r); return Result::success();
 }
+bool PlayerFleetRegistry::removePurchase(const std::string& purchaseId) {
+    std::map<std::string,std::size_t>::const_iterator it=purchaseIndex_.find(purchaseId);
+    if(it==purchaseIndex_.end())return false;
+    vessels_.erase(vessels_.begin()+it->second);
+    vesselIndex_.clear();purchaseIndex_.clear();
+    for(std::size_t i=0;i<vessels_.size();++i){
+        vesselIndex_[vessels_[i].vesselId]=i;
+        purchaseIndex_[vessels_[i].purchaseId]=i;
+    }
+    return true;
+}
 bool PlayerFleetRegistry::isOwned(const std::string&id)const{return vesselIndex_.find(id)!=vesselIndex_.end();}
 bool PlayerFleetRegistry::findByVessel(const std::string&id,OwnedVesselRecord&r)const{
     std::map<std::string,std::size_t>::const_iterator it=vesselIndex_.find(id);
