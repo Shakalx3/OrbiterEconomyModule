@@ -28,11 +28,14 @@ Result EconomicAgentBook::add(const EconomicAgent& a){
 }
 const std::vector<EconomicAgent>& EconomicAgentBook::agents()const{return agents_;}
 Result EconomicAgentBook::planDueTrades(SimulationSeconds now,const CargoCatalog& catalog,const std::map<std::string,CargoServiceInventory>& locations,std::vector<AgentTradeIntent>& out)const{
+ return planDueTrades(now,catalog,locations,std::map<std::string,std::map<std::string,SimulationSeconds> >(),out);
+}
+Result EconomicAgentBook::planDueTrades(SimulationSeconds now,const CargoCatalog& catalog,const std::map<std::string,CargoServiceInventory>& locations,const std::map<std::string,std::map<std::string,SimulationSeconds> >& routeTravelTimes,std::vector<AgentTradeIntent>& out)const{
  if(now<0)return Result::failure("INVALID_AGENT_TIME","Simulation time cannot be negative.");
  std::vector<AgentTradeIntent> planned;MarketPricingBook pricing;
  for(std::size_t i=0;i<agents_.size();++i){
   const EconomicAgent&a=agents_[i];
-  if(!a.enabled||now<a.lastActivityTime||now-a.lastActivityTime<a.activityInterval)continue;
+  if(!a.enabled||now<a.lastActivityTime)continue;
   bool selected=false;
   for(std::size_t p=0;p<a.cargoPolicies.size()&&!selected;++p){
    const AgentCargoPolicy&policy=a.cargoPolicies[p];CargoDefinition def;
@@ -43,6 +46,7 @@ Result EconomicAgentBook::planDueTrades(SimulationSeconds now,const CargoCatalog
    Credits price=0;std::string chosenLocation;long long chosenQuantity=0;
    const bool canBuy=(a.role==AGENT_CUSTOMER||a.role==AGENT_COMPETITOR||a.role==AGENT_CARRIER);
    const bool canSell=(a.role==AGENT_SUPPLIER||a.role==AGENT_COMPETITOR||a.role==AGENT_CARRIER);
+   if(held==0&&now-a.lastActivityTime<a.activityInterval)continue;
    if(held>0&&canSell){
     const std::map<std::string,std::string>::const_iterator originIt=a.cargoOriginLocation.find(policy.cargoId);
     const std::map<std::string,Credits>::const_iterator costIt=a.cargoUnitCost.find(policy.cargoId);
@@ -52,6 +56,15 @@ Result EconomicAgentBook::planDueTrades(SimulationSeconds now,const CargoCatalog
     for(std::size_t l=0;l<a.operatingLocationIds.size();++l){
      const std::string&locationId=a.operatingLocationIds[l];
      if(locationId==origin)continue;
+     SimulationSeconds routeTime=a.activityInterval;
+     if(!routeTravelTimes.empty()){
+      std::map<std::string,std::map<std::string,SimulationSeconds> >::const_iterator from=routeTravelTimes.find(origin);
+      if(from==routeTravelTimes.end())continue;
+      std::map<std::string,SimulationSeconds>::const_iterator route=from->second.find(locationId);
+      if(route==from->second.end()||route->second<0)continue;
+      routeTime=std::max(routeTime,route->second);
+     }
+     if(now-a.lastActivityTime<routeTime)continue;
      std::map<std::string,CargoServiceInventory>::const_iterator loc=locations.find(locationId);
      if(loc==locations.end())continue;
      Credits quote=0;
