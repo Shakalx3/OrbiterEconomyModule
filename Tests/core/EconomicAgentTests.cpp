@@ -31,6 +31,24 @@ int main(){
  assert(journal.load(path,catalog,ledger,recoveredLocations,manifests,0,0,&recoveredAgents).ok);
  assert(recoveredLocations["MoonBase"].quantity("ore")==25&&recoveredAgents.agents()[0].inventory.find("ore")->second==25);
  std::vector<oem::AgentTradeIntent> notDue;assert(recoveredAgents.planDueTrades(199,catalog,recoveredLocations,notDue).ok&&notDue.empty());
+ // A competitor buys from a surplus location, then carries the cargo to a
+ // different location only when the destination quote covers its purchase cost.
+ oem::CargoDefinition routeCargo;routeCargo.cargoId="route-ore";routeCargo.displayName="Route Ore";routeCargo.unitMassKg=1;routeCargo.buyPrice=10;routeCargo.sellPrice=7;assert(catalog.add(routeCargo).ok);
+ oem::CargoServiceInventory surplus("EarthBase");assert(surplus.setInitialStock("route-ore",200,1).ok);
+ oem::CargoServiceInventory demand("MarsBase");
+ std::map<std::string,oem::CargoServiceInventory> routeLocations;routeLocations["EarthBase"]=surplus;routeLocations["MarsBase"]=demand;
+ oem::EconomicAgent trader;trader.agentId="route-trader";trader.displayName="Route Trader";trader.role=oem::AGENT_COMPETITOR;trader.homeLocationId="EarthBase";trader.operatingLocationIds.push_back("EarthBase");trader.operatingLocationIds.push_back("MarsBase");trader.balance=1000;trader.activityInterval=100;
+ oem::AgentCargoPolicy routePolicy;routePolicy.cargoId="route-ore";routePolicy.targetQuantity=20;routePolicy.maximumBuyPrice=100;routePolicy.minimumSellPrice=0;trader.cargoPolicies.push_back(routePolicy);
+ oem::EconomicAgentBook routeBook;assert(routeBook.add(trader).ok);std::vector<oem::AgentTradeIntent> routeIntents;
+ assert(routeBook.planDueTrades(100,catalog,routeLocations,routeIntents).ok&&routeIntents.size()==1);
+ assert(routeIntents[0].locationId=="EarthBase"&&routeIntents[0].side==oem::AGENT_BUYS_FROM_LOCATION);
+ assert(routeBook.applyTrade(routeIntents[0],catalog,routeLocations).ok);
+ assert(routeLocations["EarthBase"].quantity("route-ore")==180&&routeBook.agents()[0].inventory.find("route-ore")->second==20);
+ routeIntents.clear();assert(routeBook.planDueTrades(200,catalog,routeLocations,routeIntents).ok&&routeIntents.size()==1);
+ assert(routeIntents[0].locationId=="MarsBase"&&routeIntents[0].side==oem::AGENT_SELLS_TO_LOCATION);
+ assert(routeBook.applyTrade(routeIntents[0],catalog,routeLocations).ok);
+ assert(routeLocations["MarsBase"].quantity("route-ore")==20&&routeBook.agents()[0].inventory.find("route-ore")->second==0);
+ assert(routeBook.agents()[0].balance==1060);
  // Agent trades are part of location history and prevent an opening-stock reseed.
  bool hasHistory=false;assert(journal.hasLocationHistory(path,"MoonBase",hasHistory).ok&&hasHistory);
  assert(journal.hasLocationCargoHistory(path,"MoonBase","ore",hasHistory).ok&&hasHistory);
