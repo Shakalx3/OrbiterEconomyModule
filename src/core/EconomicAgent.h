@@ -45,14 +45,15 @@ class EconomicAgentBook {
 public:
     Result add(const EconomicAgent& agent);
     const std::vector<EconomicAgent>& agents() const;
-    // Creates bounded, deterministic trade intents only. It does not mutate stock,
-    // balances or manifests; callers must durably commit an intent before applying it.
     Result planDueTrades(SimulationSeconds now, const CargoCatalog& catalog,
         const std::map<std::string,CargoServiceInventory>& locations,
         std::vector<AgentTradeIntent>& intents) const;
+    Result applyTrade(const AgentTradeIntent& intent, const CargoCatalog& catalog,
+        std::map<std::string,CargoServiceInventory>& locations);
 private:
     std::map<std::string,std::size_t> indexes_;
     std::vector<EconomicAgent> agents_;
+    std::map<std::string,std::string> appliedOperations_;
 };
 }
 #endif
