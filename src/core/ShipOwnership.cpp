@@ -1,5 +1,6 @@
 #include "ShipOwnership.h"
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <locale>
