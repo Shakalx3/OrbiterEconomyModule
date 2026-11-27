@@ -1355,7 +1355,9 @@ public:
                 (unsigned long)(shipPurchaseSequence_ & 0xffffUL));
             char probe[64];strncpy(probe,vesselName,sizeof(probe)-1);probe[sizeof(probe)-1]=0;
             oem::OwnedVesselRecord priorPurchase;
-            if(!oapiGetVesselByName(probe)&&!fleet_.findByPurchase(vesselName,priorPurchase)){
+            const std::string priorCharge = "propellant-charge:ship-purchase:" + std::string(vesselName);
+            if(!oapiGetVesselByName(probe)&&!fleet_.findByPurchase(vesselName,priorPurchase)&&
+               !ledger_.hasOperation(priorCharge)){
                 purchaseId=vesselName;break;
             }
         }
