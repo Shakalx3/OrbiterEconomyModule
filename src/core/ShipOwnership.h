@@ -17,6 +17,7 @@ struct ShipDefinition {
     std::string className;
     std::string displayName;
     Credits price;
+    double sizeMeters;
     bool orbitalDelivery;
     bool surfaceDelivery;
     ShipDefinition();
