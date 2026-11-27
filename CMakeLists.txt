@@ -37,6 +37,7 @@ add_library(OEMCore
     src/core/PropellantTransaction.cpp
     src/core/PropellantTransactionJournal.cpp
     src/core/EconomicAgent.cpp
+    src/core/EconomicAgentConfig.cpp
     src/core/PrimaryResource.cpp
     src/core/PrimaryResourceConfig.cpp
     src/core/ProductionRecipe.cpp
@@ -113,6 +114,8 @@ add_executable(OEMPropellantTransactionTests Tests/core/PropellantTransactionTes
 target_link_libraries(OEMPropellantTransactionTests PRIVATE OEMCore)
 add_executable(OEMPropellantTransactionJournalTests Tests/core/PropellantTransactionJournalTests.cpp)
 add_executable(OEMEconomicAgentTests Tests/core/EconomicAgentTests.cpp)
+add_executable(OEMEconomicAgentConfigTests Tests/core/EconomicAgentConfigTests.cpp)
+target_link_libraries(OEMEconomicAgentConfigTests PRIVATE OEMCore)
 add_executable(OEMPrimaryResourceTests Tests/core/PrimaryResourceTests.cpp)
 add_executable(OEMProductionRecipeTests Tests/core/ProductionRecipeTests.cpp)
 target_link_libraries(OEMProductionRecipeTests PRIVATE OEMCore)
@@ -165,6 +168,7 @@ add_test(NAME OEMPropellantQuoteTests COMMAND OEMPropellantQuoteTests)
 add_test(NAME OEMPropellantTransactionTests COMMAND OEMPropellantTransactionTests)
 add_test(NAME OEMPropellantTransactionJournalTests COMMAND OEMPropellantTransactionJournalTests)
 add_test(NAME OEMEconomicAgentTests COMMAND OEMEconomicAgentTests)
+add_test(NAME OEMEconomicAgentConfigTests COMMAND OEMEconomicAgentConfigTests)
 add_test(NAME OEMPrimaryResourceTests COMMAND OEMPrimaryResourceTests)
 add_test(NAME OEMProductionRecipeTests COMMAND OEMProductionRecipeTests)
 add_test(NAME OEMProductionRecipeConfigTests COMMAND OEMProductionRecipeConfigTests)
