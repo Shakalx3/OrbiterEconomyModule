@@ -2798,30 +2798,37 @@ private:
     void updateEconomicAgents(oem::SimulationSeconds now) {
         if (!economyReady_ || !economicAgentsReady_ || !marketGoodsEnabled_ ||
             economicAgents_.agents().empty()) return;
-        std::vector<oem::AgentTradeIntent> intents;
+        std::vector<oem::AgentTradeIntent> plannedIntents;
         const oem::Result planned = economicAgents_.planDueTrades(
-            now, cargoCatalog_, cargoServiceInventories_, intents);
+            now, cargoCatalog_, cargoServiceInventories_, plannedIntents);
         if (!planned.ok) {
             char error[512]; sprintf(error, "OEM Agents: planning failed (%s): %s", planned.code.c_str(), planned.message.c_str());
             oapiWriteLog(error); return;
         }
-        unsigned long committed = 0;
-        for (std::size_t i = 0; i < intents.size(); ++i) {
-            const oem::Result applied = economyJournalStore_.applyAgentTrade(
-                economyJournalPath_, intents[i], cargoCatalog_, economicAgents_, cargoServiceInventories_);
-            if (!applied.ok) {
-                char error[512]; sprintf(error, "OEM Agents: trade failed agent=%s location=%s cargo=%s (%s): %s",
-                    intents[i].agentId.c_str(), intents[i].locationId.c_str(), intents[i].cargoId.c_str(),
-                    applied.code.c_str(), applied.message.c_str());
-                oapiWriteLog(error);
-                continue;
-            }
-            ++committed;
+        if (plannedIntents.empty()) return;
+
+        // Agents are planned against the same opening snapshot. Project in order
+        // so competing agents cannot reserve the same station stock twice.
+        oem::EconomicAgentBook projectedAgents = economicAgents_;
+        std::map<std::string, oem::CargoServiceInventory> projectedInventories = cargoServiceInventories_;
+        std::vector<oem::AgentTradeIntent> acceptedIntents;
+        for (std::size_t i = 0; i < plannedIntents.size(); ++i) {
+            const oem::Result projected = projectedAgents.applyTrade(
+                plannedIntents[i], cargoCatalog_, projectedInventories);
+            if (projected.ok) acceptedIntents.push_back(plannedIntents[i]);
         }
-        if (committed > 0) {
-            char summary[256]; sprintf(summary, "OEM Agents: committed %lu background trade(s).", committed);
-            oapiWriteLog(summary);
+        if (acceptedIntents.empty()) return;
+
+        const oem::Result committed = economyJournalStore_.applyAgentTradeBatch(
+            economyJournalPath_, acceptedIntents, cargoCatalog_, economicAgents_, cargoServiceInventories_);
+        if (!committed.ok) {
+            char error[512]; sprintf(error, "OEM Agents: background trade batch failed (%s): %s",
+                committed.code.c_str(), committed.message.c_str());
+            oapiWriteLog(error); return;
         }
+        char summary[256]; sprintf(summary, "OEM Agents: committed %lu background trade(s) in one journal batch.",
+            (unsigned long)acceptedIntents.size());
+        oapiWriteLog(summary);
     }
 
     bool initializeEconomyState() {
