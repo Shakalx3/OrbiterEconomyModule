@@ -40,6 +40,9 @@ public:
     Result applyAgentTrade(const std::string& path, const AgentTradeIntent& intent,
                 const CargoCatalog& catalog, EconomicAgentBook& agents,
                 std::map<std::string, CargoServiceInventory>& inventories) const;
+    Result applyAgentTradeBatch(const std::string& path, const std::vector<AgentTradeIntent>& intents,
+                const CargoCatalog& catalog, EconomicAgentBook& agents,
+                std::map<std::string, CargoServiceInventory>& inventories) const;
     // Commit many due production events with one journal scan and one durable flush.
     Result applyPrimaryProductionBatch(const std::string& path,
                 const std::vector<PrimaryResourceIntent>& intents,
