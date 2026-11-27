@@ -140,7 +140,7 @@ Result MissionFailurePolicyStore::loadOrCreate(const std::string& path, MissionF
     policy.reputationDelta = (int)reputation;
     return Result::success();
 }
-Result EconomyJournalStore::load(const std::string&p,const CargoCatalog&cat,Ledger&ledger,std::map<std::string,CargoServiceInventory>&inventories,std::map<std::string,CargoManifest>&manifests,DeliveryContractBook*contracts,MissionObjectiveBook*objectives,EconomicAgentBook*agents)const{
+Result EconomyJournalStore::load(const std::string&p,const CargoCatalog&cat,Ledger&ledger,std::map<std::string,CargoServiceInventory>&inventories,std::map<std::string,CargoManifest>&manifests,DeliveryContractBook*contracts,MissionObjectiveBook*objectives,EconomicAgentBook*agents,PlayerFleetRegistry*fleet)const{
  bool exists=false;std::string data;if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not read or repair the global journal tail.");if(!exists)return Result::success();
  std::map<std::string,std::string> ids;Result valid=scanIds(data,ids);if(!valid.ok)return valid;
  Ledger nextLedger(ledger);std::map<std::string,CargoServiceInventory> nextInventories(inventories);std::map<std::string,CargoManifest> nextManifests(manifests);DeliveryContractBook nextContracts=contracts?*contracts:DeliveryContractBook();MissionObjectiveBook nextObjectives=objectives?*objectives:MissionObjectiveBook();EconomicAgentBook nextAgents=agents?*agents:EconomicAgentBook();PlayerFleetRegistry nextFleet=fleet?*fleet:PlayerFleetRegistry();
