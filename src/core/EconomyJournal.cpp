@@ -78,23 +78,123 @@ bool decode(const std::string&s,Entry&r){r.total=0;r.time=0;r.reputationDelta=0;
  return false;}
 std::string opOf(const Entry&r){return r.type=='X'?r.transfer.transferId:r.op;}
 
-bool readJournal(const std::string&p,bool&exists,std::string&data){std::ifstream in(p.c_str(),std::ios::binary);if(!in){exists=false;data.clear();return true;}exists=true;data.assign(std::istreambuf_iterator<char>(in),std::istreambuf_iterator<char>());if(!in.good()&&!in.eof())return false;if(!data.empty()&&data[data.size()-1]!='\n'){std::string::size_type n=data.find_last_of('\n');std::size_t keep=n==std::string::npos?0:n+1;
+struct JournalCache {
+ bool valid, exists, idsValid;
+ unsigned long long fileSize, fileStamp;
+ std::string data;
+ std::map<std::string,std::string> ids;
+ JournalCache():valid(false),exists(false),idsValid(false),fileSize(0),fileStamp(0){}
+};
+std::map<std::string,JournalCache> g_journalCaches;
+bool journalFileStamp(const std::string&p,bool&exists,unsigned long long&size,unsigned long long&stamp){
 #ifdef _WIN32
- HANDLE h=CreateFileA(p.c_str(),GENERIC_WRITE,0,0,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,0);if(h==INVALID_HANDLE_VALUE)return false;LARGE_INTEGER q;q.QuadPart=keep;bool ok=SetFilePointerEx(h,q,0,FILE_BEGIN)&&SetEndOfFile(h)&&FlushFileBuffers(h);CloseHandle(h);if(!ok)return false;
+ WIN32_FILE_ATTRIBUTE_DATA a;
+ if(!GetFileAttributesExA(p.c_str(),GetFileExInfoStandard,&a)){
+  DWORD e=GetLastError();
+  if(e==ERROR_FILE_NOT_FOUND||e==ERROR_PATH_NOT_FOUND){exists=false;size=stamp=0;return true;}
+  return false;
+ }
+ exists=true;
+ size=((unsigned long long)a.nFileSizeHigh<<32)|(unsigned long long)a.nFileSizeLow;
+ stamp=((unsigned long long)a.ftLastWriteTime.dwHighDateTime<<32)|(unsigned long long)a.ftLastWriteTime.dwLowDateTime;
+ return true;
 #else
- int fd=open(p.c_str(),O_WRONLY);if(fd<0)return false;bool ok=ftruncate(fd,(off_t)keep)==0&&fsync(fd)==0;if(close(fd))ok=false;if(!ok)return false;
-#endif
- data.resize(keep);}return true;}
-bool appendDurable(const std::string&p,const std::string&s){
-#ifdef _WIN32
- HANDLE h=CreateFileA(p.c_str(),GENERIC_WRITE,FILE_SHARE_READ,0,OPEN_ALWAYS,FILE_ATTRIBUTE_NORMAL,0);if(h==INVALID_HANDLE_VALUE)return false;LARGE_INTEGER z;z.QuadPart=0;bool ok=SetFilePointerEx(h,z,0,FILE_END)!=0;DWORD n=0;if(ok)ok=WriteFile(h,s.data(),(DWORD)s.size(),&n,0)&&n==s.size();if(ok)ok=FlushFileBuffers(h)!=0;CloseHandle(h);return ok;
-#else
- int fd=open(p.c_str(),O_WRONLY|O_CREAT|O_APPEND,0666);if(fd<0)return false;std::size_t n=0;bool ok=true;while(n<s.size()){ssize_t k=write(fd,s.data()+n,s.size()-n);if(k<=0){ok=false;break;}n+=(std::size_t)k;}if(ok)ok=fsync(fd)==0;if(close(fd))ok=false;return ok;
+ struct stat a;
+ if(stat(p.c_str(),&a)!=0){
+  if(errno==ENOENT){exists=false;size=stamp=0;return true;}
+  return false;
+ }
+ exists=true;size=(unsigned long long)a.st_size;
+ stamp=((unsigned long long)a.st_mtime<<32)^(unsigned long long)a.st_ctime;
+ return true;
 #endif
 }
-Result scanIds(const std::string&data,std::map<std::string,std::string>&ids){std::istringstream in(data);std::string line;if(!std::getline(in,line)||line!=kHeader)return Result::failure("ECONOMY_JOURNAL_HEADER","Global economy journal header or version is invalid.");while(std::getline(in,line)){if(!line.empty()&&line[line.size()-1]=='\r')line.erase(line.size()-1);if(line.empty())continue;Entry r;if(!decode(line,r)||opOf(r).empty())return Result::failure("ECONOMY_JOURNAL_CORRUPT","A complete global economy record is invalid.");std::map<std::string,std::string>::const_iterator it=ids.find(opOf(r));if(it!=ids.end()){if(it->second!=line)return Result::failure("ECONOMY_OPERATION_CONFLICT","An operation ID is reused by different global journal records.");}else ids[opOf(r)]=line;}return Result::success();}
-Result appendUnique(const std::string&p,const std::string&record,const std::string&operationId){bool exists=false;std::string data;if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not inspect global journal before contract append.");std::map<std::string,std::string>ids;if(exists){Result x=scanIds(data,ids);if(!x.ok)return x;}std::map<std::string,std::string>::const_iterator prior=ids.find(operationId);if(prior!=ids.end())return prior->second+"\n"==record?Result::success():Result::failure("ECONOMY_OPERATION_CONFLICT","Contract operation ID already belongs to a different journal record.");if(!appendDurable(p,(exists?std::string():std::string(kHeader)+"\n")+record))return Result::failure("ECONOMY_JOURNAL_COMMIT","Could not durably append contract operation.");return Result::success();}
-Result journalHasOperation(const std::string&p,const std::string&operationId,bool&found){bool exists=false;std::string data;if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not inspect global journal before expiry retry.");found=false;if(!exists)return Result::success();std::map<std::string,std::string>ids;Result scanned=scanIds(data,ids);if(!scanned.ok)return scanned;found=ids.find(operationId)!=ids.end();return Result::success();}
+void updateCachedJournalAfterAppend(const std::string&p,const std::string&s){
+ std::map<std::string,JournalCache>::iterator it=g_journalCaches.find(p);
+ if(it==g_journalCaches.end()||!it->second.valid)return;
+ JournalCache&cache=it->second;
+ cache.data+=s;cache.exists=true;cache.fileSize+=s.size();
+ if(cache.idsValid){
+  std::istringstream in(s);std::string line;
+  while(std::getline(in,line)){
+   if(line.empty()||line==kHeader)continue;
+   if(!line.empty()&&line[line.size()-1]=='\r')line.erase(line.size()-1);
+   Entry r;
+   if(!decode(line,r)||opOf(r).empty()){cache.idsValid=false;cache.ids.clear();break;}
+   const std::string id=opOf(r);
+   std::map<std::string,std::string>::const_iterator prior=cache.ids.find(id);
+   if(prior!=cache.ids.end()&&prior->second!=line){cache.idsValid=false;cache.ids.clear();break;}
+   cache.ids[id]=line;
+  }
+ }
+ bool exists=false;unsigned long long size=0,stamp=0;
+ if(journalFileStamp(p,exists,size,stamp)&&exists){cache.fileSize=size;cache.fileStamp=stamp;}
+ else cache.valid=false;
+}
+
+bool readJournal(const std::string&p,bool&exists,std::string&data){
+ bool stampExists=false;unsigned long long fileSize=0,fileStamp=0;
+ const bool stampKnown=journalFileStamp(p,stampExists,fileSize,fileStamp);
+ std::map<std::string,JournalCache>::iterator cached=g_journalCaches.find(p);
+ if(stampKnown&&cached!=g_journalCaches.end()&&cached->second.valid&&
+    cached->second.exists==stampExists&&cached->second.fileSize==fileSize&&
+    cached->second.fileStamp==fileStamp){
+  exists=cached->second.exists;data=cached->second.data;return true;
+ }
+ std::ifstream in(p.c_str(),std::ios::binary);
+ if(!in){
+  if(stampKnown&&!stampExists){exists=false;data.clear();JournalCache&entry=g_journalCaches[p];entry=JournalCache();entry.valid=true;return true;}
+  exists=false;data.clear();return true;
+ }
+ exists=true;data.assign(std::istreambuf_iterator<char>(in),std::istreambuf_iterator<char>());
+ if(!in.good()&&!in.eof())return false;
+ if(!data.empty()&&data[data.size()-1]!='\n'){
+  std::string::size_type n=data.find_last_of('\n');std::size_t keep=n==std::string::npos?0:n+1;
+#ifdef _WIN32
+  HANDLE h=CreateFileA(p.c_str(),GENERIC_WRITE,0,0,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,0);if(h==INVALID_HANDLE_VALUE)return false;LARGE_INTEGER q;q.QuadPart=keep;bool ok=SetFilePointerEx(h,q,0,FILE_BEGIN)&&SetEndOfFile(h)&&FlushFileBuffers(h);CloseHandle(h);if(!ok)return false;
+#else
+  int fd=open(p.c_str(),O_WRONLY);if(fd<0)return false;bool ok=ftruncate(fd,(off_t)keep)==0&&fsync(fd)==0;if(close(fd))ok=false;if(!ok)return false;
+#endif
+  data.resize(keep);
+ }
+ JournalCache&entry=g_journalCaches[p];entry=JournalCache();entry.valid=stampKnown;entry.exists=true;entry.data=data;entry.fileSize=data.size();
+ bool nowExists=false;unsigned long long nowSize=0,nowStamp=0;
+ if(journalFileStamp(p,nowExists,nowSize,nowStamp)&&nowExists){entry.fileSize=nowSize;entry.fileStamp=nowStamp;}
+ else entry.valid=false;
+ return true;
+}
+bool appendDurable(const std::string&p,const std::string&s){
+ bool ok=false;
+#ifdef _WIN32
+ HANDLE h=CreateFileA(p.c_str(),GENERIC_WRITE,FILE_SHARE_READ,0,OPEN_ALWAYS,FILE_ATTRIBUTE_NORMAL,0);if(h==INVALID_HANDLE_VALUE)return false;LARGE_INTEGER z;z.QuadPart=0;ok=SetFilePointerEx(h,z,0,FILE_END)!=0;DWORD n=0;if(ok)ok=WriteFile(h,s.data(),(DWORD)s.size(),&n,0)&&n==s.size();if(ok)ok=FlushFileBuffers(h)!=0;CloseHandle(h);
+#else
+ int fd=open(p.c_str(),O_WRONLY|O_CREAT|O_APPEND,0666);if(fd<0)return false;std::size_t n=0;ok=true;while(n<s.size()){ssize_t k=write(fd,s.data()+n,s.size()-n);if(k<=0){ok=false;break;}n+=(std::size_t)k;}if(ok)ok=fsync(fd)==0;if(close(fd))ok=false;
+#endif
+ if(ok)updateCachedJournalAfterAppend(p,s);
+ return ok;
+}
+Result scanIds(const std::string&p,const std::string&data,std::map<std::string,std::string>&ids){
+ std::map<std::string,JournalCache>::iterator cached=g_journalCaches.find(p);
+ if(cached!=g_journalCaches.end()&&cached->second.valid&&cached->second.idsValid&&cached->second.data.size()==data.size()){
+  ids=cached->second.ids;return Result::success();
+ }
+ std::map<std::string,std::string>scanned;std::istringstream in(data);std::string line;
+ if(!std::getline(in,line)||line!=kHeader)return Result::failure("ECONOMY_JOURNAL_HEADER","Global economy journal header or version is invalid.");
+ while(std::getline(in,line)){
+  if(!line.empty()&&line[line.size()-1]=='\r')line.erase(line.size()-1);if(line.empty())continue;
+  Entry r;if(!decode(line,r)||opOf(r).empty())return Result::failure("ECONOMY_JOURNAL_CORRUPT","A complete global economy record is invalid.");
+  std::map<std::string,std::string>::const_iterator it=scanned.find(opOf(r));
+  if(it!=scanned.end()){if(it->second!=line)return Result::failure("ECONOMY_OPERATION_CONFLICT","An operation ID is reused by different global journal records.");}
+  else scanned[opOf(r)]=line;
+ }
+ ids=scanned;
+ if(cached!=g_journalCaches.end()&&cached->second.valid&&cached->second.data.size()==data.size()){
+  cached->second.ids=scanned;cached->second.idsValid=true;
+ }
+ return Result::success();
+}
+Result appendUnique(const std::string&p,const std::string&record,const std::string&operationId){bool exists=false;std::string data;if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not inspect global journal before contract append.");std::map<std::string,std::string>ids;if(exists){Result x=scanIds(p,data,ids);if(!x.ok)return x;}std::map<std::string,std::string>::const_iterator prior=ids.find(operationId);if(prior!=ids.end())return prior->second+"\n"==record?Result::success():Result::failure("ECONOMY_OPERATION_CONFLICT","Contract operation ID already belongs to a different journal record.");if(!appendDurable(p,(exists?std::string():std::string(kHeader)+"\n")+record))return Result::failure("ECONOMY_JOURNAL_COMMIT","Could not durably append contract operation.");return Result::success();}
+Result journalHasOperation(const std::string&p,const std::string&operationId,bool&found){bool exists=false;std::string data;if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not inspect global journal before expiry retry.");found=false;if(!exists)return Result::success();std::map<std::string,std::string>ids;Result scanned=scanIds(p,data,ids);if(!scanned.ok)return scanned;found=ids.find(operationId)!=ids.end();return Result::success();}
 }
 
 Result MissionFailurePolicyStore::loadOrCreate(const std::string& path, MissionFailurePolicy& policy) const {
@@ -140,7 +240,7 @@ Result MissionFailurePolicyStore::loadOrCreate(const std::string& path, MissionF
 }
 Result EconomyJournalStore::load(const std::string&p,const CargoCatalog&cat,Ledger&ledger,std::map<std::string,CargoServiceInventory>&inventories,std::map<std::string,CargoManifest>&manifests,DeliveryContractBook*contracts,MissionObjectiveBook*objectives,EconomicAgentBook*agents)const{
  bool exists=false;std::string data;if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not read or repair the global journal tail.");if(!exists)return Result::success();
- std::map<std::string,std::string> ids;Result valid=scanIds(data,ids);if(!valid.ok)return valid;
+ std::map<std::string,std::string> ids;Result valid=scanIds(p,data,ids);if(!valid.ok)return valid;
  Ledger nextLedger(ledger);std::map<std::string,CargoServiceInventory> nextInventories(inventories);std::map<std::string,CargoManifest> nextManifests(manifests);DeliveryContractBook nextContracts=contracts?*contracts:DeliveryContractBook();MissionObjectiveBook nextObjectives=objectives?*objectives:MissionObjectiveBook();EconomicAgentBook nextAgents=agents?*agents:EconomicAgentBook();
  std::istringstream in(data);std::string line;std::getline(in,line);std::map<std::string,std::string> applied;
  while(std::getline(in,line)){if(!line.empty()&&line[line.size()-1]=='\r')line.erase(line.size()-1);if(line.empty())continue;Entry r;if(!decode(line,r))return Result::failure("ECONOMY_JOURNAL_CORRUPT","Invalid complete record.");const std::string op=opOf(r);if(applied.find(op)!=applied.end())continue;applied[op]=line;
@@ -170,7 +270,7 @@ Result EconomyJournalStore::hasLocationHistory(const std::string&p,const std::st
  if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not read or repair the global journal while checking location history.");
  hasHistory=false;if(!exists)return Result::success();
  std::map<std::string,std::string> ids;
- Result valid=scanIds(data,ids);if(!valid.ok)return valid;
+ Result valid=scanIds(p,data,ids);if(!valid.ok)return valid;
  std::istringstream in(data);std::string line;std::getline(in,line);
  while(std::getline(in,line)){
   if(!line.empty()&&line[line.size()-1]=='\r')line.erase(line.size()-1);
@@ -189,7 +289,7 @@ Result EconomyJournalStore::hasLocationCargoHistory(const std::string&p,const st
  if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not read or repair the global journal while checking commodity history.");
  hasHistory=false;if(!exists)return Result::success();
  std::map<std::string,std::string> ids;
- Result valid=scanIds(data,ids);if(!valid.ok)return valid;
+ Result valid=scanIds(p,data,ids);if(!valid.ok)return valid;
  std::istringstream in(data);std::string line;std::getline(in,line);
  while(std::getline(in,line)){
   if(!line.empty()&&line[line.size()-1]=='\\r')line.erase(line.size()-1);
@@ -219,7 +319,7 @@ Result EconomyJournalStore::recoverPrimaryProductionTimes(const std::string&p,Pr
  if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not read or repair the global journal while recovering production timestamps.");
  if(!exists)return Result::success();
  std::map<std::string,std::string> ids;
- Result valid=scanIds(data,ids);if(!valid.ok)return valid;
+ Result valid=scanIds(p,data,ids);if(!valid.ok)return valid;
  PrimaryResourceBook next(book);
  std::istringstream in(data);std::string line;std::getline(in,line);
  while(std::getline(in,line)){
@@ -234,7 +334,7 @@ Result EconomyJournalStore::recoverPrimaryProductionTimes(const std::string&p,Pr
 }
 Result EconomyJournalStore::recoverProductionRecipeTimes(const std::string&p,ProductionRecipeBook&book)const{
  bool exists=false;std::string data;if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not read or repair the global journal while recovering recipe timestamps.");if(!exists)return Result::success();
- std::map<std::string,std::string> ids;Result valid=scanIds(data,ids);if(!valid.ok)return valid;
+ std::map<std::string,std::string> ids;Result valid=scanIds(p,data,ids);if(!valid.ok)return valid;
  ProductionRecipeBook next(book);std::istringstream in(data);std::string line;std::getline(in,line);
  while(std::getline(in,line)){if(!line.empty()&&line[line.size()-1]=='\r')line.erase(line.size()-1);if(line.empty())continue;Entry r;if(!decode(line,r))return Result::failure("ECONOMY_JOURNAL_CORRUPT","Invalid complete record while recovering recipe timestamps.");if(r.type!='Y')continue;Result restored=next.restoreCommitted(r.recipeId,r.station,r.time);if(!restored.ok)return restored;}
  book=next;return Result::success();
@@ -263,7 +363,7 @@ Result EconomyJournalStore::applyPrimaryProductionBatch(const std::string&p,
  bool exists=false;std::string data;
  if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not inspect global journal before primary production batch.");
  std::map<std::string,std::string>ids;
- if(exists){Result scanned=scanIds(data,ids);if(!scanned.ok)return scanned;}
+ if(exists){Result scanned=scanIds(p,data,ids);if(!scanned.ok)return scanned;}
  std::map<std::string,CargoServiceInventory>next(inventories);
  std::string pending;
  for(std::size_t i=0;i<intents.size();++i){
@@ -290,7 +390,7 @@ Result EconomyJournalStore::applyProductionRecipeBatch(const std::string&p,
  bool exists=false;std::string data;
  if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not inspect global journal before production recipe batch.");
  std::map<std::string,std::string>ids;
- if(exists){Result scanned=scanIds(data,ids);if(!scanned.ok)return scanned;}
+ if(exists){Result scanned=scanIds(p,data,ids);if(!scanned.ok)return scanned;}
  std::map<std::string,CargoServiceInventory>next(inventories);
  std::string pending;
  for(std::size_t i=0;i<intents.size();++i){
@@ -329,7 +429,7 @@ Result EconomyJournalStore::applyProductionRecipeBatch(const std::string&p,
 Result EconomyJournalStore::applyExchange(const std::string&p,std::map<std::string,CargoServiceInventory>&inventories,CargoManifest&manifest,const CargoTransfer&t)const{
  std::map<std::string,CargoServiceInventory>::iterator it=inventories.find(t.locationId);if(it==inventories.end()||t.vesselId!=manifest.vesselId())return Result::failure("ECONOMY_EXCHANGE_IDENTITY","Transfer must reference a configured station and the selected vessel.");
  CargoServiceInventory nextStock(it->second);CargoManifest nextManifest(manifest);Result x=nextStock.apply(t);if(!x.ok)return x;x=t.direction==CARGO_LOAD?nextManifest.load(t):nextManifest.unload(t);if(!x.ok)return x;
- bool exists=false;std::string data;if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not inspect global journal before append.");std::map<std::string,std::string>ids;if(exists){x=scanIds(data,ids);if(!x.ok)return x;}const std::string record=encodeX(t);std::map<std::string,std::string>::const_iterator prior=ids.find(t.transferId);if(prior!=ids.end()){if(prior->second+"\n"!=record)return Result::failure("ECONOMY_OPERATION_CONFLICT","Transfer ID already belongs to a different global operation.");it->second=nextStock;manifest=nextManifest;return Result::success();}
+ bool exists=false;std::string data;if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not inspect global journal before append.");std::map<std::string,std::string>ids;if(exists){x=scanIds(p,data,ids);if(!x.ok)return x;}const std::string record=encodeX(t);std::map<std::string,std::string>::const_iterator prior=ids.find(t.transferId);if(prior!=ids.end()){if(prior->second+"\n"!=record)return Result::failure("ECONOMY_OPERATION_CONFLICT","Transfer ID already belongs to a different global operation.");it->second=nextStock;manifest=nextManifest;return Result::success();}
  if(!appendDurable(p,(exists?std::string():std::string(kHeader)+"\n")+record))return Result::failure("ECONOMY_JOURNAL_COMMIT","Could not durably append global exchange.");it->second=nextStock;manifest=nextManifest;return Result::success();}
 Result EconomyJournalStore::applyAgentTrade(const std::string&p,const AgentTradeIntent&intent,const CargoCatalog&cat,EconomicAgentBook&agents,std::map<std::string,CargoServiceInventory>&inventories)const{
  std::vector<AgentTradeIntent> batch(1,intent);
@@ -339,7 +439,7 @@ Result EconomyJournalStore::applyAgentTradeBatch(const std::string&p,const std::
  if(intents.empty())return Result::success();
  EconomicAgentBook nextAgents(agents);std::map<std::string,CargoServiceInventory>nextInventories(inventories);
  bool exists=false;std::string data;if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not inspect global journal before background agent batch.");
- std::map<std::string,std::string>ids;if(exists){Result scanned=scanIds(data,ids);if(!scanned.ok)return scanned;}
+ std::map<std::string,std::string>ids;if(exists){Result scanned=scanIds(p,data,ids);if(!scanned.ok)return scanned;}
  std::string append;
  for(std::size_t i=0;i<intents.size();++i){
   const AgentTradeIntent&intent=intents[i];
@@ -359,7 +459,7 @@ Result EconomyJournalStore::applyAgentTradeBatch(const std::string&p,const std::
 }
 Result EconomyJournalStore::applyTrade(const std::string&p,const CargoCatalog&cat,const MarketQuote&q,const std::string&op,const std::string&buyer,Ledger&ledger,std::map<std::string,CargoServiceInventory>&inventories,CargoManifest&manifest)const{
  std::map<std::string,CargoServiceInventory>::iterator it=inventories.find(q.stationId);if(it==inventories.end())return Result::failure("ECONOMY_UNKNOWN_STATION","Trade station has no configured inventory.");Ledger nextLedger(ledger);CargoServiceInventory nextStock(it->second);CargoManifest nextManifest(manifest);MarketTradeEngine engine;Result x=engine.execute(cat,q,op,buyer,nextLedger,nextStock,nextManifest);if(!x.ok)return x;
- bool exists=false;std::string data;if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not inspect global journal before append.");std::map<std::string,std::string>ids;if(exists){x=scanIds(data,ids);if(!x.ok)return x;}
+ bool exists=false;std::string data;if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not inspect global journal before append.");std::map<std::string,std::string>ids;if(exists){x=scanIds(p,data,ids);if(!x.ok)return x;}
  Entry r;r.type='T';r.op=op;r.buyer=buyer;r.station=q.stationId;r.vessel=manifest.vesselId();r.cargo=q.cargoId;r.side=(int)q.side;r.qty=q.quantity;r.unit=q.unitPrice;r.total=q.totalPrice;r.time=q.simulationTime;const std::string record=encodeT(r);std::map<std::string,std::string>::const_iterator prior=ids.find(op);if(prior!=ids.end()){if(prior->second+"\n"!=record)return Result::failure("ECONOMY_OPERATION_CONFLICT","Operation ID already belongs to a different global operation.");ledger=nextLedger;it->second=nextStock;manifest=nextManifest;return Result::success();}
  if(!appendDurable(p,(exists?std::string():std::string(kHeader)+"\n")+record))return Result::failure("ECONOMY_JOURNAL_COMMIT","Could not durably append global market trade.");ledger=nextLedger;it->second=nextStock;manifest=nextManifest;return Result::success();}
 }
