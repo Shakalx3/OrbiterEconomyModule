@@ -2795,11 +2795,70 @@ private:
         return true;
     }
 
+    std::map<std::string,std::map<std::string,oem::SimulationSeconds> > buildAgentRouteTravelTimes() const {
+        struct Position {
+            const oem::EconomicLocation* location;
+            VECTOR3 global;
+            OBJHANDLE body;
+            double longitude;
+            double latitude;
+            double bodyRadius;
+            bool valid;
+            Position() : location(0), global(_V(0,0,0)), body(0),
+                longitude(0.0), latitude(0.0), bodyRadius(0.0), valid(false) {}
+        };
+        std::map<std::string,std::map<std::string,oem::SimulationSeconds> > routes;
+        const std::vector<oem::EconomicLocation>& locations = economicLocations_.entries();
+        std::vector<Position> positions(locations.size());
+        for (std::size_t i = 0; i < locations.size(); ++i) {
+            positions[i].location = &locations[i];
+            positions[i].valid = resolveEconomicLocationPosition(locations[i],
+                positions[i].global, positions[i].body, positions[i].longitude,
+                positions[i].latitude, positions[i].bodyRadius);
+        }
+        // The agents are abstract, so this is an economic transit estimate,
+        // not a claim that an Orbiter vessel follows this straight-line path.
+        // Surface-to-surface routes on one body use great-circle distance;
+        // all other routes use the current global endpoint separation.
+        const double nominalTransitSpeed = 10000.0; // 10 km/s
+        for (std::size_t i = 0; i < positions.size(); ++i) {
+            if (!positions[i].valid) continue;
+            for (std::size_t j = 0; j < positions.size(); ++j) {
+                if (i == j || !positions[j].valid) continue;
+                double distance = -1.0;
+                const bool sameSurfaceBody =
+                    positions[i].location->kind == oem::ECONOMIC_LOCATION_SPACEPORT &&
+                    positions[j].location->kind == oem::ECONOMIC_LOCATION_SPACEPORT &&
+                    positions[i].body && positions[i].body == positions[j].body &&
+                    positions[i].bodyRadius > 0.0;
+                if (sameSurfaceBody) {
+                    distance = oem::surfaceDistanceMetres(
+                        positions[i].latitude, positions[i].longitude,
+                        positions[j].latitude, positions[j].longitude,
+                        positions[i].bodyRadius);
+                } else {
+                    const double dx = positions[i].global.x - positions[j].global.x;
+                    const double dy = positions[i].global.y - positions[j].global.y;
+                    const double dz = positions[i].global.z - positions[j].global.z;
+                    distance = sqrt(dx*dx + dy*dy + dz*dz);
+                }
+                if (!_finite(distance) || distance < 0.0) continue;
+                const double seconds = ceil(distance / nominalTransitSpeed);
+                if (!_finite(seconds) || seconds > (double)LLONG_MAX) continue;
+                routes[positions[i].location->storageId][positions[j].location->storageId] =
+                    (oem::SimulationSeconds)seconds;
+            }
+        }
+        return routes;
+    }
+
     void updateEconomicAgents(oem::SimulationSeconds now) {
         if (!economyReady_ || !economicAgentsReady_ || economicAgents_.agents().empty()) return;
+        const std::map<std::string,std::map<std::string,oem::SimulationSeconds> > routeTravelTimes =
+            buildAgentRouteTravelTimes();
         std::vector<oem::AgentTradeIntent> plannedIntents;
         const oem::Result planned = economicAgents_.planDueTrades(
-            now, cargoCatalog_, cargoServiceInventories_, plannedIntents);
+            now, cargoCatalog_, cargoServiceInventories_, routeTravelTimes, plannedIntents);
         if (!planned.ok) {
             char error[512]; sprintf(error, "OEM Agents: planning failed (%s): %s", planned.code.c_str(), planned.message.c_str());
             oapiWriteLog(error); return;
