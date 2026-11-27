@@ -5,6 +5,7 @@
 #include <cmath>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <locale>
 #include <sstream>
 #include <vector>
@@ -34,6 +35,7 @@ std::string encodeY(const ProductionRecipeIntent& intent){
 }
 std::string encodeX(const CargoTransfer&t){std::ostringstream o;o.imbue(std::locale::classic());o<<"X|"<<hx(t.transferId)<<'|'<<(int)t.direction<<'|'<<hx(t.vesselId)<<'|'<<hx(t.locationId)<<'|'<<hx(t.cargoId)<<'|'<<t.quantity<<'|'<<std::setprecision(17)<<t.unitMassKg<<'|'<<t.simulationTime<<'\n';return o.str();}
 std::string encodeT(const Entry&r){std::ostringstream o;o<<"T|"<<hx(r.op)<<'|'<<hx(r.buyer)<<'|'<<hx(r.station)<<'|'<<hx(r.vessel)<<'|'<<hx(r.cargo)<<'|'<<r.side<<'|'<<r.qty<<'|'<<r.unit<<'|'<<r.total<<'|'<<r.time<<'\n';return o.str();}
+std::string encodeB(const AgentTradeIntent&i){std::ostringstream o;o<<"B|"<<hx(i.operationId)<<'|'<<hx(i.agentId)<<'|'<<hx(i.locationId)<<'|'<<hx(i.cargoId)<<'|'<<(int)i.side<<'|'<<i.quantity<<'|'<<i.unitPrice<<'|'<<i.totalPrice<<'|'<<i.simulationTime<<'\n';return o.str();}
 std::string encodeA(const DeliveryContract&c,double unitMassKg=0.0){std::ostringstream o;o.imbue(std::locale::classic());o<<"A|"<<hx("contract-accept:"+c.contractId)<<'|'<<hx(c.contractId)<<'|'<<hx(c.vesselId)<<'|'<<hx(c.cargoId)<<'|'<<c.quantity<<'|'<<hx(c.originLocationId)<<'|'<<hx(c.destinationLocationId)<<'|'<<c.reward<<'|'<<c.acceptedAt<<'|'<<c.deadline<<'|'<<hx(c.destinationBodyId)<<'|'<<hx(c.missionType)<<'|'<<hx(c.missionTitle)<<'|'<<hx(c.missionBriefing)<<'|'<<std::setprecision(17)<<unitMassKg<<'|'<<hx(c.issuerId)<<'\n';return o.str();}
 std::string encodeC(const std::string&id,const std::string&event,SimulationSeconds time,const CargoTransfer&t){std::ostringstream o;o.imbue(std::locale::classic());o<<"C|"<<hx("contract-complete:"+id)<<'|'<<hx(id)<<'|'<<hx(event)<<'|'<<time<<'|'<<hx(t.locationId)<<'|'<<hx(t.vesselId)<<'|'<<hx(t.cargoId)<<'|'<<t.quantity<<'|'<<std::setprecision(17)<<t.unitMassKg<<'\n';return o.str();}
 std::string encodeR(const std::string&op,const std::string&account,Credits cost,SimulationSeconds time){std::ostringstream o;o<<"R|"<<hx(op)<<'|'<<hx(account)<<'|'<<cost<<'|'<<time<<'\n';return o.str();}
@@ -58,6 +60,7 @@ bool decode(const std::string&s,Entry&r){r.total=0;r.time=0;r.reputationDelta=0;
  }
  if(f.size()==9&&f[0]=="X"){r.type='X';if(!unhx(f[1],r.transfer.transferId)||!num(f[2],a)||(a!=CARGO_LOAD&&a!=CARGO_UNLOAD)||!unhx(f[3],r.transfer.vesselId)||!unhx(f[4],r.transfer.locationId)||!unhx(f[5],r.transfer.cargoId)||!num(f[6],b)||!dbl(f[7],r.transfer.unitMassKg)||!num(f[8],c))return false;r.transfer.direction=(CargoTransferDirection)a;r.transfer.quantity=b;r.transfer.simulationTime=c;return true;}
  if(f.size()==11&&f[0]=="T"&&unhx(f[1],r.op)&&unhx(f[2],r.buyer)&&unhx(f[3],r.station)&&unhx(f[4],r.vessel)&&unhx(f[5],r.cargo)&&num(f[6],a)&&num(f[7],b)&&num(f[8],c)&&num(f[9],d)&&num(f[10],e)&&(a==MARKET_BUY_FROM_STATION||a==MARKET_SELL_TO_STATION)){r.type='T';r.side=(int)a;r.qty=b;r.unit=c;r.total=d;r.time=e;return true;}
+ if(f.size()==10&&f[0]=="B"&&unhx(f[1],r.op)&&unhx(f[2],r.buyer)&&unhx(f[3],r.station)&&unhx(f[4],r.cargo)&&num(f[5],a)&&num(f[6],b)&&num(f[7],c)&&num(f[8],d)&&num(f[9],e)&&(a==AGENT_BUYS_FROM_LOCATION||a==AGENT_SELLS_TO_LOCATION)&&b>0&&c>=0&&d>=0&&e>=0&&b<=std::numeric_limits<Credits>::max()/std::max<Credits>(1,c)&&d==b*c){r.type='B';r.side=(int)a;r.qty=b;r.unit=c;r.total=d;r.time=e;return true;}
   if((f.size()==11||f.size()==12||f.size()==15||f.size()==16||f.size()==17)&&f[0]=="A"&&unhx(f[1],r.op)&&unhx(f[2],r.contract.contractId)&&unhx(f[3],r.contract.vesselId)&&unhx(f[4],r.contract.cargoId)&&num(f[5],a)&&unhx(f[6],r.contract.originLocationId)&&unhx(f[7],r.contract.destinationLocationId)&&num(f[8],b)&&num(f[9],c)&&num(f[10],d)&&(f.size()==11||unhx(f[11],r.contract.destinationBodyId))&&(f.size()<15||(unhx(f[12],r.contract.missionType)&&unhx(f[13],r.contract.missionTitle)&&unhx(f[14],r.contract.missionBriefing)))&&((f.size()!=16&&f.size()!=17)||dbl(f[15],r.transfer.unitMassKg))){r.type='A';r.contract.quantity=a;r.contract.reward=b;r.contract.acceptedAt=c;r.contract.deadline=d;if(f.size()==17&&!unhx(f[16],r.contract.issuerId))return false;if(f.size()<15){r.contract.missionType="DELIVERY";r.contract.missionTitle="Cargo delivery";r.contract.missionBriefing="Deliver the contracted cargo to the named destination.";}if((f.size()==16||f.size()==17)&&r.transfer.unitMassKg>0.0){r.transfer.transferId="contract-load:"+r.contract.contractId;r.transfer.direction=CARGO_LOAD;r.transfer.vesselId=r.contract.vesselId;r.transfer.locationId=r.contract.originLocationId;r.transfer.cargoId=r.contract.cargoId;r.transfer.quantity=r.contract.quantity;r.transfer.simulationTime=r.contract.acceptedAt;}return true;}
  if((f.size()==13||f.size()==14)&&f[0]=="M"&&unhx(f[1],r.op)&&unhx(f[2],r.objective.missionId)&&unhx(f[3],r.objective.vesselId)&&num(f[4],a)&&unhx(f[5],r.objective.originLocationId)&&unhx(f[6],r.objective.targetLocationId)&&unhx(f[7],r.objective.targetBodyId)&&unhx(f[8],r.objective.cargoId)&&num(f[9],b)&&num(f[10],c)&&num(f[11],d)&&num(f[12],e)){r.type='M';r.objective.kind=(MissionObjectiveKind)a;r.objective.quantity=b;r.objective.acceptedAt=c;r.objective.deadline=d;r.total=e;if(f.size()==14&&!unhx(f[13],r.objective.issuerId))return false;return true;}
  if(f.size()==5&&f[0]=="N"&&unhx(f[1],r.op)&&unhx(f[2],r.objective.missionId)&&unhx(f[3],r.eventId)&&num(f[4],a)){r.type='N';r.time=a;return true;}
@@ -135,12 +138,13 @@ Result MissionFailurePolicyStore::loadOrCreate(const std::string& path, MissionF
     policy.reputationDelta = (int)reputation;
     return Result::success();
 }
-Result EconomyJournalStore::load(const std::string&p,const CargoCatalog&cat,Ledger&ledger,std::map<std::string,CargoServiceInventory>&inventories,std::map<std::string,CargoManifest>&manifests,DeliveryContractBook*contracts,MissionObjectiveBook*objectives)const{
+Result EconomyJournalStore::load(const std::string&p,const CargoCatalog&cat,Ledger&ledger,std::map<std::string,CargoServiceInventory>&inventories,std::map<std::string,CargoManifest>&manifests,DeliveryContractBook*contracts,MissionObjectiveBook*objectives,EconomicAgentBook*agents)const{
  bool exists=false;std::string data;if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not read or repair the global journal tail.");if(!exists)return Result::success();
  std::map<std::string,std::string> ids;Result valid=scanIds(data,ids);if(!valid.ok)return valid;
- Ledger nextLedger(ledger);std::map<std::string,CargoServiceInventory> nextInventories(inventories);std::map<std::string,CargoManifest> nextManifests(manifests);DeliveryContractBook nextContracts=contracts?*contracts:DeliveryContractBook();MissionObjectiveBook nextObjectives=objectives?*objectives:MissionObjectiveBook();
+ Ledger nextLedger(ledger);std::map<std::string,CargoServiceInventory> nextInventories(inventories);std::map<std::string,CargoManifest> nextManifests(manifests);DeliveryContractBook nextContracts=contracts?*contracts:DeliveryContractBook();MissionObjectiveBook nextObjectives=objectives?*objectives:MissionObjectiveBook();EconomicAgentBook nextAgents=agents?*agents:EconomicAgentBook();
  std::istringstream in(data);std::string line;std::getline(in,line);std::map<std::string,std::string> applied;
  while(std::getline(in,line)){if(!line.empty()&&line[line.size()-1]=='\r')line.erase(line.size()-1);if(line.empty())continue;Entry r;if(!decode(line,r))return Result::failure("ECONOMY_JOURNAL_CORRUPT","Invalid complete record.");const std::string op=opOf(r);if(applied.find(op)!=applied.end())continue;applied[op]=line;
+ if(r.type=='B'){if(!agents)return Result::failure("ECONOMY_AGENT_BOOK","Journal contains background agent trades but no economic agent book was supplied.");AgentTradeIntent intent;intent.operationId=r.op;intent.agentId=r.buyer;intent.locationId=r.station;intent.cargoId=r.cargo;intent.side=(AgentTradeSide)r.side;intent.quantity=r.qty;intent.unitPrice=r.unit;intent.totalPrice=r.total;intent.simulationTime=r.time;Result agentApplied=nextAgents.applyTrade(intent,cat,nextInventories);if(!agentApplied.ok)return Result::failure(agentApplied.code,agentApplied.message);continue;}
  if(r.type=='Y'){
   std::map<std::string,CargoServiceInventory>::iterator stock=nextInventories.find(r.station);if(stock==nextInventories.end())return Result::failure("ECONOMY_UNKNOWN_STATION","Production recipe references a location without explicit opening inventory.");
   CargoServiceInventory candidate(stock->second);
@@ -159,7 +163,7 @@ Result EconomyJournalStore::load(const std::string&p,const CargoCatalog&cat,Ledg
  else {MarketQuote q;q.quoteId="replay-"+r.op;q.stationId=r.station;q.cargoId=r.cargo;q.side=(MarketSide)r.side;q.quantity=r.qty;q.unitPrice=r.unit;q.totalPrice=r.total;q.simulationTime=r.time;MarketTradeEngine engine;appliedResult=engine.execute(cat,q,r.op,r.buyer,nextLedger,si->second,mi->second);}
  if(!appliedResult.ok)return Result::failure(appliedResult.code,appliedResult.message);
  }
- ledger=nextLedger;inventories.swap(nextInventories);manifests.swap(nextManifests);if(contracts)*contracts=nextContracts;if(objectives)*objectives=nextObjectives;return Result::success();}
+ ledger=nextLedger;inventories.swap(nextInventories);manifests.swap(nextManifests);if(contracts)*contracts=nextContracts;if(objectives)*objectives=nextObjectives;if(agents)*agents=nextAgents;return Result::success();}
 Result EconomyJournalStore::hasLocationHistory(const std::string&p,const std::string&location,bool&hasHistory)const{
  if(location.empty())return Result::failure("ECONOMY_LOCATION_ID","Location ID is required for history inspection.");
  bool exists=false;std::string data;
@@ -327,6 +331,16 @@ Result EconomyJournalStore::applyExchange(const std::string&p,std::map<std::stri
  CargoServiceInventory nextStock(it->second);CargoManifest nextManifest(manifest);Result x=nextStock.apply(t);if(!x.ok)return x;x=t.direction==CARGO_LOAD?nextManifest.load(t):nextManifest.unload(t);if(!x.ok)return x;
  bool exists=false;std::string data;if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not inspect global journal before append.");std::map<std::string,std::string>ids;if(exists){x=scanIds(data,ids);if(!x.ok)return x;}const std::string record=encodeX(t);std::map<std::string,std::string>::const_iterator prior=ids.find(t.transferId);if(prior!=ids.end()){if(prior->second+"\n"!=record)return Result::failure("ECONOMY_OPERATION_CONFLICT","Transfer ID already belongs to a different global operation.");it->second=nextStock;manifest=nextManifest;return Result::success();}
  if(!appendDurable(p,(exists?std::string():std::string(kHeader)+"\n")+record))return Result::failure("ECONOMY_JOURNAL_COMMIT","Could not durably append global exchange.");it->second=nextStock;manifest=nextManifest;return Result::success();}
+Result EconomyJournalStore::applyAgentTrade(const std::string&p,const AgentTradeIntent&intent,const CargoCatalog&cat,EconomicAgentBook&agents,std::map<std::string,CargoServiceInventory>&inventories)const{
+ EconomicAgentBook nextAgents(agents);std::map<std::string,CargoServiceInventory>nextInventories(inventories);
+ Result applied=nextAgents.applyTrade(intent,cat,nextInventories);if(!applied.ok)return applied;
+ bool exists=false;std::string data;if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not inspect global journal before agent trade append.");
+ std::map<std::string,std::string>ids;if(exists){applied=scanIds(data,ids);if(!applied.ok)return applied;}
+ const std::string record=encodeB(intent);std::map<std::string,std::string>::const_iterator prior=ids.find(intent.operationId);
+ if(prior!=ids.end()){if(prior->second+"\n"!=record)return Result::failure("ECONOMY_OPERATION_CONFLICT","Agent trade operation ID conflicts with an existing global operation.");agents=nextAgents;inventories.swap(nextInventories);return Result::success();}
+ if(!appendDurable(p,(exists?std::string():std::string(kHeader)+"\n")+record))return Result::failure("ECONOMY_JOURNAL_COMMIT","Could not durably append global agent trade.");
+ agents=nextAgents;inventories.swap(nextInventories);return Result::success();
+}
 Result EconomyJournalStore::applyTrade(const std::string&p,const CargoCatalog&cat,const MarketQuote&q,const std::string&op,const std::string&buyer,Ledger&ledger,std::map<std::string,CargoServiceInventory>&inventories,CargoManifest&manifest)const{
  std::map<std::string,CargoServiceInventory>::iterator it=inventories.find(q.stationId);if(it==inventories.end())return Result::failure("ECONOMY_UNKNOWN_STATION","Trade station has no configured inventory.");Ledger nextLedger(ledger);CargoServiceInventory nextStock(it->second);CargoManifest nextManifest(manifest);MarketTradeEngine engine;Result x=engine.execute(cat,q,op,buyer,nextLedger,nextStock,nextManifest);if(!x.ok)return x;
  bool exists=false;std::string data;if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not inspect global journal before append.");std::map<std::string,std::string>ids;if(exists){x=scanIds(data,ids);if(!x.ok)return x;}
