@@ -222,8 +222,8 @@ jobs:
           cl /nologo /LD /EHsc /O2 /MD /DWIN32 /D_WINDOWS /D_USRDLL /I"SDK\Orbitersdk\include" src\orbiter\OEMSpaceportTest.cpp OEMSpaceportTest.res /link /LIBPATH:"SDK\Orbitersdk\lib" orbiter.lib orbitersdk.lib gdi32.lib user32.lib /OUT:OEMSpaceportTest.dll
           cl /nologo /LD /EHsc /O2 /MD /DWIN32 /D_WINDOWS /D_USRDLL /I"SDK\Orbitersdk\include" src\orbiter\OEMGroundContactTest.cpp OEMGroundContactTest.res /link /LIBPATH:"SDK\Orbitersdk\lib" orbiter.lib orbitersdk.lib gdi32.lib user32.lib /OUT:OEMGroundContactTest.dll
           cl /nologo /LD /EHsc /O2 /MD /DWIN32 /D_WINDOWS /D_USRDLL /I"SDK\Orbitersdk\include" /I"src\core" src\orbiter\OEMLandingBridge.cpp src\core\SpaceportLanding.cpp src\core\SimulationEvent.cpp src\core\SimulationEventJournal.cpp src\core\FlightTransition.cpp src\core\DockingTransition.cpp src\core\CargoServiceRegistry.cpp src\core\CargoManifest.cpp src\core\CargoTransferGate.cpp src\core\CargoServiceInventory.cpp src\core\CargoServiceInventoryConfig.cpp src\core\Ledger.cpp src\core\LedgerConfig.cpp src\core\CargoCatalogConfig.cpp src\core\Market.cpp src\core\MarketTrade.cpp src\core\EconomicAgent.cpp src\core\EconomicAgentConfig.cpp src\core\DeliveryContract.cpp src\core\MissionBoard.cpp src\core\MissionObjective.cpp src\core\MissionObjectiveBook.cpp src\core\MissionObjectiveBoard.cpp src\core\MissionEconomics.cpp src\core\EconomyJournal.cpp src\core\SpaceportRegistry.cpp src\core\EconomicLocationRegistry.cpp src\core\EconomicStationRegistry.cpp src\core\MissionIssuerRegistry.cpp src/core/PropellantPlan.cpp src/core/PropellantQuote.cpp src/core/PropellantTransaction.cpp src/core/PropellantTransactionJournal.cpp src/core/PrimaryResource.cpp src/core/PrimaryResourceConfig.cpp src/core/ProductionRecipe.cpp src/core/ProductionRecipeConfig.cpp src/core/ShipOwnership.cpp OEMLandingBridge.res /link /LIBPATH:"SDK\Orbitersdk\lib" orbiter.lib orbitersdk.lib gdi32.lib user32.lib /OUT:OEMLandingBridge.dll
-      - name: Publish delivery-contracts test DLL
-        if: github.event_name == 'pull_request'
+      - name: Publish orbital shipyard test DLL
+        if: (github.event_name == 'pull_request' && github.event.pull_request.draft == false) || (github.event_name == 'push' && github.ref == 'refs/heads/feature/ship-purchasing')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -232,7 +232,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $actual = (git rev-parse HEAD).Trim()
           if ($actual -ne $env:BUILD_SHA) { throw "DLL source revision mismatch: expected $env:BUILD_SHA, got $actual" }
-          $tag = "oem-delivery-contracts-test"
+          $tag = "oem-ship-purchasing-test"
           git tag -f $tag $env:BUILD_SHA
           if ($LASTEXITCODE -ne 0) { throw "Could not point the test tag at the build commit" }
           git push --force origin "refs/tags/$tag"
@@ -241,19 +241,19 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or -not $remoteTagLine) { throw "Could not verify the remote test tag" }
           $remoteTag = ($remoteTagLine -split '\s+')[0]
           if ($remoteTag -ne $env:BUILD_SHA) { throw "Remote test tag $remoteTag does not match build commit $env:BUILD_SHA" }
-          $title = "OEM Delivery Contracts Test (pre-release)"
-          $notes = "Experimental Win32 Orbiter 2010 DLL built from commit $($env:BUILD_SHA) for testing delivery contracts and independent VISIT/DOCK missions. Keep the existing OEMData directory and configuration files; replace only OEMLandingBridge.dll. All OEM cargo is accounting-manifest data and does not change Orbiter physical cargo or vessel mass. DELIVERY TEST: open OEM Delivery Contracts (MFD key D) at a stocked origin and accept an offer; the required quantity is loaded automatically into the OEM vessel manifest and debited from origin stock. Reach the offered destination; on verified arrival the manifest cargo is transferred to destination stock and the reward is paid automatically. OBJECTIVE TEST: open OEM Independent Missions (MFD key I), accept a VISIT offer and land at its exact named base/body, or accept a DOCK offer and dock with its exact registered station. Orbital target stations must first be registered with OEM Economic Admin (key A). FAILURE TEST: OEMData/mission_failure.cfg defaults to P|1000|-5 (10% of reward and -5 reputation); adjust it while Orbiter is stopped, let an accepted delivery/VISIT/DOCK mission pass its deadline, then verify the capped fee and reputation decrease. Cancel another accepted mission and verify that no penalty is applied. Expiry, completion, cancellation and payouts are stored in economy.journal; objective_mission_boards.dat stores generated offers. Test restart recovery and verify no duplicate fee or payout. Do not delete OEMData or existing journals when updating the DLL. CI success verifies compilation and automated core tests, not behaviour in the Orbiter simulator."
+          $title = "OEM Orbital Shipyard Test (pre-release)"
+          $notes = "Experimental Win32 Orbiter 2010 ship-purchasing build from commit $($env:BUILD_SHA). Stop Orbiter and replace only OEMLandingBridge.dll; keep OEMData and all existing journals. Open OEM Shipyard with MFD key B while the focused player vessel is docked to a registered orbital economic station (register it with OEM Economic Admin, key A). The catalogue is discovered from installed Config/Vessels classes whose configured module DLL exists. Select with Up/Down, press B to prepare, then Y or the CONFIRM MFD button to create and pay; X cancels. The first version supports orbital stations only. New vessels are created through oapiCreateVesselEx at a size-scaled radial offset from the station, start with empty tanks, and are rejected if another vessel is inside the clearance radius. Prices are provisional estimates from EmptyMass and MaxFuel in the class config. Open OEM Player Fleet with MFD key V to inspect purchased vessels. Ownership is stored in OEMData/player_fleet.registry; company debits use the existing version-1 economy journal record format. TEST: check catalogue discovery, insufficient funds, successful purchase, spawn clearance, tank state, fleet listing, save/reload, and duplicate prevention. Do not delete OEMData or existing journals when updating the DLL. CI verifies compilation and automated tests, not in-simulator behavior; runtime testing is required before production use."
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release edit $tag --repo $env:GITHUB_REPOSITORY --title $title --notes $notes --target $env:BUILD_SHA --prerelease
-            if ($LASTEXITCODE -ne 0) { throw "Could not update delivery-contracts test release metadata" }
+            if ($LASTEXITCODE -ne 0) { throw "Could not update ship-purchasing test release metadata" }
             gh release upload $tag OEMLandingBridge.dll --repo $env:GITHUB_REPOSITORY --clobber
           } else {
             gh release create $tag OEMLandingBridge.dll --repo $env:GITHUB_REPOSITORY --title $title --notes $notes --target $env:BUILD_SHA --prerelease
           }
-          if ($LASTEXITCODE -ne 0) { throw "Could not publish delivery-contracts test DLL" }
+          if ($LASTEXITCODE -ne 0) { throw "Could not publish ship-purchasing test DLL" }
           $published = gh release view $tag --repo $env:GITHUB_REPOSITORY --json targetCommitish,assets | ConvertFrom-Json
-          if ($LASTEXITCODE -ne 0) { throw "Could not verify the published delivery-contracts release" }
+          if ($LASTEXITCODE -ne 0) { throw "Could not verify the published ship-purchasing release" }
           if ($published.targetCommitish -ne $env:BUILD_SHA) { throw "Release target $($published.targetCommitish) does not match build commit $env:BUILD_SHA" }
           $asset = $published.assets | Where-Object { $_.name -eq "OEMLandingBridge.dll" } | Select-Object -First 1
           if ($null -eq $asset -or [long]$asset.size -le 0) { throw "Published OEMLandingBridge.dll is missing or empty" }
