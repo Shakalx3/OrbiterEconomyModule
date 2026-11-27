@@ -1395,13 +1395,25 @@ public:
         owned.purchaseId=purchaseId;owned.vesselId=purchaseId;owned.className=quote.className;
         owned.acquisitionLocationId=quote.locationId;owned.acquisitionPrice=quote.price;
         owned.acquiredAt=quote.simulationTime;
-        result=economyJournalStore_.purchaseShip(economyJournalPath_,purchaseId,"company",owned,ledger_,fleet_);
+        result=fleet_.registerPurchase(owned);
         if(!result.ok){
-            if(!oapiDeleteVessel(created,0))oapiWriteLog((char*)"OEM Fleet: failed to remove vessel after purchase commit refusal; startup orphan cleanup will retry.");
+            oapiDeleteVessel(created,0);
             return result;
         }
-        const oem::Result saved=fleet_.save(fleetPath_);
-        if(!saved.ok)oapiWriteLog((char*)"OEM Fleet: purchase is durable in economy.journal; fleet snapshot save failed and will be rebuilt on reload.");
+        const oem::Result fleetSaved=fleet_.save(fleetPath_);
+        if(!fleetSaved.ok){
+            fleet_.removePurchase(purchaseId);
+            oapiDeleteVessel(created,0);
+            return fleetSaved;
+        }
+        result=economyJournalStore_.chargePropellant(economyJournalPath_,
+            "ship-purchase:"+purchaseId,"company",quote.price,quote.simulationTime,ledger_);
+        if(!result.ok){
+            fleet_.removePurchase(purchaseId);
+            fleet_.save(fleetPath_);
+            if(!oapiDeleteVessel(created,0))oapiWriteLog((char*)"OEM Fleet: failed to remove vessel after purchase charge refusal; startup orphan cleanup will retry.");
+            return result;
+        }
         createdVesselName=purchaseId;
         char log[256];sprintf(log,"OEM SHIP PURCHASE: vessel=%s class=%s price=%lld location=%s",
             purchaseId.c_str(),quote.className.c_str(),(long long)quote.price,stationName.c_str());
@@ -3446,7 +3458,7 @@ private:
         std::map<std::string, oem::CargoManifest> openingManifests;
         const oem::Result recovered = economyJournalStore_.load(
             economyJournalPath_, openingCatalog, openingLedger,
-            cargoServiceInventories_, openingManifests, &contractBook_, &objectiveBook_, &economicAgents_, &fleet_);
+            cargoServiceInventories_, openingManifests, &contractBook_, &objectiveBook_, &economicAgents_);
         if (!recovered.ok) {
             char message[512];
             sprintf(message, "OEM Economy: global journal recovery failed (%s): %s",
@@ -3494,6 +3506,23 @@ private:
         for (std::map<std::string, oem::CargoManifest>::const_iterator it = cargoManifests_.begin();
              it != cargoManifests_.end(); ++it)
             cargoManifestLoadAttempted_.insert(it->first);
+        const std::vector<oem::OwnedVesselRecord> fleetSnapshot = fleet_.vessels();
+        bool fleetChanged = false;
+        for (std::size_t i = 0; i < fleetSnapshot.size(); ++i) {
+            const std::string chargeOperation = "propellant-charge:ship-purchase:" + fleetSnapshot[i].purchaseId;
+            if (!ledger_.hasOperation(chargeOperation)) {
+                char name[128] = {};
+                strncpy(name, fleetSnapshot[i].vesselId.c_str(), sizeof(name)-1);
+                OBJHANDLE uncharged = oapiGetVesselByName(name);
+                if (uncharged) oapiDeleteVessel(uncharged, 0);
+                fleet_.removePurchase(fleetSnapshot[i].purchaseId);
+                fleetChanged = true;
+            }
+        }
+        if (fleetChanged) {
+            const oem::Result reconciled = fleet_.save(fleetPath_);
+            if (!reconciled.ok) oapiWriteLog((char*)"OEM Fleet: could not persist rollback of uncharged purchase intents.");
+        }
         for (DWORD i = 0; i < oapiGetVesselCount(); ++i) {
             OBJHANDLE orphan = oapiGetVesselByIndex((int)i);
             if (!orphan) continue;
