@@ -5,7 +5,7 @@
 #include <sstream>
 namespace oem {
 AgentCargoPolicy::AgentCargoPolicy():cargoId(),targetQuantity(0),maximumBuyPrice(0),minimumSellPrice(0){}
-EconomicAgent::EconomicAgent():agentId(),displayName(),role(AGENT_SUPPLIER),homeLocationId(),operatingLocationIds(),cargoPolicies(),inventory(),balance(0),unlimitedFunds(false),activityInterval(86400),lastActivityTime(0),enabled(true){}
+EconomicAgent::EconomicAgent():agentId(),displayName(),role(AGENT_SUPPLIER),homeLocationId(),operatingLocationIds(),cargoPolicies(),inventory(),cargoOriginLocation(),cargoUnitCost(),balance(0),unlimitedFunds(false),activityInterval(86400),lastActivityTime(0),enabled(true){}
 AgentTradeIntent::AgentTradeIntent():operationId(),agentId(),locationId(),cargoId(),side(AGENT_BUYS_FROM_LOCATION),quantity(0),unitPrice(0),totalPrice(0),simulationTime(0){}
 namespace {
 unsigned int hashIntent(const std::string& s){unsigned int h=2166136261u;for(std::size_t i=0;i<s.size();++i){h^=(unsigned char)s[i];h*=16777619u;}return h;}
@@ -28,24 +28,60 @@ const std::vector<EconomicAgent>& EconomicAgentBook::agents()const{return agents
 Result EconomicAgentBook::planDueTrades(SimulationSeconds now,const CargoCatalog& catalog,const std::map<std::string,CargoServiceInventory>& locations,std::vector<AgentTradeIntent>& out)const{
  if(now<0)return Result::failure("INVALID_AGENT_TIME","Simulation time cannot be negative.");
  std::vector<AgentTradeIntent> planned;MarketPricingBook pricing;
- for(std::size_t i=0;i<agents_.size();++i){const EconomicAgent&a=agents_[i];if(!a.enabled||now<a.lastActivityTime||now-a.lastActivityTime<a.activityInterval)continue;
-  for(std::size_t l=0;l<a.operatingLocationIds.size();++l){std::map<std::string,CargoServiceInventory>::const_iterator loc=locations.find(a.operatingLocationIds[l]);if(loc==locations.end())continue;
-   for(std::size_t p=0;p<a.cargoPolicies.size();++p){const AgentCargoPolicy&policy=a.cargoPolicies[p];CargoDefinition def;if(!catalog.find(policy.cargoId,def))continue;
-    const std::map<std::string,long long>::const_iterator heldIt=a.inventory.find(policy.cargoId);const long long held=heldIt==a.inventory.end()?0:heldIt->second;
-    AgentTradeIntent intent;intent.agentId=a.agentId;intent.locationId=loc->first;intent.cargoId=policy.cargoId;intent.simulationTime=now;Credits price=0;
-    if((a.role==AGENT_CUSTOMER||a.role==AGENT_COMPETITOR)&&held<policy.targetQuantity&&loc->second.quantity(policy.cargoId)>0){
-      if(!pricing.unitPriceForSide(def,loc->second.quantity(policy.cargoId),MARKET_BUY_FROM_STATION,price).ok||price>policy.maximumBuyPrice)continue;
-      intent.side=AGENT_BUYS_FROM_LOCATION;intent.unitPrice=price;intent.quantity=std::min(policy.targetQuantity-held,loc->second.quantity(policy.cargoId));
-      if(!a.unlimitedFunds){if(intent.unitPrice<=0||a.balance<intent.unitPrice)continue;intent.quantity=std::min(intent.quantity,a.balance/intent.unitPrice);}
-    }else if((a.role==AGENT_SUPPLIER||a.role==AGENT_COMPETITOR)&&held>0){
-      if(!pricing.unitPriceForSide(def,loc->second.quantity(policy.cargoId),MARKET_SELL_TO_STATION,price).ok||price<policy.minimumSellPrice)continue;
-      intent.side=AGENT_SELLS_TO_LOCATION;intent.unitPrice=price;intent.quantity=std::min(held,policy.targetQuantity);
-    }else continue;
-    if(intent.quantity<=0||intent.unitPrice<0||intent.quantity>std::numeric_limits<Credits>::max()/std::max<Credits>(1,intent.unitPrice))continue;
-    intent.totalPrice=intent.quantity*intent.unitPrice;
-    intent.operationId="agent-"+a.agentId+"-"+loc->first+"-"+policy.cargoId+"-"+std::to_string((long long)now)+"-"+std::to_string(hashIntent(a.agentId+loc->first+policy.cargoId));
-    planned.push_back(intent);break;
-   }if(!planned.empty()&&planned.back().agentId==a.agentId)break;
+ for(std::size_t i=0;i<agents_.size();++i){
+  const EconomicAgent&a=agents_[i];
+  if(!a.enabled||now<a.lastActivityTime||now-a.lastActivityTime<a.activityInterval)continue;
+  bool selected=false;
+  for(std::size_t p=0;p<a.cargoPolicies.size()&&!selected;++p){
+   const AgentCargoPolicy&policy=a.cargoPolicies[p];CargoDefinition def;
+   if(!catalog.find(policy.cargoId,def))continue;
+   const std::map<std::string,long long>::const_iterator heldIt=a.inventory.find(policy.cargoId);
+   const long long held=heldIt==a.inventory.end()?0:heldIt->second;
+   AgentTradeIntent intent;intent.agentId=a.agentId;intent.cargoId=policy.cargoId;intent.simulationTime=now;
+   Credits price=0;std::string chosenLocation;long long chosenQuantity=0;
+   const bool canBuy=(a.role==AGENT_CUSTOMER||a.role==AGENT_COMPETITOR||a.role==AGENT_CARRIER);
+   const bool canSell=(a.role==AGENT_SUPPLIER||a.role==AGENT_COMPETITOR||a.role==AGENT_CARRIER);
+   if(held>0&&canSell){
+    const std::map<std::string,std::string>::const_iterator originIt=a.cargoOriginLocation.find(policy.cargoId);
+    const std::map<std::string,Credits>::const_iterator costIt=a.cargoUnitCost.find(policy.cargoId);
+    const std::string origin=originIt==a.cargoOriginLocation.end()?std::string():originIt->second;
+    const Credits minimum=std::max(policy.minimumSellPrice,costIt==a.cargoUnitCost.end()?Credits(0):costIt->second);
+    Credits bestPrice=-1;
+    for(std::size_t l=0;l<a.operatingLocationIds.size();++l){
+     const std::string&locationId=a.operatingLocationIds[l];
+     if(locationId==origin)continue;
+     std::map<std::string,CargoServiceInventory>::const_iterator loc=locations.find(locationId);
+     if(loc==locations.end())continue;
+     Credits quote=0;
+     if(!pricing.unitPriceForSide(def,loc->second.quantity(policy.cargoId),MARKET_SELL_TO_STATION,quote).ok||quote<minimum)continue;
+     if(quote>bestPrice){bestPrice=quote;chosenLocation=locationId;chosenQuantity=std::min(held,policy.targetQuantity);}
+    }
+    if(!chosenLocation.empty()){
+     intent.locationId=chosenLocation;intent.side=AGENT_SELLS_TO_LOCATION;intent.unitPrice=bestPrice;intent.quantity=chosenQuantity;price=bestPrice;
+    }
+   }
+   if(intent.quantity<=0&&held==0&&canBuy){
+    Credits bestPrice=(std::numeric_limits<Credits>::max)();
+    for(std::size_t l=0;l<a.operatingLocationIds.size();++l){
+     const std::string&locationId=a.operatingLocationIds[l];
+     std::map<std::string,CargoServiceInventory>::const_iterator loc=locations.find(locationId);
+     if(loc==locations.end()||loc->second.quantity(policy.cargoId)<=0)continue;
+     Credits quote=0;
+     if(!pricing.unitPriceForSide(def,loc->second.quantity(policy.cargoId),MARKET_BUY_FROM_STATION,quote).ok||quote>policy.maximumBuyPrice||quote>=bestPrice)continue;
+     long long quantity=std::min(policy.targetQuantity,loc->second.quantity(policy.cargoId));
+     if(!a.unlimitedFunds){if(quote<=0||a.balance<quote)continue;quantity=std::min(quantity,a.balance/quote);}
+     if(quantity<=0)continue;
+     bestPrice=quote;chosenLocation=locationId;chosenQuantity=quantity;
+    }
+    if(!chosenLocation.empty()){
+     intent.locationId=chosenLocation;intent.side=AGENT_BUYS_FROM_LOCATION;intent.unitPrice=bestPrice;intent.quantity=chosenQuantity;price=bestPrice;
+    }
+   }
+   if(intent.quantity<=0)continue;
+   if(intent.quantity>(std::numeric_limits<Credits>::max)()/ (intent.unitPrice>1?intent.unitPrice:1))continue;
+   intent.totalPrice=intent.quantity*intent.unitPrice;
+   intent.operationId="agent-"+a.agentId+"-"+intent.locationId+"-"+policy.cargoId+"-"+(intent.side==AGENT_BUYS_FROM_LOCATION?"buy-":"sell-")+std::to_string((long long)now)+"-"+std::to_string(hashIntent(a.agentId+intent.locationId+policy.cargoId));
+   planned.push_back(intent);selected=true;
   }
  }
  out.insert(out.end(),planned.begin(),planned.end());return Result::success();
@@ -76,13 +112,13 @@ Result EconomicAgentBook::applyTrade(const AgentTradeIntent& intent,const CargoC
   if(!nextAgent.unlimitedFunds&&nextAgent.balance<intent.totalPrice)return Result::failure("AGENT_FUNDS","Agent has insufficient funds for this purchase.");
   if(intent.quantity>std::numeric_limits<long long>::max()-held)return Result::failure("AGENT_INVENTORY_OVERFLOW","Agent inventory quantity would overflow.");
   transfer.direction=CARGO_LOAD;Result applied=nextLocation.apply(transfer);if(!applied.ok)return applied;
-  nextAgent.inventory[intent.cargoId]=held+intent.quantity;if(!nextAgent.unlimitedFunds)nextAgent.balance-=intent.totalPrice;
+  nextAgent.inventory[intent.cargoId]=held+intent.quantity;nextAgent.cargoOriginLocation[intent.cargoId]=intent.locationId;nextAgent.cargoUnitCost[intent.cargoId]=intent.unitPrice;if(!nextAgent.unlimitedFunds)nextAgent.balance-=intent.totalPrice;
  }else{
-  if(nextAgent.role!=AGENT_SUPPLIER&&nextAgent.role!=AGENT_COMPETITOR)return Result::failure("AGENT_ROLE","This agent role cannot sell cargo.");
-  if(intent.quantity>held||intent.quantity>policy->targetQuantity||intent.unitPrice<policy->minimumSellPrice)return Result::failure("AGENT_SELL_LIMIT","Agent sale exceeds its inventory or minimum price policy.");
+  if(nextAgent.role!=AGENT_SUPPLIER&&nextAgent.role!=AGENT_COMPETITOR&&nextAgent.role!=AGENT_CARRIER)return Result::failure("AGENT_ROLE","This agent role cannot sell cargo.");
+  if(intent.quantity>held||intent.quantity>policy->targetQuantity||intent.unitPrice<std::max(policy->minimumSellPrice,nextAgent.cargoUnitCost.count(intent.cargoId)?nextAgent.cargoUnitCost.find(intent.cargoId)->second:Credits(0))||(nextAgent.cargoOriginLocation.count(intent.cargoId)&&nextAgent.cargoOriginLocation.find(intent.cargoId)->second==intent.locationId))return Result::failure("AGENT_SELL_LIMIT","Agent sale exceeds its inventory or minimum price policy.");
   if(intent.totalPrice>std::numeric_limits<Credits>::max()-nextAgent.balance)return Result::failure("AGENT_BALANCE_OVERFLOW","Agent balance would overflow.");
   transfer.direction=CARGO_UNLOAD;Result applied=nextLocation.apply(transfer);if(!applied.ok)return applied;
-  nextAgent.inventory[intent.cargoId]=held-intent.quantity;nextAgent.balance+=intent.totalPrice;
+  nextAgent.inventory[intent.cargoId]=held-intent.quantity;if(held==intent.quantity){nextAgent.cargoOriginLocation.erase(intent.cargoId);nextAgent.cargoUnitCost.erase(intent.cargoId);}nextAgent.balance+=intent.totalPrice;
  }
  nextAgent.lastActivityTime=intent.simulationTime;agents_[ai->second]=nextAgent;li->second=nextLocation;appliedOperations_[intent.operationId]=signature;return Result::success();
 }
