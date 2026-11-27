@@ -39,16 +39,26 @@ int main(){
  std::map<std::string,oem::CargoServiceInventory> routeLocations;routeLocations["EarthBase"]=surplus;routeLocations["MarsBase"]=demand;
  oem::EconomicAgent trader;trader.agentId="route-trader";trader.displayName="Route Trader";trader.role=oem::AGENT_COMPETITOR;trader.homeLocationId="EarthBase";trader.operatingLocationIds.push_back("EarthBase");trader.operatingLocationIds.push_back("MarsBase");trader.balance=1000;trader.activityInterval=100;
  oem::AgentCargoPolicy routePolicy;routePolicy.cargoId="route-ore";routePolicy.targetQuantity=20;routePolicy.maximumBuyPrice=100;routePolicy.minimumSellPrice=0;trader.cargoPolicies.push_back(routePolicy);
- oem::EconomicAgentBook routeBook;assert(routeBook.add(trader).ok);std::vector<oem::AgentTradeIntent> routeIntents;
+ oem::EconomicAgentBook routeBook;assert(routeBook.add(trader).ok);std::vector<oem::AgentTradeIntent> routeIntents;oem::EconomyJournalStore routeJournal;const std::string routeJournalPath="OEMEconomicAgentRouteTests.journal";std::remove(routeJournalPath.c_str());
  assert(routeBook.planDueTrades(100,catalog,routeLocations,routeIntents).ok&&routeIntents.size()==1);
  assert(routeIntents[0].locationId=="EarthBase"&&routeIntents[0].side==oem::AGENT_BUYS_FROM_LOCATION);
- assert(routeBook.applyTrade(routeIntents[0],catalog,routeLocations).ok);
+ assert(routeJournal.applyAgentTradeBatch(routeJournalPath,routeIntents,catalog,routeBook,routeLocations).ok);
  assert(routeLocations["EarthBase"].quantity("route-ore")==180&&routeBook.agents()[0].inventory.find("route-ore")->second==20);
  routeIntents.clear();assert(routeBook.planDueTrades(200,catalog,routeLocations,routeIntents).ok&&routeIntents.size()==1);
  assert(routeIntents[0].locationId=="MarsBase"&&routeIntents[0].side==oem::AGENT_SELLS_TO_LOCATION);
  assert(routeBook.applyTrade(routeIntents[0],catalog,routeLocations).ok);
  assert(routeLocations["MarsBase"].quantity("route-ore")==20&&routeBook.agents()[0].inventory.find("route-ore")->second==0);
  assert(routeBook.agents()[0].balance==1060);
+ std::map<std::string,oem::CargoServiceInventory> recoveredRouteLocations;
+ oem::CargoServiceInventory recoveredEarth("EarthBase");assert(recoveredEarth.setInitialStock("route-ore",200,1).ok);
+ recoveredRouteLocations["EarthBase"]=recoveredEarth;recoveredRouteLocations["MarsBase"]=oem::CargoServiceInventory("MarsBase");
+ oem::EconomicAgentBook recoveredRouteBook;assert(recoveredRouteBook.add(trader).ok);
+ oem::Ledger routeLedger;std::map<std::string,oem::CargoManifest> routeManifests;
+ assert(routeJournal.load(routeJournalPath,catalog,routeLedger,recoveredRouteLocations,routeManifests,0,0,&recoveredRouteBook).ok);
+ assert(recoveredRouteLocations["EarthBase"].quantity("route-ore")==180&&recoveredRouteLocations["MarsBase"].quantity("route-ore")==20);
+ assert(recoveredRouteBook.agents()[0].inventory.find("route-ore")->second==0);
+ assert(recoveredRouteBook.agents()[0].balance==1060&&recoveredRouteBook.agents()[0].lastActivityTime==200);
+ std::remove(routeJournalPath.c_str());
  // Agent trades are part of location history and prevent an opening-stock reseed.
  bool hasHistory=false;assert(journal.hasLocationHistory(path,"MoonBase",hasHistory).ok&&hasHistory);
  assert(journal.hasLocationCargoHistory(path,"MoonBase","ore",hasHistory).ok&&hasHistory);
