@@ -177,18 +177,19 @@ Current route-quote defaults are centralized in `MissionEconomicsConfig`: nomina
 - [ ] Configure initial resource profiles and renewable sources for appropriate planetary bases, orbital stations, and resource regions; keep resource types and rates configurable.
 - [x] Load primary-resource source definitions in the native bridge, commit due production using Orbiter simulation time, persist scheduler timestamps, and log each committed production cycle.
 
-### Abstract economic agents and background trade — planned
+### Abstract economic agents and background trade — in progress
 
-- [ ] Introduce abstract economic agents (organizations, suppliers, customers, carriers, and competitors) that exist only in the OEM economy model and do not require physical Orbiter vessels or NPC navigation AI.
-- [ ] Simulate background trade between abstract agents and registered orbital stations/planetary spaceports so the player is not the only economic actor in the solar system.
-- [ ] Model each agent's role, home/operating locations, cargo demand/supply, trading preferences, available funds or agreed unlimited-credit policy, and configurable activity cadence.
-- [ ] Execute background purchases and sales as real economic transactions: update the relevant location stock, agent inventory/balance where applicable, and market supply/demand using deterministic, auditable transaction records.
-- [ ] Never create cargo from nowhere or allow stock to become negative. Every abstract trade must have a valid source, destination, quantity, cargo definition, and sufficient source stock; any production or consumption must be a separate explicitly modelled process.
-- [ ] Distinguish abstract economic stock movement from physical vessel cargo and player CargoManifest transfers. Background trade must never imply that a physical ship loaded, flew, docked, or landed.
-- [ ] Use simulation time for trade scheduling and resolve elapsed simulation intervals safely after time acceleration or scenario reload, without duplicate transactions or unbounded catch-up bursts.
-- [ ] Persist agent definitions/state, background trade history, and scheduling progress with versioned, corruption-safe, idempotent recovery; integrate durable economic effects with the global economy journal.
-- [ ] Make background activity configurable, including an option to disable it or tune its intensity, while preserving a coherent economy when disabled.
-- [ ] Add observable market activity/history so the player can see that stations and spaceports trade with other economic participants even when no player transaction occurs.
+- [x] Introduce abstract economic agents (organizations, suppliers, customers, carriers, and competitors) that exist only in the OEM economy model and do not require physical Orbiter vessels or NPC navigation AI.
+- [x] Simulate background trade between abstract agents and registered orbital stations/planetary spaceports so the player is not the only economic actor in the solar system. The first default profile is one interplanetary trader; the configuration supports additional agents.
+- [x] Model each agent's role, home/operating locations, cargo demand/supply policies, available funds or agreed unlimited-credit policy, and configurable activity cadence.
+- [x] Execute background purchases and sales as real economic transactions: update the relevant location stock, agent inventory/balance where applicable, and market supply/demand using deterministic, auditable transaction records.
+- [x] Never create cargo from nowhere or allow stock to become negative. Purchases require configured station stock; sales require agent inventory and a different destination location.
+- [x] Distinguish abstract economic stock movement from physical vessel cargo and player CargoManifest transfers. Background trades use the OEM-AGENT identity and never create or move an Orbiter vessel.
+- [x] Use simulation time for trade scheduling. Activity is rate-limited in wall time, while due checks use simulation timestamps; journal replay prevents duplicate transactions after reload.
+- [x] Persist agent definitions/opening state in versioned economic_agents.cfg and replay balances, inventory, cargo origin/cost basis, and activity timestamps from the global economy journal.
+- [ ] Add a global background-activity switch/intensity setting and balance behavior when it is disabled.
+- [ ] Add an in-game market activity/history view. Current committed activity is visible in the Orbiter log.
+- [ ] Replace the initial fixed activity interval with distance-aware route travel times and configurable transport capacity.
 
 ### Player fleet ownership and ship purchasing — planned
 - [ ] Ownership default rule: every Orbiter vessel not explicitly registered in `EconomicStationRegistry` is presumed to be player-owned; there are no autonomous physical NPC vessels in the current design.
