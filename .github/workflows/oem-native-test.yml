@@ -1,4 +1,4 @@
-name: OEM native spaceport test build
+name: OEM native and ship purchasing test build
 
 on:
   push:
@@ -185,7 +185,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Verify checked-out source revision for PR DLL
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
         shell: pwsh
         env:
           BUILD_SHA: ${{ github.event.pull_request.head.sha }}
