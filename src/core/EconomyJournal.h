@@ -5,6 +5,7 @@
 #include "MissionObjectiveBook.h"
 #include "PrimaryResource.h"
 #include "ProductionRecipe.h"
+#include "EconomicAgent.h"
 #include <map>
 #include <string>
 #include <vector>
@@ -28,12 +29,16 @@ public:
                 std::map<std::string, CargoServiceInventory>& inventories,
                 std::map<std::string, CargoManifest>& manifests,
                 DeliveryContractBook* contracts = 0,
-                MissionObjectiveBook* objectives = 0) const;
+                MissionObjectiveBook* objectives = 0,
+                EconomicAgentBook* agents = 0) const;
     // A single durable append commits either a non-financial exchange or a market trade.
     // Durable, replay-safe creation of primary resources at a configured source.
     Result recoverPrimaryProductionTimes(const std::string& path, PrimaryResourceBook& book) const;
     Result recoverProductionRecipeTimes(const std::string& path, ProductionRecipeBook& book) const;
     Result applyProductionRecipe(const std::string& path, const ProductionRecipeIntent& intent,
+                std::map<std::string, CargoServiceInventory>& inventories) const;
+    Result applyAgentTrade(const std::string& path, const AgentTradeIntent& intent,
+                const CargoCatalog& catalog, EconomicAgentBook& agents,
                 std::map<std::string, CargoServiceInventory>& inventories) const;
     // Commit many due production events with one journal scan and one durable flush.
     Result applyPrimaryProductionBatch(const std::string& path,
