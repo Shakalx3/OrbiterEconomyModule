@@ -3454,17 +3454,18 @@ private:
             return false;
         }
 
-        if (orbiterRoot_.empty()) {
-            oapiWriteLog((char*)"OEM Ship Catalogue: could not resolve Orbiter installation root.");
-            return false;
-        }
         shipCatalog_.clear();
-        scanShipClassDirectory(orbiterRoot_, std::string(), shipCatalog_, 0);
-        shipCatalogReady_ = true;
-        char shipSummary[160];
-        sprintf(shipSummary, "OEM Ship Catalogue: found %lu installed vessel classes.",
-                (unsigned long)shipCatalog_.entries().size());
-        oapiWriteLog(shipSummary);
+        shipCatalogReady_ = false;
+        if (orbiterRoot_.empty()) {
+            oapiWriteLog((char*)"OEM Ship Catalogue: Orbiter installation root unavailable; shipyard disabled, economy remains active.");
+        } else {
+            scanShipClassDirectory(orbiterRoot_, std::string(), shipCatalog_, 0);
+            shipCatalogReady_ = true;
+            char shipSummary[160];
+            sprintf(shipSummary, "OEM Ship Catalogue: found %lu installed vessel classes.",
+                    (unsigned long)shipCatalog_.entries().size());
+            oapiWriteLog(shipSummary);
+        }
 
         std::map<std::string, oem::CargoManifest> openingManifests;
         const oem::Result recovered = economyJournalStore_.load(
