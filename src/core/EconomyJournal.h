@@ -6,7 +6,6 @@
 #include "PrimaryResource.h"
 #include "ProductionRecipe.h"
 #include "EconomicAgent.h"
-#include "ShipOwnership.h"
 #include <map>
 #include <string>
 #include <vector>
@@ -31,7 +30,7 @@ public:
                 std::map<std::string, CargoManifest>& manifests,
                 DeliveryContractBook* contracts = 0,
                 MissionObjectiveBook* objectives = 0,
-                EconomicAgentBook* agents = 0, PlayerFleetRegistry* fleet = 0) const;
+                EconomicAgentBook* agents = 0) const;
     // A single durable append commits either a non-financial exchange or a market trade.
     // Durable, replay-safe creation of primary resources at a configured source.
     Result recoverPrimaryProductionTimes(const std::string& path, PrimaryResourceBook& book) const;
@@ -83,10 +82,6 @@ public:
     Result settleContract(const std::string& path, DeliveryContractBook& contracts,
                           const std::string& contractId, const std::string& companyAccountId,
                           Ledger& ledger) const;
-    // Durable, idempotent vessel purchase debit and ownership registration.
-    Result purchaseShip(const std::string& path, const std::string& purchaseId,
-                        const std::string& accountId, const OwnedVesselRecord& vessel,
-                        Ledger& ledger, PlayerFleetRegistry& fleet) const;
     // Durable, idempotent debit for a completed physical propellant fill.
     Result chargePropellant(const std::string& path, const std::string& operationId,
                             const std::string& accountId, Credits cost,
