@@ -9,6 +9,8 @@
 #include <vector>
 #include <string>
 #include <math.h>
+#include <float.h>
+#include <ctype.h>
 #include <fstream>
 #include <sstream>
 #include <locale>
@@ -44,6 +46,7 @@
 #include "../core/PrimaryResourceConfig.h"
 #include "../core/ProductionRecipeConfig.h"
 #include "../core/MarketPricing.h"
+#include "../core/ShipOwnership.h"
 
 namespace {
 
@@ -57,6 +60,8 @@ int g_missionBoardMode = -1;
 int g_economicAdminMode = -1;
 int g_propellantMonitorMode = -1;
 int g_propellantRefuelMode = -1;
+int g_fleetMode = -1;
+int g_shipPurchaseMode = -1;
 
 bool addBuiltInMarketCommodities(oem::CargoCatalog& catalog) {
     const std::vector<oem::CargoDefinition>& entries = catalog.entries();
@@ -131,6 +136,127 @@ std::string encodePathComponent(const std::string& value) {
         encoded.push_back(digits[c & 15]);
     }
     return encoded;
+}
+
+std::string makeOrbiterRoot(HINSTANCE module) {
+    char path[MAX_PATH] = {};
+    const DWORD length = GetModuleFileNameA(module, path, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) return std::string();
+    std::string result(path);
+    std::string::size_type slash = result.find_last_of("\\/");
+    if (slash == std::string::npos) return std::string();
+    result.erase(slash);
+    slash = result.find_last_of("\\/");
+    if (slash == std::string::npos) return std::string();
+    const std::string parent = result.substr(slash + 1);
+    if (_stricmp(parent.c_str(), "Plugin") == 0) {
+        result.erase(slash);
+        slash = result.find_last_of("\\/");
+        if (slash == std::string::npos) return std::string();
+    }
+    const std::string modules = result.substr(result.find_last_of("\\/") + 1);
+    if (_stricmp(modules.c_str(), "Modules") == 0) result.erase(result.find_last_of("\\/"));
+    return result;
+}
+
+std::string trimShipConfig(const std::string& value) {
+    const std::string::size_type first = value.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return std::string();
+    const std::string::size_type last = value.find_last_not_of(" \t\r\n");
+    return value.substr(first, last - first + 1);
+}
+
+bool readShipClassDefinition(const std::string& root, const std::string& relativeClass,
+                             oem::ShipDefinition& definition) {
+    if (relativeClass.empty() || relativeClass.find("..") != std::string::npos) return false;
+    std::string configPath = root + "\\Config\\Vessels\\" + relativeClass + ".cfg";
+    std::ifstream input(configPath.c_str());
+    if (!input.is_open()) return false;
+    std::string module, displayName, configuredClass, line;
+    double emptyMass = 10000.0, maxFuel = 0.0, vesselSize = 100.0;
+    while (std::getline(input, line)) {
+        line = trimShipConfig(line);
+        if (line.empty() || line[0] == ';' || line[0] == '#') continue;
+        const std::string::size_type equals = line.find('=');
+        if (equals == std::string::npos) continue;
+        std::string key = trimShipConfig(line.substr(0, equals));
+        std::string value = trimShipConfig(line.substr(equals + 1));
+        for (std::size_t i = 0; i < key.size(); ++i)
+            key[i] = (char)tolower((unsigned char)key[i]);
+        if (key == "module") module = value;
+        else if (key == "classname" && !value.empty()) configuredClass = value;
+        else if (key == "name" && !value.empty()) displayName = value;
+        else if (key == "emptymass" || key == "empty_mass") {
+            char* end = 0; const double parsed = strtod(value.c_str(), &end);
+            if (end && *end == 0 && parsed > 0.0 && _finite(parsed)) emptyMass = parsed;
+        } else if (key == "size") {
+            char* end = 0; const double parsed = strtod(value.c_str(), &end);
+            if (end && *end == 0 && parsed > 0.0 && _finite(parsed)) vesselSize = parsed;
+        } else if (key == "maxfuel" || key == "max_fuel") {
+            char* end = 0; const double parsed = strtod(value.c_str(), &end);
+            if (end && *end == 0 && parsed >= 0.0 && _finite(parsed)) maxFuel = parsed;
+        }
+    }
+    if (module.empty()) return false;
+    if (_stricmp(module.c_str(), "Orbiter") != 0) {
+        std::string modulePath;
+        if (module.find(':') != std::string::npos || (!module.empty() && (module[0] == '\\' || module[0] == '/')))
+            modulePath = module;
+        else if (_strnicmp(module.c_str(), "Modules\\", 8) == 0 || _strnicmp(module.c_str(), "Modules/", 8) == 0)
+            modulePath = root + "\\" + module;
+        else
+            modulePath = root + "\\Modules\\" + module;
+        if (modulePath.size() < 4 || _stricmp(modulePath.substr(modulePath.size()-4).c_str(), ".dll") != 0)
+            modulePath += ".dll";
+        if (GetFileAttributesA(modulePath.c_str()) == INVALID_FILE_ATTRIBUTES) return false;
+    }
+    const long double estimated = 1000.0L + (long double)emptyMass * 0.5L +
+                                  (long double)maxFuel * 0.1L;
+    if (!(estimated > 0.0L) || estimated > (long double)LLONG_MAX) return false;
+    std::string resolvedClass = configuredClass.empty() ? relativeClass : configuredClass;
+    if (!configuredClass.empty() && configuredClass.find('\\') == std::string::npos &&
+        configuredClass.find('/') == std::string::npos) {
+        const std::string::size_type folder = relativeClass.find_last_of("\\/");
+        if (folder != std::string::npos) resolvedClass = relativeClass.substr(0, folder + 1) + configuredClass;
+    }
+    if (resolvedClass.empty() || resolvedClass.find("..") != std::string::npos) return false;
+    definition.className = resolvedClass;
+    definition.displayName = displayName.empty() ? resolvedClass : displayName;
+    definition.price = (oem::Credits)ceil(estimated);
+    definition.sizeMeters = vesselSize;
+    definition.orbitalDelivery = true;
+    definition.surfaceDelivery = false;
+    return true;
+}
+
+void scanShipClassDirectory(const std::string& root, const std::string& relativeDirectory,
+                            oem::ShipCatalog& catalog, unsigned int depth) {
+    if (depth > 8) return;
+    const std::string directory = root + "\\Config\\Vessels" +
+        (relativeDirectory.empty() ? std::string() : "\\" + relativeDirectory);
+    WIN32_FIND_DATAA data;
+    HANDLE search = FindFirstFileA((directory + "\\*").c_str(), &data);
+    if (search == INVALID_HANDLE_VALUE) return;
+    do {
+        if (data.cFileName[0] == '.' &&
+            (data.cFileName[1] == 0 || (data.cFileName[1] == '.' && data.cFileName[2] == 0)))
+            continue;
+        if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            const std::string child = relativeDirectory.empty()
+                ? data.cFileName : relativeDirectory + "\\" + data.cFileName;
+            scanShipClassDirectory(root, child, catalog, depth + 1);
+            continue;
+        }
+        const std::string filename(data.cFileName);
+        if (filename.size() <= 4 || _stricmp(filename.substr(filename.size()-4).c_str(), ".cfg") != 0)
+            continue;
+        const std::string base = filename.substr(0, filename.size()-4);
+        const std::string className = relativeDirectory.empty()
+            ? base : relativeDirectory + "\\" + base;
+        oem::ShipDefinition definition;
+        if (readShipClassDefinition(root, className, definition)) catalog.add(definition);
+    } while (FindNextFileA(search, &data));
+    FindClose(search);
 }
 
 std::string makeCargoStockConfigPath(HINSTANCE module, const std::string& serviceId) {
@@ -362,7 +488,7 @@ public:
           spaceportRegistryPath_(makeEconomyDataFilePath(hDLL, "spaceports.registry")),
           economicStations_(), economicStationsPath_(makeEconomyDataFilePath(hDLL, "economic_stations.registry")),
           spaceportRegistry_(), economicLocations_(), economicStationsReady_(false), cargoServicesReady_(false), ledger_(), cargoCatalog_(), economyReady_(false), journalReady_(false), sessionId_(),
-          currentSimulationTime_(0), lastProductionWallTick_(0), cargoTransferSequence_(0), lastFocus_(0), completionNote_(0), notificationUntil_(0) {
+          currentSimulationTime_(0), lastProductionWallTick_(0), cargoTransferSequence_(0), lastFocus_(0), completionNote_(0), notificationUntil_(0), fleet_(), fleetPath_(makeEconomyDataFilePath(hDLL, "player_fleet.registry")), shipCatalog_(), shipCatalogReady_(false), orbiterRoot_(makeOrbiterRoot(hDLL)), shipPurchaseSequence_(0) {
         g_bridge = this;
     }
 
@@ -371,6 +497,8 @@ public:
     }
 
     bool journalReady() const { return journalReady_; }
+    const oem::PlayerFleetRegistry& playerFleet() const { return fleet_; }
+    const oem::ShipCatalog& shipCatalog() const { return shipCatalog_; }
     const oem::EconomicLocationRegistry& economicLocations() const { return economicLocations_; }
     bool isCargoService(const std::string& vesselId) const {
         return cargoServices_.isRegistered(vesselId);
@@ -1200,6 +1328,124 @@ public:
             oapiWriteLog(log);
         }
         return result;
+    }
+
+    oem::Result performShipPurchase(const std::string& focusedVesselId,
+                                    const std::string& className,
+                                    std::string& createdVesselName) {
+        if (!economyReady_ || !journalReady_ || !shipCatalogReady_ || economyJournalPath_.empty())
+            return oem::Result::failure("SHIP_PURCHASE_UNAVAILABLE","Economy or installed ship catalogue is not ready.");
+        if (!isFocusedVessel(focusedVesselId))
+            return oem::Result::failure("SHIP_PURCHASE_FOCUS","Purchase must be initiated from the currently focused vessel.");
+        oem::PropellantPriceContext locationContext;
+        std::string displayLocation;
+        oem::Result result=resolvePropellantContext(focusedVesselId,locationContext,displayLocation);
+        if(!result.ok)return oem::Result::failure("SHIP_PURCHASE_LOCATION", "Dock to a registered orbital economic station before purchasing a vessel.");
+        if(locationContext.locationKind!=oem::PROPELLANT_LOCATION_ORBITAL_STATION)
+            return oem::Result::failure("SHIP_PURCHASE_LOCATION","The first shipyard implementation supports registered orbital stations only.");
+        oem::Credits balance=0;
+        if(!ledger_.getBalance("company",balance))
+            return oem::Result::failure("SHIP_PURCHASE_ACCOUNT","Company account is unavailable.");
+        char vesselName[64]={};
+        std::string purchaseId;
+        for(unsigned int attempt=0;attempt<32;++attempt){
+            ++shipPurchaseSequence_;
+            sprintf(vesselName,"OEMBUY%08lX%04lX",
+                (unsigned long)(currentSimulationTime_ & 0xffffffffLL),
+                (unsigned long)(shipPurchaseSequence_ & 0xffffUL));
+            char probe[64];strncpy(probe,vesselName,sizeof(probe)-1);probe[sizeof(probe)-1]=0;
+            oem::OwnedVesselRecord priorPurchase;
+            const std::string priorCharge = "propellant-charge:ship-purchase:" + std::string(vesselName);
+            if(!oapiGetVesselByName(probe)&&!fleet_.findByPurchase(vesselName,priorPurchase)&&
+               !ledger_.hasOperation(priorCharge)){
+                purchaseId=vesselName;break;
+            }
+        }
+        if(purchaseId.empty())
+            return oem::Result::failure("SHIP_PURCHASE_ID","Could not allocate a unique vessel purchase identity.");
+        oem::ShipPurchaseQuote quote;
+        result=oem::createShipPurchaseQuote(shipCatalog_,purchaseId,className,
+            locationContext.locationId,oem::SHIP_DELIVERY_ORBITAL,balance,
+            currentSimulationTime_,quote);
+        if(!result.ok)return result;
+
+        OBJHANDLE focus=oapiGetFocusObject();
+        VESSEL* buyer=focus&&oapiIsVessel(focus)?oapiGetVesselInterface(focus):0;
+        if(!buyer)return oem::Result::failure("SHIP_PURCHASE_BUYER","Focused vessel interface is unavailable.");
+        OBJHANDLE stationHandle=0;
+        std::string stationName;
+        for(UINT i=0;i<buyer->DockCount();++i){
+            DOCKHANDLE dock=buyer->GetDockHandle(i);if(!dock)continue;
+            OBJHANDLE other=buyer->GetDockStatus(dock);if(!other||!oapiIsVessel(other))continue;
+            char name[128]={};oapiGetObjectName(other,name,sizeof(name));
+            if(name[0]&&economicStations_.isStation(name)){stationHandle=other;stationName=name;break;}
+        }
+        if(!stationHandle)
+            return oem::Result::failure("SHIP_PURCHASE_STATION","The focused vessel is not docked to a registered economic station.");
+        VESSEL* station=oapiGetVesselInterface(stationHandle);
+        if(!station)return oem::Result::failure("SHIP_PURCHASE_STATION","Registered station interface is unavailable.");
+        VESSELSTATUS2 stationStatus;ZeroMemory(&stationStatus,sizeof(stationStatus));
+        stationStatus.version=2;station->GetStatusEx(&stationStatus);
+        if(stationStatus.status!=0||!stationStatus.rbody)
+            return oem::Result::failure("SHIP_PURCHASE_SPAWN","The registered shipyard must be in free flight around a valid reference body.");
+        const double radius=sqrt(stationStatus.rpos.x*stationStatus.rpos.x+
+            stationStatus.rpos.y*stationStatus.rpos.y+stationStatus.rpos.z*stationStatus.rpos.z);
+        if(!(radius>1.0)||!_finite(radius))
+            return oem::Result::failure("SHIP_PURCHASE_SPAWN","Station orbital position is invalid.");
+        oem::ShipDefinition selectedDefinition;
+        if(!shipCatalog_.find(className,selectedDefinition))
+            return oem::Result::failure("SHIP_CLASS_UNAVAILABLE","Selected vessel class disappeared from the installed catalogue.");
+        const double stationSize=station->GetSize()>0.0?station->GetSize():100.0;
+        const double offset=(std::max)(10000.0,(selectedDefinition.sizeMeters+stationSize)*2.0+5000.0);
+        const double ux=stationStatus.rpos.x/radius,uy=stationStatus.rpos.y/radius,uz=stationStatus.rpos.z/radius;
+        VECTOR3 stationGlobal;station->GetGlobalPos(stationGlobal);
+        VECTOR3 candidateGlobal={stationGlobal.x+ux*offset,stationGlobal.y+uy*offset,stationGlobal.z+uz*offset};
+        const double minimumSeparation=(std::max)(5000.0,(selectedDefinition.sizeMeters+stationSize)*1.25+1000.0);
+        for(DWORD i=0;i<oapiGetVesselCount();++i){
+            OBJHANDLE other=oapiGetVesselByIndex((int)i);if(!other)continue;
+            VECTOR3 otherGlobal;oapiGetGlobalPos(other,&otherGlobal);
+            const double dx=candidateGlobal.x-otherGlobal.x,dy=candidateGlobal.y-otherGlobal.y,dz=candidateGlobal.z-otherGlobal.z;
+            if(dx*dx+dy*dy+dz*dz<minimumSeparation*minimumSeparation)
+                return oem::Result::failure("SHIP_PURCHASE_SPAWN_OCCUPIED","The planned delivery point is too close to another vessel.");
+        }
+        VESSELSTATUS2 spawn;ZeroMemory(&spawn,sizeof(spawn));
+        spawn.version=2;spawn.flag=VS_FUELRESET;spawn.rbody=stationStatus.rbody;
+        spawn.status=0;spawn.base=0;spawn.port=-1;
+        spawn.rpos.x=stationStatus.rpos.x+ux*offset;
+        spawn.rpos.y=stationStatus.rpos.y+uy*offset;
+        spawn.rpos.z=stationStatus.rpos.z+uz*offset;
+        spawn.rvel=stationStatus.rvel;spawn.arot=stationStatus.arot;spawn.vrot=stationStatus.vrot;
+        OBJHANDLE created=oapiCreateVesselEx(vesselName,quote.className.c_str(),&spawn);
+        if(!created)
+            return oem::Result::failure("SHIP_PURCHASE_CREATE","Orbiter could not instantiate the selected installed vessel class.");
+        oem::OwnedVesselRecord owned;
+        owned.purchaseId=purchaseId;owned.vesselId=purchaseId;owned.className=quote.className;
+        owned.acquisitionLocationId=quote.locationId;owned.acquisitionPrice=quote.price;
+        owned.acquiredAt=quote.simulationTime;
+        result=fleet_.registerPurchase(owned);
+        if(!result.ok){
+            oapiDeleteVessel(created,0);
+            return result;
+        }
+        const oem::Result fleetSaved=fleet_.save(fleetPath_);
+        if(!fleetSaved.ok){
+            fleet_.removePurchase(purchaseId);
+            oapiDeleteVessel(created,0);
+            return fleetSaved;
+        }
+        result=economyJournalStore_.chargePropellant(economyJournalPath_,
+            "ship-purchase:"+purchaseId,"company",quote.price,quote.simulationTime,ledger_);
+        if(!result.ok){
+            fleet_.removePurchase(purchaseId);
+            fleet_.save(fleetPath_);
+            if(!oapiDeleteVessel(created,0))oapiWriteLog((char*)"OEM Fleet: failed to remove vessel after purchase charge refusal; startup orphan cleanup will retry.");
+            return result;
+        }
+        createdVesselName=purchaseId;
+        char log[256];sprintf(log,"OEM SHIP PURCHASE: vessel=%s class=%s price=%lld location=%s",
+            purchaseId.c_str(),quote.className.c_str(),(long long)quote.price,stationName.c_str());
+        oapiWriteLog(log);
+        return oem::Result::success();
     }
 
     bool economyReady() const { return economyReady_; }
@@ -3211,6 +3457,32 @@ private:
                 (unsigned long)economicAgents_.agents().size());
         oapiWriteLog(agentConfigSummary);
 
+        if (fleetPath_.empty()) {
+            oapiWriteLog((char*)"OEM Fleet: could not resolve player fleet registry path.");
+            return false;
+        }
+        const oem::Result fleetLoaded = fleet_.load(fleetPath_);
+        if (!fleetLoaded.ok) {
+            char error[512];
+            sprintf(error, "OEM Fleet: registry load failed (%s): %s",
+                    fleetLoaded.code.c_str(), fleetLoaded.message.c_str());
+            oapiWriteLog(error);
+            return false;
+        }
+
+        shipCatalog_.clear();
+        shipCatalogReady_ = false;
+        if (orbiterRoot_.empty()) {
+            oapiWriteLog((char*)"OEM Ship Catalogue: Orbiter installation root unavailable; shipyard disabled, economy remains active.");
+        } else {
+            scanShipClassDirectory(orbiterRoot_, std::string(), shipCatalog_, 0);
+            shipCatalogReady_ = true;
+            char shipSummary[160];
+            sprintf(shipSummary, "OEM Ship Catalogue: found %lu installed vessel classes.",
+                    (unsigned long)shipCatalog_.entries().size());
+            oapiWriteLog(shipSummary);
+        }
+
         std::map<std::string, oem::CargoManifest> openingManifests;
         const oem::Result recovered = economyJournalStore_.load(
             economyJournalPath_, openingCatalog, openingLedger,
@@ -3262,6 +3534,32 @@ private:
         for (std::map<std::string, oem::CargoManifest>::const_iterator it = cargoManifests_.begin();
              it != cargoManifests_.end(); ++it)
             cargoManifestLoadAttempted_.insert(it->first);
+        const std::vector<oem::OwnedVesselRecord> fleetSnapshot = fleet_.vessels();
+        bool fleetChanged = false;
+        for (std::size_t i = 0; i < fleetSnapshot.size(); ++i) {
+            const std::string chargeOperation = "propellant-charge:ship-purchase:" + fleetSnapshot[i].purchaseId;
+            if (!ledger_.hasOperation(chargeOperation)) {
+                char name[128] = {};
+                strncpy(name, fleetSnapshot[i].vesselId.c_str(), sizeof(name)-1);
+                OBJHANDLE uncharged = oapiGetVesselByName(name);
+                if (uncharged) oapiDeleteVessel(uncharged, 0);
+                fleet_.removePurchase(fleetSnapshot[i].purchaseId);
+                fleetChanged = true;
+            }
+        }
+        if (fleetChanged) {
+            const oem::Result reconciled = fleet_.save(fleetPath_);
+            if (!reconciled.ok) oapiWriteLog((char*)"OEM Fleet: could not persist rollback of uncharged purchase intents.");
+        }
+        for (DWORD i = 0; i < oapiGetVesselCount(); ++i) {
+            OBJHANDLE orphan = oapiGetVesselByIndex((int)i);
+            if (!orphan) continue;
+            char orphanName[128] = {};
+            oapiGetObjectName(orphan, orphanName, sizeof(orphanName));
+            if (strncmp(orphanName, "OEMBUY", 6) == 0 && !fleet_.isOwned(orphanName)) {
+                if (oapiDeleteVessel(orphan, 0)) oapiWriteLog((char*)"OEM Fleet: removed an uncommitted orphan ship purchase.");
+            }
+        }
         economyReady_ = true;
         economicAgentsReady_ = true;
         oapiWriteLog((char*)"OEM Economy: global journal ready; legacy test journals are ignored.");
@@ -3491,6 +3789,12 @@ private:
     OBJHANDLE lastFocus_;
     NOTEHANDLE completionNote_;
     oem::SimulationSeconds notificationUntil_;
+    oem::PlayerFleetRegistry fleet_;
+    std::string fleetPath_;
+    oem::ShipCatalog shipCatalog_;
+    bool shipCatalogReady_;
+    std::string orbiterRoot_;
+    unsigned long shipPurchaseSequence_;
 };
 
 class OEMFlightLogMFD : public MFD {
@@ -3912,6 +4216,160 @@ private:
     std::string vesselId_;
     std::string status_;
     int pendingAction_;
+};
+
+class OEMShipPurchaseMFD : public MFD {
+public:
+    OEMShipPurchaseMFD(DWORD w,DWORD h,VESSEL*vessel)
+        :MFD(w,h,vessel),vesselId_(vessel&&vessel->GetName()?vessel->GetName():""),
+         selected_(0),pending_(false),status_("Select a class, press B to prepare and Y to confirm."){}
+    void Update(HDC hDC) override {
+        Title(hDC,"OEM SHIPYARD");
+        SelectDefaultFont(hDC,0);
+        int y=(int)ch+3;
+        if(!g_bridge){DrawLine(hDC,y,"OEM bridge unavailable.");return;}
+        const std::vector<oem::ShipDefinition>& ships=g_bridge->shipCatalog().entries();
+        if(ships.empty()){
+            DrawLine(hDC,y,"NO INSTALLED VESSEL CLASSES FOUND");
+            DrawLine(hDC,y,"Check Config/Vessels and module DLLs.");
+            DrawLine(hDC,y,status_.c_str());return;
+        }
+        if(selected_>=ships.size())selected_=ships.size()-1;
+        char line[256];
+        sprintf(line,"AVAILABLE CLASSES: %lu",(unsigned long)ships.size());DrawLine(hDC,y,line);
+        const std::size_t first=selected_>1?selected_-1:0;
+        const std::size_t last=(std::min)(first+4,ships.size());
+        for(std::size_t i=first;i<last;++i){
+            const oem::ShipDefinition& item=ships[i];
+            sprintf(line,"%c %s",i==selected_?'>':' ',item.displayName.c_str());DrawLine(hDC,y,line);
+            if(i==selected_){
+                sprintf(line,"  CLASS: %.42s",item.className.c_str());DrawLine(hDC,y,line);
+                sprintf(line,"  PRICE: %lld CR",(long long)item.price);DrawLine(hDC,y,line);
+                DrawLine(hDC,y,"  DELIVERY: ORBITAL STATION");
+            }
+        }
+        oem::PropellantPriceContext context;std::string location;
+        const oem::Result eligible=g_bridge->resolvePropellantContext(vesselId_,context,location);
+        if(eligible.ok&&context.locationKind==oem::PROPELLANT_LOCATION_ORBITAL_STATION){
+            sprintf(line,"SHIPYARD: %.36s",location.c_str());DrawLine(hDC,y,line);
+        }else DrawLine(hDC,y,"DOCK TO A REGISTERED ORBITAL STATION");
+        oem::Credits balance=0;
+        if(g_bridge->companyBalance(balance)){sprintf(line,"COMPANY: %lld CR",(long long)balance);DrawLine(hDC,y,line);}
+        DrawLine(hDC,y,"UP/DOWN: SELECT   B: PREPARE   Y: BUY");
+        DrawLine(hDC,y,"X: CANCEL");
+        DrawLine(hDC,y,status_.c_str());
+    }
+    bool ConsumeKeyBuffered(DWORD key) override {
+        if(!g_bridge)return false;
+        const std::vector<oem::ShipDefinition>& ships=g_bridge->shipCatalog().entries();
+        if(key==OAPI_KEY_UP||key=='U'){if(!ships.empty()&&selected_>0)--selected_;pending_=false;return true;}
+        if(key==OAPI_KEY_DOWN||key=='D'){if(selected_+1<ships.size())++selected_;pending_=false;return true;}
+        if(key==OAPI_KEY_B){
+            if(ships.empty()){status_="No installed vessel classes are available.";return true;}
+            pending_=true;status_="Purchase prepared. Press Y to create and pay, or X to cancel.";return true;
+        }
+        if(key==OAPI_KEY_X){pending_=false;status_="Purchase cancelled.";return true;}
+        if(key==OAPI_KEY_Y){
+            if(!pending_){status_="Press B first to prepare the selected purchase.";return true;}
+            pending_=false;
+            if(selected_>=ships.size()){status_="Selected class is no longer available.";return true;}
+            std::string created;
+            const oem::Result result=g_bridge->performShipPurchase(vesselId_,ships[selected_].className,created);
+            status_=result.ok?("Purchased "+created+". Open OEM Player Fleet (V) to inspect it."):result.code+": "+result.message;
+            return true;
+        }
+        return false;
+    }
+    bool ConsumeButton(int bt,int event) override {
+        if(!(event&PANEL_MOUSE_LBDOWN))return false;
+        if(bt==0)return ConsumeKeyBuffered(OAPI_KEY_UP);
+        if(bt==1)return ConsumeKeyBuffered(OAPI_KEY_DOWN);
+        if(bt==2)return ConsumeKeyBuffered(OAPI_KEY_B);
+        if(bt==3)return ConsumeKeyBuffered(OAPI_KEY_Y);
+        return false;
+    }
+    char* ButtonLabel(int bt) override {
+        static char* labels[4]={(char*)"UP",(char*)"DOWN",(char*)"PREPARE",(char*)"CONFIRM"};
+        return bt>=0&&bt<4?labels[bt]:0;
+    }
+    int ButtonMenu(const MFDBUTTONMENU**menu)const override {
+        static const MFDBUTTONMENU items[4]={{"Previous ship class",0,'U'},{"Next ship class",0,'D'},
+            {"Prepare selected purchase",0,'B'},{"Confirm purchase",0,'Y'}};
+        if(menu)*menu=items;return 4;
+    }
+    static int MsgProc(UINT msg,UINT mfd,WPARAM wparam,LPARAM lparam){
+        if(msg==OAPI_MSG_MFD_OPENEDEX&&g_bridge){MFDMODEOPENSPEC*spec=(MFDMODEOPENSPEC*)wparam;return (int)(new OEMShipPurchaseMFD(spec->w,spec->h,(VESSEL*)lparam));}
+        return 0;
+    }
+private:
+    void DrawLine(HDC hDC,int&y,const char*text){TextOutA(hDC,4,y,text,(int)strlen(text));y+=(int)ch;}
+    std::string vesselId_;
+    std::size_t selected_;
+    bool pending_;
+    std::string status_;
+};
+
+// Persistent purchase records are separate from Orbiter's transient vessel handles.
+class OEMFleetMFD : public MFD {
+public:
+    OEMFleetMFD(DWORD w,DWORD h,VESSEL*vessel):MFD(w,h,vessel),page_(0){}
+    void Update(HDC hDC) override {
+        Title(hDC,"OEM PLAYER FLEET");
+        SelectDefaultFont(hDC,0);
+        int y=(int)ch+3;
+        if(!g_bridge){DrawLine(hDC,y,"OEM bridge unavailable.");return;}
+        const std::vector<oem::OwnedVesselRecord>& ships=g_bridge->playerFleet().vessels();
+        char line[256];
+        sprintf(line,"PURCHASED VESSELS: %lu",(unsigned long)ships.size());DrawLine(hDC,y,line);
+        const std::size_t pageSize=4;
+        const std::size_t pages=ships.empty()?1:(ships.size()+pageSize-1)/pageSize;
+        if(page_>=pages)page_=pages-1;
+        sprintf(line,"PAGE %lu / %lu",(unsigned long)(page_+1),(unsigned long)pages);DrawLine(hDC,y,line);
+        if(ships.empty()){DrawLine(hDC,y,"No OEM-purchased vessels recorded.");}
+        else {
+            const std::size_t first=page_*pageSize;
+            const std::size_t last=(std::min)(first+pageSize,ships.size());
+            for(std::size_t i=first;i<last;++i){
+                const oem::OwnedVesselRecord&r=ships[i];
+                char name[128];strncpy(name,r.vesselId.c_str(),sizeof(name)-1);name[sizeof(name)-1]=0;
+                const bool present=oapiGetVesselByName(name)!=0;
+                sprintf(line,"%-20.20s %s",r.vesselId.c_str(),present?"PRESENT":"MISSING");DrawLine(hDC,y,line);
+                sprintf(line,"  CLASS: %.34s",r.className.c_str());DrawLine(hDC,y,line);
+                sprintf(line,"  PAID: %lld CR  AT: %.22s",(long long)r.acquisitionPrice,r.acquisitionLocationId.c_str());DrawLine(hDC,y,line);
+            }
+        }
+        DrawLine(hDC,y,"UP/DOWN: change page");
+        DrawLine(hDC,y,"Missing entries are retained; ownership is not reassigned.");
+    }
+    bool ConsumeKeyBuffered(DWORD key) override {
+        if(!g_bridge)return false;
+        const std::size_t count=g_bridge->playerFleet().vessels().size();
+        const std::size_t pages=count==0?1:(count+3)/4;
+        if(key==OAPI_KEY_UP||key=='U'){if(page_>0)--page_;return true;}
+        if(key==OAPI_KEY_DOWN||key=='D'){if(page_+1<pages)++page_;return true;}
+        return false;
+    }
+    bool ConsumeButton(int bt,int event) override {
+        if(!(event&PANEL_MOUSE_LBDOWN))return false;
+        if(bt==0)return ConsumeKeyBuffered(OAPI_KEY_UP);
+        if(bt==1)return ConsumeKeyBuffered(OAPI_KEY_DOWN);
+        return false;
+    }
+    char* ButtonLabel(int bt) override {
+        static char* labels[2]={(char*)"UP",(char*)"DOWN"};
+        return bt>=0&&bt<2?labels[bt]:0;
+    }
+    int ButtonMenu(const MFDBUTTONMENU**menu)const override {
+        static const MFDBUTTONMENU items[2]={{"Previous fleet page",0,'U'},{"Next fleet page",0,'D'}};
+        if(menu)*menu=items;return 2;
+    }
+    static int MsgProc(UINT msg,UINT mfd,WPARAM wparam,LPARAM lparam){
+        if(msg==OAPI_MSG_MFD_OPENEDEX&&g_bridge){MFDMODEOPENSPEC*spec=(MFDMODEOPENSPEC*)wparam;return (int)(new OEMFleetMFD(spec->w,spec->h,(VESSEL*)lparam));}
+        return 0;
+    }
+private:
+    void DrawLine(HDC hDC,int&y,const char*text){TextOutA(hDC,4,y,text,(int)strlen(text));y+=(int)ch;}
+    std::size_t page_;
 };
 
 // Market operations are committed through EconomyJournalStore; the MFD never changes Orbiter physical cargo.
@@ -4539,6 +4997,16 @@ DLLCLBK void InitModule(HINSTANCE hDLL) {
     spec.key = OAPI_KEY_U;
     spec.msgproc = OEMPropellantRefuelMFD::MsgProc;
     g_propellantRefuelMode = oapiRegisterMFDMode(spec);
+
+    spec.name = "OEM Player Fleet";
+    spec.key = OAPI_KEY_V;
+    spec.msgproc = OEMFleetMFD::MsgProc;
+    g_fleetMode = oapiRegisterMFDMode(spec);
+
+    spec.name = "OEM Shipyard";
+    spec.key = OAPI_KEY_B;
+    spec.msgproc = OEMShipPurchaseMFD::MsgProc;
+    g_shipPurchaseMode = oapiRegisterMFDMode(spec);
 }
 
 DLLCLBK void ExitModule(HINSTANCE hDLL) {
@@ -4549,6 +5017,8 @@ DLLCLBK void ExitModule(HINSTANCE hDLL) {
     if (g_economicAdminMode >= 0) oapiUnregisterMFDMode(g_economicAdminMode);
     if (g_propellantMonitorMode >= 0) oapiUnregisterMFDMode(g_propellantMonitorMode);
     if (g_propellantRefuelMode >= 0) oapiUnregisterMFDMode(g_propellantRefuelMode);
+    if (g_fleetMode >= 0) oapiUnregisterMFDMode(g_fleetMode);
+    if (g_shipPurchaseMode >= 0) oapiUnregisterMFDMode(g_shipPurchaseMode);
     g_flightLogMode = -1;
     g_cargoManifestMode = -1;
     g_marketMode = -1;
@@ -4556,6 +5026,8 @@ DLLCLBK void ExitModule(HINSTANCE hDLL) {
     g_economicAdminMode = -1;
     g_propellantMonitorMode = -1;
     g_propellantRefuelMode = -1;
+    g_fleetMode = -1;
+    g_shipPurchaseMode = -1;
     g_bridge = 0;
     // Orbiter owns and destroys registered oapi::Module instances.
 }
