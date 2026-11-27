@@ -44,6 +44,7 @@
 #include "../core/PrimaryResourceConfig.h"
 #include "../core/ProductionRecipeConfig.h"
 #include "../core/MarketPricing.h"
+#include "../core/ShipOwnership.h"
 
 namespace {
 
@@ -362,7 +363,7 @@ public:
           spaceportRegistryPath_(makeEconomyDataFilePath(hDLL, "spaceports.registry")),
           economicStations_(), economicStationsPath_(makeEconomyDataFilePath(hDLL, "economic_stations.registry")),
           spaceportRegistry_(), economicLocations_(), economicStationsReady_(false), cargoServicesReady_(false), ledger_(), cargoCatalog_(), economyReady_(false), journalReady_(false), sessionId_(),
-          currentSimulationTime_(0), lastProductionWallTick_(0), cargoTransferSequence_(0), lastFocus_(0), completionNote_(0), notificationUntil_(0) {
+          currentSimulationTime_(0), lastProductionWallTick_(0), cargoTransferSequence_(0), lastFocus_(0), completionNote_(0), notificationUntil_(0), fleet_(), fleetPath_(makeEconomyDataFilePath(hDLL, "player_fleet.registry")) {
         g_bridge = this;
     }
 
@@ -3211,10 +3212,23 @@ private:
                 (unsigned long)economicAgents_.agents().size());
         oapiWriteLog(agentConfigSummary);
 
+        if (fleetPath_.empty()) {
+            oapiWriteLog((char*)"OEM Fleet: could not resolve player fleet registry path.");
+            return false;
+        }
+        const oem::Result fleetLoaded = fleet_.load(fleetPath_);
+        if (!fleetLoaded.ok) {
+            char error[512];
+            sprintf(error, "OEM Fleet: registry load failed (%s): %s",
+                    fleetLoaded.code.c_str(), fleetLoaded.message.c_str());
+            oapiWriteLog(error);
+            return false;
+        }
+
         std::map<std::string, oem::CargoManifest> openingManifests;
         const oem::Result recovered = economyJournalStore_.load(
             economyJournalPath_, openingCatalog, openingLedger,
-            cargoServiceInventories_, openingManifests, &contractBook_, &objectiveBook_, &economicAgents_);
+            cargoServiceInventories_, openingManifests, &contractBook_, &objectiveBook_, &economicAgents_, &fleet_);
         if (!recovered.ok) {
             char message[512];
             sprintf(message, "OEM Economy: global journal recovery failed (%s): %s",
@@ -3491,6 +3505,8 @@ private:
     OBJHANDLE lastFocus_;
     NOTEHANDLE completionNote_;
     oem::SimulationSeconds notificationUntil_;
+    oem::PlayerFleetRegistry fleet_;
+    std::string fleetPath_;
 };
 
 class OEMFlightLogMFD : public MFD {
