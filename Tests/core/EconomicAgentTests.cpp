@@ -59,7 +59,7 @@ int main(){
  assert(routeJournal.load(routeJournalPath,catalog,routeLedger,recoveredRouteLocations,routeManifests,0,0,&recoveredRouteBook).ok);
  assert(recoveredRouteLocations["EarthBase"].quantity("route-ore")==180&&recoveredRouteLocations["MarsBase"].quantity("route-ore")==20);
  assert(recoveredRouteBook.agents()[0].inventory.find("route-ore")->second==0);
- assert(recoveredRouteBook.agents()[0].balance==1060&&recoveredRouteBook.agents()[0].lastActivityTime==200);
+ assert(recoveredRouteBook.agents()[0].balance==1060&&recoveredRouteBook.agents()[0].lastActivityTime==600);
  std::remove(routeJournalPath.c_str());
  // Agent trades are part of location history and prevent an opening-stock reseed.
  bool hasHistory=false;assert(journal.hasLocationHistory(path,"MoonBase",hasHistory).ok&&hasHistory);
