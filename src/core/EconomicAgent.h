@@ -53,7 +53,7 @@ public:
     Result planDueTrades(SimulationSeconds now, const CargoCatalog& catalog,
         const std::map<std::string,CargoServiceInventory>& locations,
         const std::map<std::string,std::map<std::string,SimulationSeconds> >& routeTravelTimes,
-        std::vector<AgentTradeIntent>& intents) const;
+        std::vector<AgentTradeIntent>& intents, bool requireRouteTravelTime) const;
     Result applyTrade(const AgentTradeIntent& intent, const CargoCatalog& catalog,
         std::map<std::string,CargoServiceInventory>& locations);
 private:
