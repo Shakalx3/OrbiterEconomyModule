@@ -27,6 +27,7 @@
 #include "../core/CargoTransferGate.h"
 #include "../core/CargoServiceInventoryConfig.h"
 #include "../core/EconomyJournal.h"
+#include "../core/EconomicAgentConfig.h"
 #include "../core/MissionBoard.h"
 #include "../core/MissionEconomics.h"
 #include "../core/MissionObjectiveBook.h"
@@ -342,7 +343,10 @@ public:
           cargoServices_(), cargoServicesPath_(makeCargoServicesPath(hDLL)),
           cargoTransferGate_(), cargoManifests_(), cargoManifestLoadAttempted_(),
           cargoStockConfigStore_(), cargoServiceInventories_(), cargoServiceInventoryLoadAttempted_(),
-          economyJournalStore_(), primaryResourceConfigStore_(), primaryResources_(),
+          economyJournalStore_(), economicAgentConfigStore_(), economicAgents_(),
+          economicAgentsPath_(makeEconomyDataFilePath(hDLL, "economic_agents.cfg")),
+          economicAgentsReady_(false), lastAgentWallTick_(0),
+          primaryResourceConfigStore_(), primaryResources_(),
           productionRecipeConfigStore_(), productionRecipes_(),
           productionRecipesPath_(makeEconomyDataFilePath(hDLL, "production_recipes.cfg")),
           productionRecipesReady_(false),
@@ -1868,6 +1872,12 @@ public:
                 updatePrimaryProduction(primaryTime);
                 updateProductionRecipes(primaryTime);
             }
+            if (lastAgentWallTick_ == 0 ||
+                (DWORD)(productionTick - lastAgentWallTick_) >= 1000) {
+                lastAgentWallTick_ = productionTick;
+                updateEconomicAgents(primaryTime);
+            }
+
             oem::MissionObjectiveBook objectiveDue = objectiveBook_;
             const std::vector<std::string> expiredObjectives = objectiveDue.expireDue(simSeconds);
             for (std::size_t i = 0; i < expiredObjectives.size(); ++i) {
@@ -2785,8 +2795,37 @@ private:
         return true;
     }
 
+    void updateEconomicAgents(oem::SimulationSeconds now) {
+        if (!economyReady_ || !economicAgentsReady_ || !marketGoodsEnabled_ ||
+            economicAgents_.agents().empty()) return;
+        std::vector<oem::AgentTradeIntent> intents;
+        const oem::Result planned = economicAgents_.planDueTrades(
+            now, cargoCatalog_, cargoServiceInventories_, intents);
+        if (!planned.ok) {
+            char error[512]; sprintf(error, "OEM Agents: planning failed (%s): %s", planned.code.c_str(), planned.message.c_str());
+            oapiWriteLog(error); return;
+        }
+        unsigned long committed = 0;
+        for (std::size_t i = 0; i < intents.size(); ++i) {
+            const oem::Result applied = economyJournalStore_.applyAgentTrade(
+                economyJournalPath_, intents[i], cargoCatalog_, economicAgents_, cargoServiceInventories_);
+            if (!applied.ok) {
+                char error[512]; sprintf(error, "OEM Agents: trade failed agent=%s location=%s cargo=%s (%s): %s",
+                    intents[i].agentId.c_str(), intents[i].locationId.c_str(), intents[i].cargoId.c_str(),
+                    applied.code.c_str(), applied.message.c_str());
+                oapiWriteLog(error);
+                continue;
+            }
+            ++committed;
+        }
+        if (committed > 0) {
+            char summary[256]; sprintf(summary, "OEM Agents: committed %lu background trade(s).", committed);
+            oapiWriteLog(summary);
+        }
+    }
+
     bool initializeEconomyState() {
-        if (economyJournalPath_.empty() || accountsPath_.empty() || cargoCatalogPath_.empty() || primaryResourcesPath_.empty() || productionRecipesPath_.empty() || missionFailurePolicyPath_.empty() || missionIssuerRegistryPath_.empty()) {
+        if (economyJournalPath_.empty() || economicAgentsPath_.empty() || accountsPath_.empty() || cargoCatalogPath_.empty() || primaryResourcesPath_.empty() || productionRecipesPath_.empty() || missionFailurePolicyPath_.empty() || missionIssuerRegistryPath_.empty()) {
             oapiWriteLog((char*)"OEM Economy: could not resolve economy configuration paths.");
             return false;
         }
@@ -3060,10 +3099,57 @@ private:
             }
         }
 
+        // Load persistent abstract traders after every opening inventory is known,
+        // but before journal replay so their balances and cargo are reconstructed
+        // from the same durable transaction history as station stock.
+        DWORD agentAttributes = GetFileAttributesA(economicAgentsPath_.c_str());
+        if (agentAttributes == INVALID_FILE_ATTRIBUTES) {
+            economicAgents_ = oem::EconomicAgentBook();
+            if (economicLocations_.entries().size() >= 2 && !openingCatalog.entries().empty()) {
+                oem::EconomicAgent trader;
+                trader.agentId = "oem-interplanetary-trader";
+                trader.displayName = "OEM Interplanetary Trader";
+                trader.role = oem::AGENT_COMPETITOR;
+                trader.homeLocationId = economicLocations_.entries()[0].storageId;
+                trader.balance = 50000;
+                trader.activityInterval = 86400;
+                for (std::size_t i = 0; i < economicLocations_.entries().size(); ++i)
+                    trader.operatingLocationIds.push_back(economicLocations_.entries()[i].storageId);
+                for (std::size_t i = 0; i < openingCatalog.entries().size(); ++i) {
+                    oem::AgentCargoPolicy policy;
+                    policy.cargoId = openingCatalog.entries()[i].cargoId;
+                    policy.targetQuantity = 20;
+                    policy.maximumBuyPrice = LLONG_MAX;
+                    policy.minimumSellPrice = 0;
+                    trader.cargoPolicies.push_back(policy);
+                }
+                const oem::Result added = economicAgents_.add(trader);
+                if (!added.ok) {
+                    char error[512]; sprintf(error, "OEM Agents: default trader initialization failed (%s): %s", added.code.c_str(), added.message.c_str());
+                    oapiWriteLog(error); return false;
+                }
+            }
+            const oem::Result created = economicAgentConfigStore_.save(economicAgentsPath_, economicAgents_);
+            if (!created.ok) {
+                char error[512]; sprintf(error, "OEM Agents: could not create economic_agents.cfg (%s): %s", created.code.c_str(), created.message.c_str());
+                oapiWriteLog(error); return false;
+            }
+        } else {
+            const oem::Result loaded = economicAgentConfigStore_.load(economicAgentsPath_, economicAgents_);
+            if (!loaded.ok) {
+                char error[512]; sprintf(error, "OEM Agents: configuration failed (%s): %s", loaded.code.c_str(), loaded.message.c_str());
+                oapiWriteLog(error); return false;
+            }
+        }
+        char agentConfigSummary[256];
+        sprintf(agentConfigSummary, "OEM Agents: loaded %lu configured economic agents.",
+                (unsigned long)economicAgents_.agents().size());
+        oapiWriteLog(agentConfigSummary);
+
         std::map<std::string, oem::CargoManifest> openingManifests;
         const oem::Result recovered = economyJournalStore_.load(
             economyJournalPath_, openingCatalog, openingLedger,
-            cargoServiceInventories_, openingManifests, &contractBook_, &objectiveBook_);
+            cargoServiceInventories_, openingManifests, &contractBook_, &objectiveBook_, &economicAgents_);
         if (!recovered.ok) {
             char message[512];
             sprintf(message, "OEM Economy: global journal recovery failed (%s): %s",
@@ -3112,6 +3198,7 @@ private:
              it != cargoManifests_.end(); ++it)
             cargoManifestLoadAttempted_.insert(it->first);
         economyReady_ = true;
+        economicAgentsReady_ = true;
         oapiWriteLog((char*)"OEM Economy: global journal ready; legacy test journals are ignored.");
         return true;
     }
@@ -3278,6 +3365,11 @@ private:
     std::map<std::string, oem::CargoServiceInventory> cargoServiceInventories_;
     std::set<std::string> cargoServiceInventoryLoadAttempted_;
     oem::EconomyJournalStore economyJournalStore_;
+    oem::EconomicAgentConfigStore economicAgentConfigStore_;
+    oem::EconomicAgentBook economicAgents_;
+    std::string economicAgentsPath_;
+    bool economicAgentsReady_;
+    DWORD lastAgentWallTick_;
     oem::PrimaryResourceConfigStore primaryResourceConfigStore_;
     oem::PrimaryResourceBook primaryResources_;
     oem::ProductionRecipeConfigStore productionRecipeConfigStore_;
