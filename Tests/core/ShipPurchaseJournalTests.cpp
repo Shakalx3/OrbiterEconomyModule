@@ -13,6 +13,7 @@ int main(){
     vessel.className="DeltaGlider";vessel.acquisitionLocationId="ISS";vessel.acquisitionPrice=25000;vessel.acquiredAt=900;
     oem::EconomyJournalStore journal;
     assert(fleet.registerPurchase(vessel).ok);
+    assert(fleet.save("oem_player_fleet_test.registry").ok);
     assert(journal.chargePropellant(path,"ship-purchase:"+vessel.purchaseId,"company",vessel.acquisitionPrice,vessel.acquiredAt,ledger).ok);
     oem::Credits balance=0;assert(ledger.getBalance("company",balance)&&balance==75000);
     assert(fleet.isOwned(vessel.vesselId));
