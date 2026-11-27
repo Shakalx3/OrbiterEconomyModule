@@ -173,7 +173,7 @@ bool readShipClassDefinition(const std::string& root, const std::string& relativ
     std::ifstream input(configPath.c_str());
     if (!input.is_open()) return false;
     std::string module, displayName, line;
-    double emptyMass = 10000.0, maxFuel = 0.0;
+    double emptyMass = 10000.0, maxFuel = 0.0, vesselSize = 100.0;
     while (std::getline(input, line)) {
         line = trimShipConfig(line);
         if (line.empty() || line[0] == ';' || line[0] == '#') continue;
@@ -188,6 +188,9 @@ bool readShipClassDefinition(const std::string& root, const std::string& relativ
         else if (key == "emptymass" || key == "empty_mass") {
             char* end = 0; const double parsed = strtod(value.c_str(), &end);
             if (end && *end == 0 && parsed > 0.0 && _finite(parsed)) emptyMass = parsed;
+        } else if (key == "size") {
+            char* end = 0; const double parsed = strtod(value.c_str(), &end);
+            if (end && *end == 0 && parsed > 0.0 && _finite(parsed)) vesselSize = parsed;
         } else if (key == "maxfuel" || key == "max_fuel") {
             char* end = 0; const double parsed = strtod(value.c_str(), &end);
             if (end && *end == 0 && parsed >= 0.0 && _finite(parsed)) maxFuel = parsed;
@@ -206,6 +209,7 @@ bool readShipClassDefinition(const std::string& root, const std::string& relativ
     definition.className = relativeClass;
     definition.displayName = displayName.empty() ? relativeClass : displayName;
     definition.price = (oem::Credits)ceil(estimated);
+    definition.sizeMeters = vesselSize;
     definition.orbitalDelivery = true;
     definition.surfaceDelivery = false;
     return true;
@@ -1369,11 +1373,15 @@ public:
             stationStatus.rpos.y*stationStatus.rpos.y+stationStatus.rpos.z*stationStatus.rpos.z);
         if(!(radius>1.0)||!_finite(radius))
             return oem::Result::failure("SHIP_PURCHASE_SPAWN","Station orbital position is invalid.");
-        const double offset=10000.0;
+        oem::ShipDefinition selectedDefinition;
+        if(!shipCatalog_.find(className,selectedDefinition))
+            return oem::Result::failure("SHIP_CLASS_UNAVAILABLE","Selected vessel class disappeared from the installed catalogue.");
+        const double stationSize=station->GetSize()>0.0?station->GetSize():100.0;
+        const double offset=std::max(10000.0,(selectedDefinition.sizeMeters+stationSize)*2.0+5000.0);
         const double ux=stationStatus.rpos.x/radius,uy=stationStatus.rpos.y/radius,uz=stationStatus.rpos.z/radius;
         VECTOR3 stationGlobal;station->GetGlobalPos(stationGlobal);
         VECTOR3 candidateGlobal={stationGlobal.x+ux*offset,stationGlobal.y+uy*offset,stationGlobal.z+uz*offset};
-        const double minimumSeparation=5000.0;
+        const double minimumSeparation=std::max(5000.0,(selectedDefinition.sizeMeters+stationSize)*1.25+1000.0);
         for(DWORD i=0;i<oapiGetVesselCount();++i){
             OBJHANDLE other=oapiGetVesselByIndex((int)i);if(!other)continue;
             VECTOR3 otherGlobal;oapiGetGlobalPos(other,&otherGlobal);
