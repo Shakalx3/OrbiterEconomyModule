@@ -27,10 +27,10 @@ Result EconomicAgentConfigStore::load(const std::string&path,EconomicAgentBook&b
  while(std::getline(in,line)){
   if(!line.empty()&&line.back()=='\r')line.pop_back();if(line.empty())continue;std::vector<std::string>f=split(line);long long a=0,b=0,c=0,d=0,e=0;
   if(f.size()==10&&f[0]=="A"){
-   EconomicAgent agent;if(!unhex(f[1],agent.agentId)||!unhex(f[2],agent.displayName)||!integer(f[3],a)||!integer(f[5],b)||!integer(f[6],c)||!integer(f[7],d)||!integer(f[8],e)||!integer(f[9],a))return Result::failure("AGENT_CONFIG_RECORD","Economic agent identity record is invalid.");
-   // Parse role separately; the final integer above is enabled.
-   long long role=0,enabled=0;if(!integer(f[3],role)||!integer(f[9],enabled)||role<AGENT_SUPPLIER||role>AGENT_COMPETITOR||(c!=0&&c!=1)||(enabled!=0&&enabled!=1)||d<=0||e<0||b<0)return Result::failure("AGENT_CONFIG_RECORD","Economic agent numeric fields are invalid.");
-   agent.role=(EconomicAgentRole)role;if(!unhex(f[4],agent.homeLocationId))return Result::failure("AGENT_CONFIG_RECORD","Economic agent home location is invalid.");agent.balance=b;agent.unlimitedFunds=c!=0;agent.activityInterval=d;agent.lastActivityTime=e;agent.enabled=enabled!=0;
+   EconomicAgent agent;long long role=0,balance=0,unlimited=0,interval=0,last=0,enabled=0;
+   if(!unhex(f[1],agent.agentId)||!unhex(f[2],agent.displayName)||!integer(f[3],role)||!integer(f[5],balance)||!integer(f[6],unlimited)||!integer(f[7],interval)||!integer(f[8],last)||!integer(f[9],enabled)||role<AGENT_SUPPLIER||role>AGENT_COMPETITOR||(unlimited!=0&&unlimited!=1)||(enabled!=0&&enabled!=1)||interval<=0||last<0||balance<0)
+    return Result::failure("AGENT_CONFIG_RECORD","Economic agent numeric fields are invalid.");
+   agent.role=(EconomicAgentRole)role;if(!unhex(f[4],agent.homeLocationId))return Result::failure("AGENT_CONFIG_RECORD","Economic agent home location is invalid.");agent.balance=balance;agent.unlimitedFunds=unlimited!=0;agent.activityInterval=interval;agent.lastActivityTime=last;agent.enabled=enabled!=0;
    if(agents.find(agent.agentId)!=agents.end())return Result::failure("AGENT_CONFIG_DUPLICATE","Economic agent ID is duplicated.");agents[agent.agentId]=agent;continue;
   }
   if(f.size()==3&&f[0]=="L"){
