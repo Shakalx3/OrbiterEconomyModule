@@ -172,7 +172,7 @@ bool readShipClassDefinition(const std::string& root, const std::string& relativ
     std::string configPath = root + "\\Config\\Vessels\\" + relativeClass + ".cfg";
     std::ifstream input(configPath.c_str());
     if (!input.is_open()) return false;
-    std::string module, displayName, line;
+    std::string module, displayName, configuredClass, line;
     double emptyMass = 10000.0, maxFuel = 0.0, vesselSize = 100.0;
     while (std::getline(input, line)) {
         line = trimShipConfig(line);
@@ -184,6 +184,7 @@ bool readShipClassDefinition(const std::string& root, const std::string& relativ
         for (std::size_t i = 0; i < key.size(); ++i)
             key[i] = (char)tolower((unsigned char)key[i]);
         if (key == "module") module = value;
+        else if (key == "classname" && !value.empty()) configuredClass = value;
         else if (key == "name" && !value.empty()) displayName = value;
         else if (key == "emptymass" || key == "empty_mass") {
             char* end = 0; const double parsed = strtod(value.c_str(), &end);
@@ -198,7 +199,13 @@ bool readShipClassDefinition(const std::string& root, const std::string& relativ
     }
     if (module.empty()) return false;
     if (_stricmp(module.c_str(), "Orbiter") != 0) {
-        std::string modulePath = root + "\\Modules\\" + module;
+        std::string modulePath;
+        if (module.find(':') != std::string::npos || (!module.empty() && (module[0] == '\\' || module[0] == '/')))
+            modulePath = module;
+        else if (_strnicmp(module.c_str(), "Modules\\", 8) == 0 || _strnicmp(module.c_str(), "Modules/", 8) == 0)
+            modulePath = root + "\\" + module;
+        else
+            modulePath = root + "\\Modules\\" + module;
         if (modulePath.size() < 4 || _stricmp(modulePath.substr(modulePath.size()-4).c_str(), ".dll") != 0)
             modulePath += ".dll";
         if (GetFileAttributesA(modulePath.c_str()) == INVALID_FILE_ATTRIBUTES) return false;
@@ -206,8 +213,15 @@ bool readShipClassDefinition(const std::string& root, const std::string& relativ
     const long double estimated = 1000.0L + (long double)emptyMass * 0.5L +
                                   (long double)maxFuel * 0.1L;
     if (!(estimated > 0.0L) || estimated > (long double)LLONG_MAX) return false;
-    definition.className = relativeClass;
-    definition.displayName = displayName.empty() ? relativeClass : displayName;
+    std::string resolvedClass = configuredClass.empty() ? relativeClass : configuredClass;
+    if (!configuredClass.empty() && configuredClass.find('\\') == std::string::npos &&
+        configuredClass.find('/') == std::string::npos) {
+        const std::string::size_type folder = relativeClass.find_last_of("\\/");
+        if (folder != std::string::npos) resolvedClass = relativeClass.substr(0, folder + 1) + configuredClass;
+    }
+    if (resolvedClass.empty() || resolvedClass.find("..") != std::string::npos) return false;
+    definition.className = resolvedClass;
+    definition.displayName = displayName.empty() ? resolvedClass : displayName;
     definition.price = (oem::Credits)ceil(estimated);
     definition.sizeMeters = vesselSize;
     definition.orbitalDelivery = true;
