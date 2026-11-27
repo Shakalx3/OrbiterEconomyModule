@@ -55,7 +55,7 @@ bool sameRecord(const OwnedVesselRecord&a,const OwnedVesselRecord&b) {
 }
 }
 
-ShipDefinition::ShipDefinition():price(0),orbitalDelivery(false),surfaceDelivery(false){}
+ShipDefinition::ShipDefinition():price(0),sizeMeters(100.0),orbitalDelivery(false),surfaceDelivery(false){}
 ShipPurchaseQuote::ShipPurchaseQuote():deliveryKind(SHIP_DELIVERY_ORBITAL),price(0),simulationTime(0){}
 
 Result ShipCatalog::add(const ShipDefinition& d) {
