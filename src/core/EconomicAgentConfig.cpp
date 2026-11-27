@@ -22,10 +22,10 @@ bool replace(const std::string&a,const std::string&b){
 }
 Result EconomicAgentConfigStore::load(const std::string&path,EconomicAgentBook&book)const{
  std::ifstream in(path.c_str(),std::ios::binary);if(!in)return Result::failure("AGENT_CONFIG_MISSING","Economic agent configuration is missing.");
- std::string line;if(!std::getline(in,line))return Result::failure("AGENT_CONFIG_HEADER","Economic agent configuration is empty.");if(!line.empty()&&line.back()=='\\r')line.pop_back();if(line!="OEM_ECONOMIC_AGENTS|1")return Result::failure("AGENT_CONFIG_HEADER","Economic agent configuration version is invalid.");
+ std::string line;if(!std::getline(in,line))return Result::failure("AGENT_CONFIG_HEADER","Economic agent configuration is empty.");if(!line.empty()&&line.back()=='\r')line.pop_back();if(line!="OEM_ECONOMIC_AGENTS|1")return Result::failure("AGENT_CONFIG_HEADER","Economic agent configuration version is invalid.");
  std::map<std::string,EconomicAgent> agents;
  while(std::getline(in,line)){
-  if(!line.empty()&&line.back()=='\\r')line.pop_back();if(line.empty())continue;std::vector<std::string>f=split(line);long long a=0,b=0,c=0,d=0,e=0;
+  if(!line.empty()&&line.back()=='\r')line.pop_back();if(line.empty())continue;std::vector<std::string>f=split(line);long long a=0,b=0,c=0,d=0,e=0;
   if(f.size()==10&&f[0]=="A"){
    EconomicAgent agent;if(!unhex(f[1],agent.agentId)||!unhex(f[2],agent.displayName)||!integer(f[3],a)||!integer(f[5],b)||!integer(f[6],c)||!integer(f[7],d)||!integer(f[8],e)||!integer(f[9],a))return Result::failure("AGENT_CONFIG_RECORD","Economic agent identity record is invalid.");
    // Parse role separately; the final integer above is enabled.
@@ -50,11 +50,11 @@ Result EconomicAgentConfigStore::load(const std::string&path,EconomicAgentBook&b
 }
 Result EconomicAgentConfigStore::save(const std::string&path,const EconomicAgentBook&book)const{
  if(path.empty())return Result::failure("AGENT_CONFIG_PATH","Economic agent configuration path is empty.");const std::string temp=path+".tmp";
- {std::ofstream out(temp.c_str(),std::ios::binary|std::ios::trunc);if(!out)return Result::failure("AGENT_CONFIG_OPEN","Could not create temporary economic agent configuration.");out<<"OEM_ECONOMIC_AGENTS|1\\n";
-  const std::vector<EconomicAgent>&agents=book.agents();for(std::size_t i=0;i<agents.size();++i){const EconomicAgent&a=agents[i];out<<"A|"<<hex(a.agentId)<<'|'<<hex(a.displayName)<<'|'<<(int)a.role<<'|'<<hex(a.homeLocationId)<<'|'<<a.balance<<'|'<<(a.unlimitedFunds?1:0)<<'|'<<a.activityInterval<<'|'<<a.lastActivityTime<<'|'<<(a.enabled?1:0)<<"\\n";
-   for(std::size_t j=0;j<a.operatingLocationIds.size();++j)out<<"L|"<<hex(a.agentId)<<'|'<<hex(a.operatingLocationIds[j])<<"\\n";
-   for(std::size_t j=0;j<a.cargoPolicies.size();++j){const AgentCargoPolicy&p=a.cargoPolicies[j];out<<"P|"<<hex(a.agentId)<<'|'<<hex(p.cargoId)<<'|'<<p.targetQuantity<<'|'<<p.maximumBuyPrice<<'|'<<p.minimumSellPrice<<"\\n";}
-   for(std::map<std::string,long long>::const_iterator j=a.inventory.begin();j!=a.inventory.end();++j){const std::string origin=a.cargoOriginLocation.count(j->first)?a.cargoOriginLocation.find(j->first)->second:std::string();const Credits cost=a.cargoUnitCost.count(j->first)?a.cargoUnitCost.find(j->first)->second:Credits(0);out<<"I|"<<hex(a.agentId)<<'|'<<hex(j->first)<<'|'<<j->second<<'|'<<(origin.empty()?std::string("-"):hex(origin))<<'|'<<cost<<"\\n";}
+ {std::ofstream out(temp.c_str(),std::ios::binary|std::ios::trunc);if(!out)return Result::failure("AGENT_CONFIG_OPEN","Could not create temporary economic agent configuration.");out<<"OEM_ECONOMIC_AGENTS|1\n";
+  const std::vector<EconomicAgent>&agents=book.agents();for(std::size_t i=0;i<agents.size();++i){const EconomicAgent&a=agents[i];out<<"A|"<<hex(a.agentId)<<'|'<<hex(a.displayName)<<'|'<<(int)a.role<<'|'<<hex(a.homeLocationId)<<'|'<<a.balance<<'|'<<(a.unlimitedFunds?1:0)<<'|'<<a.activityInterval<<'|'<<a.lastActivityTime<<'|'<<(a.enabled?1:0)<<"\n";
+   for(std::size_t j=0;j<a.operatingLocationIds.size();++j)out<<"L|"<<hex(a.agentId)<<'|'<<hex(a.operatingLocationIds[j])<<"\n";
+   for(std::size_t j=0;j<a.cargoPolicies.size();++j){const AgentCargoPolicy&p=a.cargoPolicies[j];out<<"P|"<<hex(a.agentId)<<'|'<<hex(p.cargoId)<<'|'<<p.targetQuantity<<'|'<<p.maximumBuyPrice<<'|'<<p.minimumSellPrice<<"\n";}
+   for(std::map<std::string,long long>::const_iterator j=a.inventory.begin();j!=a.inventory.end();++j){const std::string origin=a.cargoOriginLocation.count(j->first)?a.cargoOriginLocation.find(j->first)->second:std::string();const Credits cost=a.cargoUnitCost.count(j->first)?a.cargoUnitCost.find(j->first)->second:Credits(0);out<<"I|"<<hex(a.agentId)<<'|'<<hex(j->first)<<'|'<<j->second<<'|'<<(origin.empty()?std::string("-"):hex(origin))<<'|'<<cost<<"\n";}
   }
   out.flush();if(!out.good())return Result::failure("AGENT_CONFIG_WRITE","Could not write economic agent configuration.");out.close();if(out.fail())return Result::failure("AGENT_CONFIG_CLOSE","Could not close economic agent configuration.");
  }
