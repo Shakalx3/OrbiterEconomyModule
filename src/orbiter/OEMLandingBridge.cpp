@@ -58,6 +58,7 @@ int g_missionBoardMode = -1;
 int g_economicAdminMode = -1;
 int g_propellantMonitorMode = -1;
 int g_propellantRefuelMode = -1;
+int g_fleetMode = -1;
 
 bool addBuiltInMarketCommodities(oem::CargoCatalog& catalog) {
     const std::vector<oem::CargoDefinition>& entries = catalog.entries();
@@ -372,6 +373,7 @@ public:
     }
 
     bool journalReady() const { return journalReady_; }
+    const oem::PlayerFleetRegistry& playerFleet() const { return fleet_; }
     const oem::EconomicLocationRegistry& economicLocations() const { return economicLocations_; }
     bool isCargoService(const std::string& vesselId) const {
         return cargoServices_.isRegistered(vesselId);
@@ -3930,6 +3932,69 @@ private:
     int pendingAction_;
 };
 
+// Persistent purchase records are separate from Orbiter's transient vessel handles.
+class OEMFleetMFD : public MFD {
+public:
+    OEMFleetMFD(DWORD w,DWORD h,VESSEL*vessel):MFD(w,h,vessel),page_(0){}
+    void Update(HDC hDC) override {
+        Title(hDC,"OEM PLAYER FLEET");
+        SelectDefaultFont(hDC,0);
+        int y=(int)ch+3;
+        if(!g_bridge){DrawLine(hDC,y,"OEM bridge unavailable.");return;}
+        const std::vector<oem::OwnedVesselRecord>& ships=g_bridge->playerFleet().vessels();
+        char line[256];
+        sprintf(line,"PURCHASED VESSELS: %lu",(unsigned long)ships.size());DrawLine(hDC,y,line);
+        const std::size_t pageSize=4;
+        const std::size_t pages=ships.empty()?1:(ships.size()+pageSize-1)/pageSize;
+        if(page_>=pages)page_=pages-1;
+        sprintf(line,"PAGE %lu / %lu",(unsigned long)(page_+1),(unsigned long)pages);DrawLine(hDC,y,line);
+        if(ships.empty()){DrawLine(hDC,y,"No OEM-purchased vessels recorded.");}
+        else {
+            const std::size_t first=page_*pageSize;
+            const std::size_t last=std::min(first+pageSize,ships.size());
+            for(std::size_t i=first;i<last;++i){
+                const oem::OwnedVesselRecord&r=ships[i];
+                char name[128];strncpy(name,r.vesselId.c_str(),sizeof(name)-1);name[sizeof(name)-1]=0;
+                const bool present=oapiGetVesselByName(name)!=0;
+                sprintf(line,"%-20.20s %s",r.vesselId.c_str(),present?"PRESENT":"MISSING");DrawLine(hDC,y,line);
+                sprintf(line,"  CLASS: %.34s",r.className.c_str());DrawLine(hDC,y,line);
+                sprintf(line,"  PAID: %lld CR  AT: %.22s",(long long)r.acquisitionPrice,r.acquisitionLocationId.c_str());DrawLine(hDC,y,line);
+            }
+        }
+        DrawLine(hDC,y,"UP/DOWN: change page");
+        DrawLine(hDC,y,"Missing entries are retained; ownership is not reassigned.");
+    }
+    bool ConsumeKeyBuffered(DWORD key) override {
+        if(!g_bridge)return false;
+        const std::size_t count=g_bridge->playerFleet().vessels().size();
+        const std::size_t pages=count==0?1:(count+3)/4;
+        if(key==OAPI_KEY_UP){if(page_>0)--page_;return true;}
+        if(key==OAPI_KEY_DOWN){if(page_+1<pages)++page_;return true;}
+        return false;
+    }
+    bool ConsumeButton(int bt,int event) override {
+        if(!(event&PANEL_MOUSE_LBDOWN))return false;
+        if(bt==0)return ConsumeKeyBuffered(OAPI_KEY_UP);
+        if(bt==1)return ConsumeKeyBuffered(OAPI_KEY_DOWN);
+        return false;
+    }
+    char* ButtonLabel(int bt) override {
+        static char* labels[2]={(char*)"UP",(char*)"DOWN"};
+        return bt>=0&&bt<2?labels[bt]:0;
+    }
+    int ButtonMenu(const MFDBUTTONMENU**menu)const override {
+        static const MFDBUTTONMENU items[2]={{"Previous fleet page",0,'U'},{"Next fleet page",0,'D'}};
+        if(menu)*menu=items;return 2;
+    }
+    static int MsgProc(UINT msg,UINT mfd,WPARAM wparam,LPARAM lparam){
+        if(msg==OAPI_MSG_MFD_OPENEDEX&&g_bridge){MFDMODEOPENSPEC*spec=(MFDMODEOPENSPEC*)wparam;return (int)(new OEMFleetMFD(spec->w,spec->h,(VESSEL*)lparam));}
+        return 0;
+    }
+private:
+    void DrawLine(HDC hDC,int&y,const char*text){TextOutA(hDC,4,y,text,(int)strlen(text));y+=(int)ch;}
+    std::size_t page_;
+};
+
 // Market operations are committed through EconomyJournalStore; the MFD never changes Orbiter physical cargo.
 class OEMMarketMFD : public MFD {
 public:
@@ -4555,6 +4620,11 @@ DLLCLBK void InitModule(HINSTANCE hDLL) {
     spec.key = OAPI_KEY_U;
     spec.msgproc = OEMPropellantRefuelMFD::MsgProc;
     g_propellantRefuelMode = oapiRegisterMFDMode(spec);
+
+    spec.name = "OEM Player Fleet";
+    spec.key = OAPI_KEY_V;
+    spec.msgproc = OEMFleetMFD::MsgProc;
+    g_fleetMode = oapiRegisterMFDMode(spec);
 }
 
 DLLCLBK void ExitModule(HINSTANCE hDLL) {
@@ -4565,6 +4635,7 @@ DLLCLBK void ExitModule(HINSTANCE hDLL) {
     if (g_economicAdminMode >= 0) oapiUnregisterMFDMode(g_economicAdminMode);
     if (g_propellantMonitorMode >= 0) oapiUnregisterMFDMode(g_propellantMonitorMode);
     if (g_propellantRefuelMode >= 0) oapiUnregisterMFDMode(g_propellantRefuelMode);
+    if (g_fleetMode >= 0) oapiUnregisterMFDMode(g_fleetMode);
     g_flightLogMode = -1;
     g_cargoManifestMode = -1;
     g_marketMode = -1;
@@ -4572,6 +4643,7 @@ DLLCLBK void ExitModule(HINSTANCE hDLL) {
     g_economicAdminMode = -1;
     g_propellantMonitorMode = -1;
     g_propellantRefuelMode = -1;
+    g_fleetMode = -1;
     g_bridge = 0;
     // Orbiter owns and destroys registered oapi::Module instances.
 }
