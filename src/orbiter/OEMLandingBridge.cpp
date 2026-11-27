@@ -4242,8 +4242,8 @@ public:
     bool ConsumeKeyBuffered(DWORD key) override {
         if(!g_bridge)return false;
         const std::vector<oem::ShipDefinition>& ships=g_bridge->shipCatalog().entries();
-        if(key==OAPI_KEY_UP){if(!ships.empty()&&selected_>0)--selected_;pending_=false;return true;}
-        if(key==OAPI_KEY_DOWN){if(selected_+1<ships.size())++selected_;pending_=false;return true;}
+        if(key==OAPI_KEY_UP||key=='U'){if(!ships.empty()&&selected_>0)--selected_;pending_=false;return true;}
+        if(key==OAPI_KEY_DOWN||key=='D'){if(selected_+1<ships.size())++selected_;pending_=false;return true;}
         if(key==OAPI_KEY_B){
             if(ships.empty()){status_="No installed vessel classes are available.";return true;}
             pending_=true;status_="Purchase prepared. Press Y to create and pay, or X to cancel.";return true;
@@ -4265,16 +4265,16 @@ public:
         if(bt==0)return ConsumeKeyBuffered(OAPI_KEY_UP);
         if(bt==1)return ConsumeKeyBuffered(OAPI_KEY_DOWN);
         if(bt==2)return ConsumeKeyBuffered(OAPI_KEY_B);
-        if(bt==3)return ConsumeKeyBuffered(OAPI_KEY_X);
+        if(bt==3)return ConsumeKeyBuffered(OAPI_KEY_Y);
         return false;
     }
     char* ButtonLabel(int bt) override {
-        static char* labels[4]={(char*)"UP",(char*)"DOWN",(char*)"BUY",(char*)"CANCEL"};
+        static char* labels[4]={(char*)"UP",(char*)"DOWN",(char*)"PREPARE",(char*)"CONFIRM"};
         return bt>=0&&bt<4?labels[bt]:0;
     }
     int ButtonMenu(const MFDBUTTONMENU**menu)const override {
         static const MFDBUTTONMENU items[4]={{"Previous ship class",0,'U'},{"Next ship class",0,'D'},
-            {"Prepare selected purchase",0,'B'},{"Cancel pending purchase",0,'X'}};
+            {"Prepare selected purchase",0,'B'},{"Confirm purchase",0,'Y'}};
         if(menu)*menu=items;return 4;
     }
     static int MsgProc(UINT msg,UINT mfd,WPARAM wparam,LPARAM lparam){
@@ -4325,8 +4325,8 @@ public:
         if(!g_bridge)return false;
         const std::size_t count=g_bridge->playerFleet().vessels().size();
         const std::size_t pages=count==0?1:(count+3)/4;
-        if(key==OAPI_KEY_UP){if(page_>0)--page_;return true;}
-        if(key==OAPI_KEY_DOWN){if(page_+1<pages)++page_;return true;}
+        if(key==OAPI_KEY_UP||key=='U'){if(page_>0)--page_;return true;}
+        if(key==OAPI_KEY_DOWN||key=='D'){if(page_+1<pages)++page_;return true;}
         return false;
     }
     bool ConsumeButton(int bt,int event) override {
