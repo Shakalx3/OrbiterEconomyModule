@@ -2580,7 +2580,7 @@ private:
         // Keep catch-up bounded per frame and rotate the starting point so
         // later sources are not starved by the first entries in the registry.
         const std::size_t batchLimit = 24;
-        const std::size_t batchCount = std::min(batchLimit, dueIntents.size());
+        const std::size_t batchCount = (std::min)(batchLimit, dueIntents.size());
         const std::size_t batchStart = primaryProductionCursor_ % dueIntents.size();
         std::vector<oem::PrimaryResourceIntent> intents;
         intents.reserve(batchCount);
@@ -2644,7 +2644,7 @@ private:
         // Limit recipe projection and journal work per update. The rotating
         // cursor prevents recipes later in the registry from waiting forever.
         const std::size_t batchLimit = 24;
-        const std::size_t batchCount = std::min(batchLimit, plannedIntents.size());
+        const std::size_t batchCount = (std::min)(batchLimit, plannedIntents.size());
         const std::size_t batchStart = productionRecipeCursor_ % plannedIntents.size();
         std::vector<oem::ProductionRecipeIntent> selectedIntents;
         selectedIntents.reserve(batchCount);
