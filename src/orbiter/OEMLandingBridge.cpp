@@ -1396,11 +1396,11 @@ public:
         if(!shipCatalog_.find(className,selectedDefinition))
             return oem::Result::failure("SHIP_CLASS_UNAVAILABLE","Selected vessel class disappeared from the installed catalogue.");
         const double stationSize=station->GetSize()>0.0?station->GetSize():100.0;
-        const double offset=std::max(10000.0,(selectedDefinition.sizeMeters+stationSize)*2.0+5000.0);
+        const double offset=(std::max)(10000.0,(selectedDefinition.sizeMeters+stationSize)*2.0+5000.0);
         const double ux=stationStatus.rpos.x/radius,uy=stationStatus.rpos.y/radius,uz=stationStatus.rpos.z/radius;
         VECTOR3 stationGlobal;station->GetGlobalPos(stationGlobal);
         VECTOR3 candidateGlobal={stationGlobal.x+ux*offset,stationGlobal.y+uy*offset,stationGlobal.z+uz*offset};
-        const double minimumSeparation=std::max(5000.0,(selectedDefinition.sizeMeters+stationSize)*1.25+1000.0);
+        const double minimumSeparation=(std::max)(5000.0,(selectedDefinition.sizeMeters+stationSize)*1.25+1000.0);
         for(DWORD i=0;i<oapiGetVesselCount();++i){
             OBJHANDLE other=oapiGetVesselByIndex((int)i);if(!other)continue;
             VECTOR3 otherGlobal;oapiGetGlobalPos(other,&otherGlobal);
@@ -4238,7 +4238,7 @@ public:
         char line[256];
         sprintf(line,"AVAILABLE CLASSES: %lu",(unsigned long)ships.size());DrawLine(hDC,y,line);
         const std::size_t first=selected_>1?selected_-1:0;
-        const std::size_t last=std::min(first+4,ships.size());
+        const std::size_t last=(std::min)(first+4,ships.size());
         for(std::size_t i=first;i<last;++i){
             const oem::ShipDefinition& item=ships[i];
             sprintf(line,"%c %s",i==selected_?'>':' ',item.displayName.c_str());DrawLine(hDC,y,line);
@@ -4328,7 +4328,7 @@ public:
         if(ships.empty()){DrawLine(hDC,y,"No OEM-purchased vessels recorded.");}
         else {
             const std::size_t first=page_*pageSize;
-            const std::size_t last=std::min(first+pageSize,ships.size());
+            const std::size_t last=(std::min)(first+pageSize,ships.size());
             for(std::size_t i=first;i<last;++i){
                 const oem::OwnedVesselRecord&r=ships[i];
                 char name[128];strncpy(name,r.vesselId.c_str(),sizeof(name)-1);name[sizeof(name)-1]=0;
