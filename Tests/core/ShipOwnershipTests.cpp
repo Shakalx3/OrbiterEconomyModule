@@ -28,6 +28,7 @@ int main(){
     oem::PlayerFleetRegistry restored;assert(restored.load(path).ok&&restored.vessels().size()==1);
     oem::OwnedVesselRecord found;assert(restored.findByPurchase("buy-001",found)&&found.vesselId=="OEM-001");
     assert(restored.findByVessel("OEM-001",found)&&found.acquisitionPrice==250000);
+    assert(restored.removePurchase("buy-001")&&!restored.isOwned("OEM-001"));
     {std::ofstream out(path.c_str(),std::ios::binary|std::ios::trunc);out<<"OEM_PLAYER_FLEET|1\nV|GG|4F454D|44656C7461476C69646572|495353|10|2\n";}
     assert(!restored.load(path).ok);assert(restored.isOwned("OEM-001")); // failed load is non-destructive
     std::remove(path.c_str());std::remove((path+".tmp").c_str());return 0;
