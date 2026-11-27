@@ -4161,6 +4161,97 @@ private:
     int pendingAction_;
 };
 
+class OEMShipPurchaseMFD : public MFD {
+public:
+    OEMShipPurchaseMFD(DWORD w,DWORD h,VESSEL*vessel)
+        :MFD(w,h,vessel),vesselId_(vessel&&vessel->GetName()?vessel->GetName():""),
+         selected_(0),pending_(false),status_("Select a class, press B to prepare and Y to confirm."){}
+    void Update(HDC hDC) override {
+        Title(hDC,"OEM SHIPYARD");
+        SelectDefaultFont(hDC,0);
+        int y=(int)ch+3;
+        if(!g_bridge){DrawLine(hDC,y,"OEM bridge unavailable.");return;}
+        const std::vector<oem::ShipDefinition>& ships=g_bridge->shipCatalog().entries();
+        if(ships.empty()){
+            DrawLine(hDC,y,"NO INSTALLED VESSEL CLASSES FOUND");
+            DrawLine(hDC,y,"Check Config/Vessels and module DLLs.");
+            DrawLine(hDC,y,status_.c_str());return;
+        }
+        if(selected_>=ships.size())selected_=ships.size()-1;
+        char line[256];
+        sprintf(line,"AVAILABLE CLASSES: %lu",(unsigned long)ships.size());DrawLine(hDC,y,line);
+        const std::size_t first=selected_>1?selected_-1:0;
+        const std::size_t last=std::min(first+4,ships.size());
+        for(std::size_t i=first;i<last;++i){
+            const oem::ShipDefinition& item=ships[i];
+            sprintf(line,"%c %s",i==selected_?'>':' ',item.displayName.c_str());DrawLine(hDC,y,line);
+            if(i==selected_){
+                sprintf(line,"  CLASS: %.42s",item.className.c_str());DrawLine(hDC,y,line);
+                sprintf(line,"  PRICE: %lld CR",(long long)item.price);DrawLine(hDC,y,line);
+                DrawLine(hDC,y,"  DELIVERY: ORBITAL STATION");
+            }
+        }
+        oem::PropellantPriceContext context;std::string location;
+        const oem::Result eligible=g_bridge->resolvePropellantContext(vesselId_,context,location);
+        if(eligible.ok&&context.locationKind==oem::PROPELLANT_LOCATION_ORBITAL_STATION){
+            sprintf(line,"SHIPYARD: %.36s",location.c_str());DrawLine(hDC,y,line);
+        }else DrawLine(hDC,y,"DOCK TO A REGISTERED ORBITAL STATION");
+        oem::Credits balance=0;
+        if(g_bridge->companyBalance(balance)){sprintf(line,"COMPANY: %lld CR",(long long)balance);DrawLine(hDC,y,line);}
+        DrawLine(hDC,y,"UP/DOWN: SELECT   B: PREPARE   Y: BUY");
+        DrawLine(hDC,y,"X: CANCEL");
+        DrawLine(hDC,y,status_.c_str());
+    }
+    bool ConsumeKeyBuffered(DWORD key) override {
+        if(!g_bridge)return false;
+        const std::vector<oem::ShipDefinition>& ships=g_bridge->shipCatalog().entries();
+        if(key==OAPI_KEY_UP){if(!ships.empty()&&selected_>0)--selected_;pending_=false;return true;}
+        if(key==OAPI_KEY_DOWN){if(selected_+1<ships.size())++selected_;pending_=false;return true;}
+        if(key==OAPI_KEY_B){
+            if(ships.empty()){status_="No installed vessel classes are available.";return true;}
+            pending_=true;status_="Purchase prepared. Press Y to create and pay, or X to cancel.";return true;
+        }
+        if(key==OAPI_KEY_X){pending_=false;status_="Purchase cancelled.";return true;}
+        if(key==OAPI_KEY_Y){
+            if(!pending_){status_="Press B first to prepare the selected purchase.";return true;}
+            pending_=false;
+            if(selected_>=ships.size()){status_="Selected class is no longer available.";return true;}
+            std::string created;
+            const oem::Result result=g_bridge->performShipPurchase(vesselId_,ships[selected_].className,created);
+            status_=result.ok?("Purchased "+created+". Open OEM Player Fleet (V) to inspect it."):result.code+": "+result.message;
+            return true;
+        }
+        return false;
+    }
+    bool ConsumeButton(int bt,int event) override {
+        if(!(event&PANEL_MOUSE_LBDOWN))return false;
+        if(bt==0)return ConsumeKeyBuffered(OAPI_KEY_UP);
+        if(bt==1)return ConsumeKeyBuffered(OAPI_KEY_DOWN);
+        if(bt==2)return ConsumeKeyBuffered(OAPI_KEY_B);
+        if(bt==3)return ConsumeKeyBuffered(OAPI_KEY_X);
+        return false;
+    }
+    char* ButtonLabel(int bt) override {
+        static char* labels[4]={(char*)"UP",(char*)"DOWN",(char*)"BUY",(char*)"CANCEL"};
+        return bt>=0&&bt<4?labels[bt]:0;
+    }
+    int ButtonMenu(const MFDBUTTONMENU**menu)const override {
+        static const MFDBUTTONMENU items[4]={{"Previous ship class",0,'U'},{"Next ship class",0,'D'},
+            {"Prepare selected purchase",0,'B'},{"Cancel pending purchase",0,'X'}};
+        if(menu)*menu=items;return 4;
+    }
+    static int MsgProc(UINT msg,UINT mfd,WPARAM wparam,LPARAM lparam){
+        if(msg==OAPI_MSG_MFD_OPENEDEX&&g_bridge){MFDMODEOPENSPEC*spec=(MFDMODEOPENSPEC*)wparam;return (int)(new OEMShipPurchaseMFD(spec->w,spec->h,(VESSEL*)lparam));}
+        return 0;
+    }
+private:
+    void DrawLine(HDC hDC,int&y,const char*text){TextOutA(hDC,4,y,text,(int)strlen(text));y+=(int)ch;}
+    std::string vesselId_;
+    std::size_t selected_;
+    bool pending_;
+    std::string status_;
+};
+
 // Persistent purchase records are separate from Orbiter's transient vessel handles.
 class OEMFleetMFD : public MFD {
 public:
@@ -4854,6 +4945,11 @@ DLLCLBK void InitModule(HINSTANCE hDLL) {
     spec.key = OAPI_KEY_V;
     spec.msgproc = OEMFleetMFD::MsgProc;
     g_fleetMode = oapiRegisterMFDMode(spec);
+
+    spec.name = "OEM Shipyard";
+    spec.key = OAPI_KEY_B;
+    spec.msgproc = OEMShipPurchaseMFD::MsgProc;
+    g_shipPurchaseMode = oapiRegisterMFDMode(spec);
 }
 
 DLLCLBK void ExitModule(HINSTANCE hDLL) {
@@ -4865,6 +4961,7 @@ DLLCLBK void ExitModule(HINSTANCE hDLL) {
     if (g_propellantMonitorMode >= 0) oapiUnregisterMFDMode(g_propellantMonitorMode);
     if (g_propellantRefuelMode >= 0) oapiUnregisterMFDMode(g_propellantRefuelMode);
     if (g_fleetMode >= 0) oapiUnregisterMFDMode(g_fleetMode);
+    if (g_shipPurchaseMode >= 0) oapiUnregisterMFDMode(g_shipPurchaseMode);
     g_flightLogMode = -1;
     g_cargoManifestMode = -1;
     g_marketMode = -1;
@@ -4873,6 +4970,7 @@ DLLCLBK void ExitModule(HINSTANCE hDLL) {
     g_propellantMonitorMode = -1;
     g_propellantRefuelMode = -1;
     g_fleetMode = -1;
+    g_shipPurchaseMode = -1;
     g_bridge = 0;
     // Orbiter owns and destroys registered oapi::Module instances.
 }
