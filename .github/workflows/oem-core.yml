@@ -2,7 +2,7 @@ name: OEM core checks
 
 on:
   push:
-    branches: [development, feature/delivery-contracts, feature/economic-agents]
+    branches: [development, feature/delivery-contracts, feature/economic-agents, feature/ship-purchasing]
     paths:
       - "src/core/**"
       - "Tests/core/**"
