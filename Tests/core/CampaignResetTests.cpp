@@ -8,6 +8,7 @@ int main() {
     assert(CampaignResetPolicy::isCampaignOwnedFileName("economy.journal"));
     assert(CampaignResetPolicy::isCampaignOwnedFileName("events.journal"));
     assert(CampaignResetPolicy::isCampaignOwnedFileName("economic_stations.registry"));
+    assert(CampaignResetPolicy::isCampaignOwnedFileName("economic_agents.cfg"));
     assert(CampaignResetPolicy::isCampaignOwnedFileName("cargo_stock_495353.cfg"));
     assert(CampaignResetPolicy::isCampaignOwnedFileName("cargo_stock_4561727468.cfg"));
     assert(CampaignResetPolicy::isCampaignOwnedFileName("cargo_manifest_ISS.journal"));
