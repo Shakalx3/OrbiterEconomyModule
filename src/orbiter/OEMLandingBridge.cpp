@@ -2858,7 +2858,7 @@ private:
             buildAgentRouteTravelTimes();
         std::vector<oem::AgentTradeIntent> plannedIntents;
         const oem::Result planned = economicAgents_.planDueTrades(
-            now, cargoCatalog_, cargoServiceInventories_, routeTravelTimes, plannedIntents);
+            now, cargoCatalog_, cargoServiceInventories_, routeTravelTimes, plannedIntents, true);
         if (!planned.ok) {
             char error[512]; sprintf(error, "OEM Agents: planning failed (%s): %s", planned.code.c_str(), planned.message.c_str());
             oapiWriteLog(error); return;
