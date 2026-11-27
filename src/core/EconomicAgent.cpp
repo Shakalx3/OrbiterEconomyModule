@@ -28,9 +28,9 @@ Result EconomicAgentBook::add(const EconomicAgent& a){
 }
 const std::vector<EconomicAgent>& EconomicAgentBook::agents()const{return agents_;}
 Result EconomicAgentBook::planDueTrades(SimulationSeconds now,const CargoCatalog& catalog,const std::map<std::string,CargoServiceInventory>& locations,std::vector<AgentTradeIntent>& out)const{
- return planDueTrades(now,catalog,locations,std::map<std::string,std::map<std::string,SimulationSeconds> >(),out);
+ return planDueTrades(now,catalog,locations,std::map<std::string,std::map<std::string,SimulationSeconds> >(),out,false);
 }
-Result EconomicAgentBook::planDueTrades(SimulationSeconds now,const CargoCatalog& catalog,const std::map<std::string,CargoServiceInventory>& locations,const std::map<std::string,std::map<std::string,SimulationSeconds> >& routeTravelTimes,std::vector<AgentTradeIntent>& out)const{
+Result EconomicAgentBook::planDueTrades(SimulationSeconds now,const CargoCatalog& catalog,const std::map<std::string,CargoServiceInventory>& locations,const std::map<std::string,std::map<std::string,SimulationSeconds> >& routeTravelTimes,std::vector<AgentTradeIntent>& out,bool requireRouteTravelTime)const{
  if(now<0)return Result::failure("INVALID_AGENT_TIME","Simulation time cannot be negative.");
  std::vector<AgentTradeIntent> planned;MarketPricingBook pricing;
  for(std::size_t i=0;i<agents_.size();++i){
@@ -57,7 +57,7 @@ Result EconomicAgentBook::planDueTrades(SimulationSeconds now,const CargoCatalog
      const std::string&locationId=a.operatingLocationIds[l];
      if(locationId==origin)continue;
      SimulationSeconds routeTime=a.activityInterval;
-     if(!routeTravelTimes.empty()){
+     if(requireRouteTravelTime){
       std::map<std::string,std::map<std::string,SimulationSeconds> >::const_iterator from=routeTravelTimes.find(origin);
       if(from==routeTravelTimes.end())continue;
       std::map<std::string,SimulationSeconds>::const_iterator route=from->second.find(locationId);
@@ -122,7 +122,7 @@ Result EconomicAgentBook::applyTrade(const AgentTradeIntent& intent,const CargoC
  if(expectedPrice!=intent.unitPrice)return Result::failure("AGENT_TRADE_PRICE","Agent trade price no longer matches the location's current market quote.");
  CargoServiceInventory nextLocation(li->second);CargoTransfer transfer;transfer.transferId="agent:"+intent.operationId;transfer.vesselId="OEM-AGENT:"+intent.agentId;transfer.locationId=intent.locationId;transfer.cargoId=intent.cargoId;transfer.quantity=intent.quantity;transfer.unitMassKg=def.unitMassKg;transfer.simulationTime=intent.simulationTime;
  if(intent.side==AGENT_BUYS_FROM_LOCATION){
-  if(nextAgent.role!=AGENT_CUSTOMER&&nextAgent.role!=AGENT_COMPETITOR)return Result::failure("AGENT_ROLE","This agent role cannot buy cargo.");
+  if(nextAgent.role!=AGENT_CUSTOMER&&nextAgent.role!=AGENT_COMPETITOR&&nextAgent.role!=AGENT_CARRIER)return Result::failure("AGENT_ROLE","This agent role cannot buy cargo.");
   if(held>=policy->targetQuantity||intent.quantity>policy->targetQuantity-held||intent.quantity>stock||intent.unitPrice>policy->maximumBuyPrice)return Result::failure("AGENT_BUY_LIMIT","Agent buy exceeds its demand, price or available stock.");
   if(!nextAgent.unlimitedFunds&&nextAgent.balance<intent.totalPrice)return Result::failure("AGENT_FUNDS","Agent has insufficient funds for this purchase.");
   if(intent.quantity>std::numeric_limits<long long>::max()-held)return Result::failure("AGENT_INVENTORY_OVERFLOW","Agent inventory quantity would overflow.");
