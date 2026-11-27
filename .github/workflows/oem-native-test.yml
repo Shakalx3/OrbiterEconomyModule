@@ -2,11 +2,13 @@ name: OEM native spaceport test build
 
 on:
   push:
-    branches: [development, feature/delivery-contracts, feature/economic-agents]
+    branches: [development, feature/delivery-contracts, feature/economic-agents, feature/ship-purchasing]
     paths:
       - "src/orbiter/**"
       - "Tests/core/**"
       - "CMakeLists.txt"
+      - "src/core/ShipOwnership.h"
+      - "src/core/ShipOwnership.cpp"
       - "src/core/MissionIssuerRegistry.h"
       - "src/core/MissionIssuerRegistry.cpp"
       - "src/core/SurfaceDistance.h"
