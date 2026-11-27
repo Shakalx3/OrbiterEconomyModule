@@ -362,7 +362,7 @@ public:
           spaceportRegistryPath_(makeEconomyDataFilePath(hDLL, "spaceports.registry")),
           economicStations_(), economicStationsPath_(makeEconomyDataFilePath(hDLL, "economic_stations.registry")),
           spaceportRegistry_(), economicLocations_(), economicStationsReady_(false), cargoServicesReady_(false), ledger_(), cargoCatalog_(), economyReady_(false), journalReady_(false), sessionId_(),
-          currentSimulationTime_(0), lastProductionWallTick_(0), cargoTransferSequence_(0), lastFocus_(0), completionNote_(0), notificationUntil_(0) {
+          currentSimulationTime_(0), lastProductionWallTick_(0), primaryProductionCursor_(0), productionRecipeCursor_(0), cargoTransferSequence_(0), lastFocus_(0), completionNote_(0), notificationUntil_(0) {
         g_bridge = this;
     }
 
@@ -2573,9 +2573,19 @@ private:
             }
         }
 
+        std::vector<oem::PrimaryResourceIntent> dueIntents;
+        const oem::Result planned = primaryResources_.planDue(now, cargoServiceInventories_, dueIntents);
+        if (!planned.ok || dueIntents.empty()) return;
+
+        // Keep catch-up bounded per frame and rotate the starting point so
+        // later sources are not starved by the first entries in the registry.
+        const std::size_t batchLimit = 24;
+        const std::size_t batchCount = std::min(batchLimit, dueIntents.size());
+        const std::size_t batchStart = primaryProductionCursor_ % dueIntents.size();
         std::vector<oem::PrimaryResourceIntent> intents;
-        const oem::Result planned = primaryResources_.planDue(now, cargoServiceInventories_, intents);
-        if (!planned.ok || intents.empty()) return;
+        intents.reserve(batchCount);
+        for (std::size_t i = 0; i < batchCount; ++i)
+            intents.push_back(dueIntents[(batchStart + i) % dueIntents.size()]);
 
         const oem::Result committed = economyJournalStore_.applyPrimaryProductionBatch(
             economyJournalPath_, intents, cargoServiceInventories_);
@@ -2600,6 +2610,7 @@ private:
             }
         }
         primaryResources_ = candidate;
+        primaryProductionCursor_ = (batchStart + batchCount) % dueIntents.size();
         // The durable economy journal is authoritative for committed timestamps.
         // Startup recovery rebuilds scheduler times, avoiding synchronous config writes here.
         char message[256];
@@ -2630,13 +2641,23 @@ private:
             now, cargoServiceInventories_, plannedIntents);
         if (!planned.ok || plannedIntents.empty()) return;
 
+        // Limit recipe projection and journal work per update. The rotating
+        // cursor prevents recipes later in the registry from waiting forever.
+        const std::size_t batchLimit = 24;
+        const std::size_t batchCount = std::min(batchLimit, plannedIntents.size());
+        const std::size_t batchStart = productionRecipeCursor_ % plannedIntents.size();
+        std::vector<oem::ProductionRecipeIntent> selectedIntents;
+        selectedIntents.reserve(batchCount);
+        for (std::size_t i = 0; i < batchCount; ++i)
+            selectedIntents.push_back(plannedIntents[(batchStart + i) % plannedIntents.size()]);
+
         // planDue sees a common snapshot. Filter competing recipes against a
         // rolling inventory projection so one starved recipe cannot abort the batch.
         std::map<std::string, oem::CargoServiceInventory> projectedInventories =
             cargoServiceInventories_;
         std::vector<oem::ProductionRecipeIntent> intents;
-        for (std::size_t i = 0; i < plannedIntents.size(); ++i) {
-            const oem::ProductionRecipeIntent& intent = plannedIntents[i];
+        for (std::size_t i = 0; i < selectedIntents.size(); ++i) {
+            const oem::ProductionRecipeIntent& intent = selectedIntents[i];
             std::map<std::string, oem::CargoServiceInventory>::iterator stock =
                 projectedInventories.find(intent.locationId);
             if (stock == projectedInventories.end()) continue;
@@ -2673,7 +2694,10 @@ private:
                 intents.push_back(intent);
             }
         }
-        if (intents.empty()) return;
+        if (intents.empty()) {
+            productionRecipeCursor_ = (batchStart + batchCount) % plannedIntents.size();
+            return;
+        }
 
         const oem::Result committed = economyJournalStore_.applyProductionRecipeBatch(
             economyJournalPath_, intents, cargoServiceInventories_);
@@ -2698,6 +2722,7 @@ private:
             }
         }
         productionRecipes_ = candidate;
+        productionRecipeCursor_ = (batchStart + batchCount) % plannedIntents.size();
         // The durable economy journal is authoritative for committed timestamps.
         // Startup recovery rebuilds scheduler times, avoiding synchronous config writes here.
         char message[256];
@@ -3487,6 +3512,8 @@ private:
     std::string sessionId_;
     oem::SimulationSeconds currentSimulationTime_;
     DWORD lastProductionWallTick_;
+    std::size_t primaryProductionCursor_;
+    std::size_t productionRecipeCursor_;
     unsigned long cargoTransferSequence_;
     OBJHANDLE lastFocus_;
     NOTEHANDLE completionNote_;
