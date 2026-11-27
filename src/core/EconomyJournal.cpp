@@ -332,13 +332,29 @@ Result EconomyJournalStore::applyExchange(const std::string&p,std::map<std::stri
  bool exists=false;std::string data;if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not inspect global journal before append.");std::map<std::string,std::string>ids;if(exists){x=scanIds(data,ids);if(!x.ok)return x;}const std::string record=encodeX(t);std::map<std::string,std::string>::const_iterator prior=ids.find(t.transferId);if(prior!=ids.end()){if(prior->second+"\n"!=record)return Result::failure("ECONOMY_OPERATION_CONFLICT","Transfer ID already belongs to a different global operation.");it->second=nextStock;manifest=nextManifest;return Result::success();}
  if(!appendDurable(p,(exists?std::string():std::string(kHeader)+"\n")+record))return Result::failure("ECONOMY_JOURNAL_COMMIT","Could not durably append global exchange.");it->second=nextStock;manifest=nextManifest;return Result::success();}
 Result EconomyJournalStore::applyAgentTrade(const std::string&p,const AgentTradeIntent&intent,const CargoCatalog&cat,EconomicAgentBook&agents,std::map<std::string,CargoServiceInventory>&inventories)const{
+ std::vector<AgentTradeIntent> batch(1,intent);
+ return applyAgentTradeBatch(p,batch,cat,agents,inventories);
+}
+Result EconomyJournalStore::applyAgentTradeBatch(const std::string&p,const std::vector<AgentTradeIntent>&intents,const CargoCatalog&cat,EconomicAgentBook&agents,std::map<std::string,CargoServiceInventory>&inventories)const{
+ if(intents.empty())return Result::success();
  EconomicAgentBook nextAgents(agents);std::map<std::string,CargoServiceInventory>nextInventories(inventories);
- Result applied=nextAgents.applyTrade(intent,cat,nextInventories);if(!applied.ok)return applied;
- bool exists=false;std::string data;if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not inspect global journal before agent trade append.");
- std::map<std::string,std::string>ids;if(exists){applied=scanIds(data,ids);if(!applied.ok)return applied;}
- const std::string record=encodeB(intent);std::map<std::string,std::string>::const_iterator prior=ids.find(intent.operationId);
- if(prior!=ids.end()){if(prior->second+"\n"!=record)return Result::failure("ECONOMY_OPERATION_CONFLICT","Agent trade operation ID conflicts with an existing global operation.");agents=nextAgents;inventories.swap(nextInventories);return Result::success();}
- if(!appendDurable(p,(exists?std::string():std::string(kHeader)+"\n")+record))return Result::failure("ECONOMY_JOURNAL_COMMIT","Could not durably append global agent trade.");
+ bool exists=false;std::string data;if(!readJournal(p,exists,data))return Result::failure("ECONOMY_JOURNAL_READ","Could not inspect global journal before background agent batch.");
+ std::map<std::string,std::string>ids;if(exists){Result scanned=scanIds(data,ids);if(!scanned.ok)return scanned;}
+ std::string append;
+ for(std::size_t i=0;i<intents.size();++i){
+  const AgentTradeIntent&intent=intents[i];
+  Result applied=nextAgents.applyTrade(intent,cat,nextInventories);if(!applied.ok)return applied;
+  const std::string record=encodeB(intent);
+  std::map<std::string,std::string>::const_iterator prior=ids.find(intent.operationId);
+  if(prior!=ids.end()){
+   if(prior->second+"\n"!=record)return Result::failure("ECONOMY_OPERATION_CONFLICT","Agent trade operation ID conflicts with an existing or earlier batch operation.");
+   continue;
+  }
+  append+=record;
+  ids[intent.operationId]=record.substr(0,record.size()-1);
+ }
+ if(!append.empty()&&!appendDurable(p,(exists?std::string():std::string(kHeader)+"\n")+append))
+  return Result::failure("ECONOMY_JOURNAL_COMMIT","Could not durably append the background agent trade batch.");
  agents=nextAgents;inventories.swap(nextInventories);return Result::success();
 }
 Result EconomyJournalStore::applyTrade(const std::string&p,const CargoCatalog&cat,const MarketQuote&q,const std::string&op,const std::string&buyer,Ledger&ledger,std::map<std::string,CargoServiceInventory>&inventories,CargoManifest&manifest)const{
