@@ -42,6 +42,7 @@ add_library(OEMCore
     src/core/PrimaryResourceConfig.cpp
     src/core/ProductionRecipe.cpp
     src/core/ProductionRecipeConfig.cpp
+    src/core/ShipOwnership.cpp
 )
 target_include_directories(OEMCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
 add_executable(OEMCoreTests Tests/core/LedgerTests.cpp)
@@ -120,6 +121,8 @@ add_executable(OEMPrimaryResourceTests Tests/core/PrimaryResourceTests.cpp)
 add_executable(OEMProductionRecipeTests Tests/core/ProductionRecipeTests.cpp)
 target_link_libraries(OEMProductionRecipeTests PRIVATE OEMCore)
 add_executable(OEMProductionRecipeConfigTests Tests/core/ProductionRecipeConfigTests.cpp)
+add_executable(OEMShipOwnershipTests Tests/core/ShipOwnershipTests.cpp)
+target_link_libraries(OEMShipOwnershipTests PRIVATE OEMCore)
 target_link_libraries(OEMProductionRecipeConfigTests PRIVATE OEMCore)
 target_link_libraries(OEMPrimaryResourceTests PRIVATE OEMCore)
 target_link_libraries(OEMEconomicAgentTests PRIVATE OEMCore)
@@ -172,3 +175,4 @@ add_test(NAME OEMEconomicAgentConfigTests COMMAND OEMEconomicAgentConfigTests)
 add_test(NAME OEMPrimaryResourceTests COMMAND OEMPrimaryResourceTests)
 add_test(NAME OEMProductionRecipeTests COMMAND OEMProductionRecipeTests)
 add_test(NAME OEMProductionRecipeConfigTests COMMAND OEMProductionRecipeConfigTests)
+add_test(NAME OEMShipOwnershipTests COMMAND OEMShipOwnershipTests)
