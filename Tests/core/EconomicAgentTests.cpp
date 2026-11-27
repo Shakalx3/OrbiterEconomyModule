@@ -45,8 +45,8 @@ int main(){
  assert(routeJournal.applyAgentTradeBatch(routeJournalPath,routeIntents,catalog,routeBook,routeLocations).ok);
  assert(routeLocations["EarthBase"].quantity("route-ore")==180&&routeBook.agents()[0].inventory.find("route-ore")->second==20);
  std::map<std::string,std::map<std::string,oem::SimulationSeconds> > routeTimes;routeTimes["EarthBase"]["MarsBase"]=500;
- routeIntents.clear();assert(routeBook.planDueTrades(599,catalog,routeLocations,routeTimes,routeIntents).ok&&routeIntents.empty());
- assert(routeBook.planDueTrades(600,catalog,routeLocations,routeTimes,routeIntents).ok&&routeIntents.size()==1);
+ routeIntents.clear();assert(routeBook.planDueTrades(599,catalog,routeLocations,routeTimes,routeIntents,true).ok&&routeIntents.empty());
+ assert(routeBook.planDueTrades(600,catalog,routeLocations,routeTimes,routeIntents,true).ok&&routeIntents.size()==1);
  assert(routeIntents[0].locationId=="MarsBase"&&routeIntents[0].side==oem::AGENT_SELLS_TO_LOCATION);
  assert(routeJournal.applyAgentTradeBatch(routeJournalPath,routeIntents,catalog,routeBook,routeLocations).ok);
  assert(routeLocations["MarsBase"].quantity("route-ore")==20&&routeBook.agents()[0].inventory.find("route-ore")->second==0);
