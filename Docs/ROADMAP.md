@@ -35,7 +35,7 @@
 - [x] Runtime-validate the flight log MFD in Orbiter 2010.
 - [x] Add native docking/undocking observation and publish those events from actual dock-port state.
 - [x] Runtime-validate docking/undocking event detection and journal display in Orbiter 2010.
-- [ ] Connect verified events to contract/cargo eligibility and settlement.
+- [x] Connect verified events to contract/cargo eligibility and settlement; delivery, VISIT and DOCK mission behavior has been runtime-confirmed by the user.
 - [x] Generalize the native market location resolver to accept either a registered docked station or a landed vessel within 5 km of an Orbiter surface base.
 - [x] Use the same explicit per-location stock configuration and global economy journal for planetary bases and stations.
 - [ ] Runtime-validate planetary-base BUY/SELL, stock accounting, and recovery after scenario restart in Orbiter 2010.
@@ -106,7 +106,7 @@
 - [x] Calculate the unified-fuel sale price contextually from the eligible location and celestial-body context.
 - [x] Add a portable validated propellant purchase quote model. It carries the canonical location/body context and quoted unit rate, validates the full tank-fill plan and company balance, rounds fractional credit totals upward, and does not depend on fuel stock.
 - [x] Define configurable fuel pricing inputs and retain the quoted price/context for the purchase transaction.
-- [ ] Commit each refuelling purchase idempotently to the global economy journal, charging the company account exactly once and persisting enough before/after per-resource and aggregate tank state to detect and safely reconcile interrupted operations.
+- [x] Commit each refuelling purchase idempotently to the global economy journal, charging the company account exactly once and persisting before/after per-resource and aggregate tank state for recovery. The user confirms that live refuelling works in Orbiter.
 - [x] Add a portable prepared-transaction model that captures each resource's before/after mass and capacity alongside the immutable quote; classify restart recovery as finalize-charge, abort-unchanged, rollback-partial, or conflict without guessing.
 - [x] Persist immutable PREPARED intent and one-way COMMITTED/ABORTED terminal records in a dedicated append-only, fsync-backed propellant transaction journal, with operation-ID idempotency, transition validation, and corruption/torn-tail refusal. This is separate from the existing v1 economy journal to preserve backward compatibility.
 - [x] Add an idempotent propellant-charge record to the existing v1 global economy journal; replay debits the company ledger exactly once, and the portable tests cover duplicate calls, restart recovery, and insufficient-funds refusal.
@@ -164,7 +164,7 @@ Current route-quote defaults are centralized in `MissionEconomicsConfig`: nomina
   - [ ] Add stable issuer IDs to delivery and independent mission definitions and persist them in the global journal with backward-compatible replay of legacy records.
   - [ ] Apply expiry penalties to the company account while applying reputation changes only to the issuing organization; keep company-wide reputation separate.
   - [ ] Give generated offers explicit issuer identities, then use issuer reputation to weight mission availability and procedural offer quality without changing already-published offers.
-- [ ] Use Orbiter simulation time for deadlines and mission timing; never use wall-clock time.
+- [x] Use Orbiter simulation time for deadlines and mission timing; never use wall-clock time.
 
 ### Primary resources, starter stock, and background production — in progress
 
@@ -194,20 +194,20 @@ Current route-quote defaults are centralized in `MissionEconomicsConfig`: nomina
 
 ### Player fleet ownership and ship purchasing — next implementation phase
 - [ ] Ownership default rule: every Orbiter vessel not explicitly registered in `EconomicStationRegistry` is presumed to be player-owned; there are no autonomous physical NPC vessels in the current design.
-- [ ] Keep station identity separate from cargo-service permissions: a vessel registered only as a cargo service, but not as an economic station, remains player-owned under the default rule.
+- [x] Keep station identity separate from cargo-service permissions. Cargo-service permission does not implicitly register a vessel as an economic station; this separation is implemented and was tested in Orbiter.
 - [ ] On scenario load and vessel creation/deletion, derive and reconcile the player fleet from the live Orbiter vessel list plus the station registry; do not require manual registration of ordinary ships.
 - [ ] Apply sale/repo-session eligibility only to vessels classified as player-owned by this rule; never sell or repossess registered economic stations.
 
-- [ ] Add a persistent player-owned vessel registry, separate from the general list of vessels currently present in Orbiter; registration/ownership must be explicit and survive scenario reloads.
-- [ ] Add an in-game ship catalogue based on vessel classes actually installed in the user's Orbiter configuration (class configuration and required vessel module/assets must exist); do not advertise unavailable vessel classes.
-- [ ] Support purchasing an available ship from an eligible station/spaceport, with price, delivery/creation location, and any prerequisites shown before confirmation.
-- [ ] Use the Orbiter SDK live vessel-creation API (oapiCreateVessel / oapiCreateVesselEx) to instantiate a real vessel during the running simulation. The SDK documents VESSELSTATUS2 for specifying initial reference body, position/velocity, orientation, landed/free-flight state, and related status.
-- [ ] Validate the requested class configuration and spawn state before charging the player; handle creation or durable-transaction failure without charging or leaving an unowned/duplicate vessel. Make purchase IDs idempotent.
+- [x] Add a persistent player-owned vessel registry, separate from the general list of vessels currently present in Orbiter; purchased-vessel ownership survives scenario reloads and is reconciled against durable purchase debits.
+- [x] Add an in-game ship catalogue based on vessel classes actually installed in the user's Orbiter configuration; scan Config/Vessels and require the configured module DLL (or built-in Orbiter module) before listing a class.
+- [x] Support purchasing an available ship from an eligible registered orbital station, with class, price and delivery location shown before confirmation. Planetary-surface shipyards remain future work.
+- [x] Use the Orbiter SDK live vessel-creation API (`oapiCreateVesselEx`) and `VESSELSTATUS2` to instantiate a real vessel during the running simulation.
+- [x] Validate installed class, account balance, registered-station eligibility, free-flight reference body and spawn clearance before charging. Persist ownership before the existing v1 durable debit; startup reconciliation removes uncharged intents/orphans, and purchase IDs are idempotent.
 - [ ] Choose a safe spawn location and initial state appropriate to the selling location; avoid spawning inside another vessel, inside terrain, or in an invalid orbital state. Planetary surface delivery requires valid base coordinates and a compatible vessel class.
-- [ ] Persist ownership independently of vessel handles (which are runtime-only); reconcile registered ownership against vessel names/identities after scenario load and report missing or renamed vessels without silently transferring ownership.
-- [ ] Integrate purchases with the company ledger and global economy journal; the vessel must become player property only after the purchase is durably committed.
+- [x] Persist ownership independently of runtime vessel handles and reconcile purchase records against the durable company debit and vessel name on scenario load. Missing vessels remain recorded and are shown as missing.
+- [x] Integrate purchases with the company ledger using the existing backward-compatible v1 durable debit record, plus the separate persistent fleet registry. The journal schema/version is unchanged.
 - [ ] Expose owned fleet, current location/state, acquisition price, and sale eligibility in an in-game fleet management interface.
-- [ ] Treat SDK vessel creation as creation of an instance of an already installed vessel class, not arbitrary generation of a new spacecraft design. A genuinely new ship design still requires a vessel class implementation/configuration and its assets.
+- [x] Treat SDK vessel creation as creation of an instance of an already installed vessel class, not arbitrary generation of a new spacecraft design.
 - [ ] Verify live creation, scenario save/reload persistence, ownership recovery, duplicate prevention, and rollback/failure handling in the target Orbiter runtime before release.
 ### Debt collection and player asset ownership — planned
 
