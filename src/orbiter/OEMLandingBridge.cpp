@@ -59,6 +59,7 @@ int g_economicAdminMode = -1;
 int g_propellantMonitorMode = -1;
 int g_propellantRefuelMode = -1;
 int g_fleetMode = -1;
+int g_shipPurchaseMode = -1;
 
 bool addBuiltInMarketCommodities(oem::CargoCatalog& catalog) {
     const std::vector<oem::CargoDefinition>& entries = catalog.entries();
@@ -133,6 +134,109 @@ std::string encodePathComponent(const std::string& value) {
         encoded.push_back(digits[c & 15]);
     }
     return encoded;
+}
+
+std::string makeOrbiterRoot(HINSTANCE module) {
+    char path[MAX_PATH] = {};
+    const DWORD length = GetModuleFileNameA(module, path, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) return std::string();
+    std::string result(path);
+    std::string::size_type slash = result.find_last_of("\\/");
+    if (slash == std::string::npos) return std::string();
+    result.erase(slash);
+    slash = result.find_last_of("\\/");
+    if (slash == std::string::npos) return std::string();
+    const std::string parent = result.substr(slash + 1);
+    if (_stricmp(parent.c_str(), "Plugin") == 0) {
+        result.erase(slash);
+        slash = result.find_last_of("\\/");
+        if (slash == std::string::npos) return std::string();
+    }
+    const std::string modules = result.substr(result.find_last_of("\\/") + 1);
+    if (_stricmp(modules.c_str(), "Modules") == 0) result.erase(result.find_last_of("\\/"));
+    return result;
+}
+
+std::string trimShipConfig(const std::string& value) {
+    const std::string::size_type first = value.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return std::string();
+    const std::string::size_type last = value.find_last_not_of(" \t\r\n");
+    return value.substr(first, last - first + 1);
+}
+
+bool readShipClassDefinition(const std::string& root, const std::string& relativeClass,
+                             oem::ShipDefinition& definition) {
+    if (relativeClass.empty() || relativeClass.find("..") != std::string::npos) return false;
+    std::string configPath = root + "\\Config\\Vessels\\" + relativeClass + ".cfg";
+    std::ifstream input(configPath.c_str());
+    if (!input.is_open()) return false;
+    std::string module, displayName, line;
+    double emptyMass = 10000.0, maxFuel = 0.0;
+    while (std::getline(input, line)) {
+        line = trimShipConfig(line);
+        if (line.empty() || line[0] == ';' || line[0] == '#') continue;
+        const std::string::size_type equals = line.find('=');
+        if (equals == std::string::npos) continue;
+        std::string key = trimShipConfig(line.substr(0, equals));
+        std::string value = trimShipConfig(line.substr(equals + 1));
+        for (std::size_t i = 0; i < key.size(); ++i)
+            key[i] = (char)tolower((unsigned char)key[i]);
+        if (key == "module") module = value;
+        else if (key == "name" && !value.empty()) displayName = value;
+        else if (key == "emptymass" || key == "empty_mass") {
+            char* end = 0; const double parsed = strtod(value.c_str(), &end);
+            if (end && *end == 0 && parsed > 0.0 && _finite(parsed)) emptyMass = parsed;
+        } else if (key == "maxfuel" || key == "max_fuel") {
+            char* end = 0; const double parsed = strtod(value.c_str(), &end);
+            if (end && *end == 0 && parsed >= 0.0 && _finite(parsed)) maxFuel = parsed;
+        }
+    }
+    if (module.empty()) return false;
+    if (_stricmp(module.c_str(), "Orbiter") != 0) {
+        std::string modulePath = root + "\\Modules\\" + module;
+        if (modulePath.size() < 4 || _stricmp(modulePath.substr(modulePath.size()-4).c_str(), ".dll") != 0)
+            modulePath += ".dll";
+        if (GetFileAttributesA(modulePath.c_str()) == INVALID_FILE_ATTRIBUTES) return false;
+    }
+    const long double estimated = 1000.0L + (long double)emptyMass * 0.5L +
+                                  (long double)maxFuel * 0.1L;
+    if (!(estimated > 0.0L) || estimated > (long double)LLONG_MAX) return false;
+    definition.className = relativeClass;
+    definition.displayName = displayName.empty() ? relativeClass : displayName;
+    definition.price = (oem::Credits)ceil(estimated);
+    definition.orbitalDelivery = true;
+    definition.surfaceDelivery = false;
+    return true;
+}
+
+void scanShipClassDirectory(const std::string& root, const std::string& relativeDirectory,
+                            oem::ShipCatalog& catalog, unsigned int depth) {
+    if (depth > 8) return;
+    const std::string directory = root + "\\Config\\Vessels" +
+        (relativeDirectory.empty() ? std::string() : "\\" + relativeDirectory);
+    WIN32_FIND_DATAA data;
+    HANDLE search = FindFirstFileA((directory + "\\*").c_str(), &data);
+    if (search == INVALID_HANDLE_VALUE) return;
+    do {
+        if (data.cFileName[0] == '.' &&
+            (data.cFileName[1] == 0 || (data.cFileName[1] == '.' && data.cFileName[2] == 0)))
+            continue;
+        if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            const std::string child = relativeDirectory.empty()
+                ? data.cFileName : relativeDirectory + "\\" + data.cFileName;
+            scanShipClassDirectory(root, child, catalog, depth + 1);
+            continue;
+        }
+        const std::string filename(data.cFileName);
+        if (filename.size() <= 4 || _stricmp(filename.substr(filename.size()-4).c_str(), ".cfg") != 0)
+            continue;
+        const std::string base = filename.substr(0, filename.size()-4);
+        const std::string className = relativeDirectory.empty()
+            ? base : relativeDirectory + "\\" + base;
+        oem::ShipDefinition definition;
+        if (readShipClassDefinition(root, className, definition)) catalog.add(definition);
+    } while (FindNextFileA(search, &data));
+    FindClose(search);
 }
 
 std::string makeCargoStockConfigPath(HINSTANCE module, const std::string& serviceId) {
@@ -364,7 +468,7 @@ public:
           spaceportRegistryPath_(makeEconomyDataFilePath(hDLL, "spaceports.registry")),
           economicStations_(), economicStationsPath_(makeEconomyDataFilePath(hDLL, "economic_stations.registry")),
           spaceportRegistry_(), economicLocations_(), economicStationsReady_(false), cargoServicesReady_(false), ledger_(), cargoCatalog_(), economyReady_(false), journalReady_(false), sessionId_(),
-          currentSimulationTime_(0), lastProductionWallTick_(0), cargoTransferSequence_(0), lastFocus_(0), completionNote_(0), notificationUntil_(0), fleet_(), fleetPath_(makeEconomyDataFilePath(hDLL, "player_fleet.registry")) {
+          currentSimulationTime_(0), lastProductionWallTick_(0), cargoTransferSequence_(0), lastFocus_(0), completionNote_(0), notificationUntil_(0), fleet_(), fleetPath_(makeEconomyDataFilePath(hDLL, "player_fleet.registry")), shipCatalog_(), shipCatalogReady_(false), orbiterRoot_(makeOrbiterRoot(hDLL)), shipPurchaseSequence_(0) {
         g_bridge = this;
     }
 
@@ -374,6 +478,7 @@ public:
 
     bool journalReady() const { return journalReady_; }
     const oem::PlayerFleetRegistry& playerFleet() const { return fleet_; }
+    const oem::ShipCatalog& shipCatalog() const { return shipCatalog_; }
     const oem::EconomicLocationRegistry& economicLocations() const { return economicLocations_; }
     bool isCargoService(const std::string& vesselId) const {
         return cargoServices_.isRegistered(vesselId);
@@ -3509,6 +3614,10 @@ private:
     oem::SimulationSeconds notificationUntil_;
     oem::PlayerFleetRegistry fleet_;
     std::string fleetPath_;
+    oem::ShipCatalog shipCatalog_;
+    bool shipCatalogReady_;
+    std::string orbiterRoot_;
+    unsigned long shipPurchaseSequence_;
 };
 
 class OEMFlightLogMFD : public MFD {
