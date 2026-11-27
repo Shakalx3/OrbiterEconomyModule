@@ -65,6 +65,7 @@ struct OwnedVesselRecord {
 class PlayerFleetRegistry {
 public:
     Result registerPurchase(const OwnedVesselRecord& record);
+    bool removePurchase(const std::string& purchaseId);
     bool isOwned(const std::string& vesselId) const;
     bool findByVessel(const std::string& vesselId, OwnedVesselRecord& record) const;
     bool findByPurchase(const std::string& purchaseId, OwnedVesselRecord& record) const;
