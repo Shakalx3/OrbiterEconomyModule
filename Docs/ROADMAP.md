@@ -189,7 +189,8 @@ Current route-quote defaults are centralized in `MissionEconomicsConfig`: nomina
 - [x] Persist agent definitions/opening state in versioned economic_agents.cfg and replay balances, inventory, cargo origin/cost basis, and activity timestamps from the global economy journal.
 - [ ] Add a global background-activity switch/intensity setting and balance behavior when it is disabled.
 - [ ] Add an in-game market activity/history view. Current committed activity is visible in the Orbiter log.
-- [ ] Replace the initial fixed activity interval with distance-aware route travel times and configurable transport capacity.
+- [x] Replace the fixed inter-location wait with distance-aware transit estimates: same-body spaceports use great-circle surface distance; other routes use current Orbiter global endpoint separation as an explicitly abstract straight-line estimate. Transit uses a nominal 10 km/s economic speed and never falls below the agent activity interval.
+- [ ] Add configurable transport capacity and prevent agents from moving more cargo per trip than their abstract fleet capacity.
 
 ### Player fleet ownership and ship purchasing — planned
 - [ ] Ownership default rule: every Orbiter vessel not explicitly registered in `EconomicStationRegistry` is presumed to be player-owned; there are no autonomous physical NPC vessels in the current design.
